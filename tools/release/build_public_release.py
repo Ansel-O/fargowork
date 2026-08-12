@@ -215,7 +215,10 @@ def _validate_skill(skill_dir: Path, relative: PurePosixPath) -> None:
     skill_file = skill_dir / "SKILL.md"
     if _is_reparse_or_symlink(skill_file) or not skill_file.is_file():
         raise ReleaseGuardError(f"skill SKILL.md must be a regular file: {relative}")
-    content = skill_file.read_text(encoding="utf-8")
+    # Git may materialize CRLF on Windows runners. Agent Skill frontmatter is
+    # a text contract, so validate normalized line endings without rewriting
+    # the packaged source bytes.
+    content = skill_file.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
     if not content.startswith("---\n"):
         raise ReleaseGuardError(f"skill frontmatter is missing: {relative}")
     end = content.find("\n---\n", 4)

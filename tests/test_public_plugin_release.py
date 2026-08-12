@@ -5,7 +5,7 @@ import shutil
 import tempfile
 import unittest
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from unittest.mock import patch
 
 
@@ -36,7 +36,7 @@ class PublicPluginReleaseTests(unittest.TestCase):
 
         self.assertEqual(plugin["$schema"], self.builder.PLUGIN_SCHEMA)
         self.assertEqual(plugin["name"], "fargowork")
-        self.assertEqual(plugin["version"], "0.5.0-rc.1")
+        self.assertEqual(plugin["version"], "0.5.0-rc.2")
         self.assertEqual(plugin["license"], "Apache-2.0")
         mcp = json.loads((SOURCE_ROOT / "mcp.json").read_text(encoding="utf-8"))
         self.assertEqual(mcp["$schema"], self.builder.MCP_SCHEMA)
@@ -200,6 +200,18 @@ class PublicPluginReleaseTests(unittest.TestCase):
                 self.builder.validate_export_source(spec)
         finally:
             temp.cleanup()
+
+    def test_skill_frontmatter_accepts_windows_crlf_checkout(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            skill_dir = Path(temp_dir) / "fargowork"
+            skill_dir.mkdir()
+            source = (SOURCE_ROOT / "skills" / "fargowork" / "SKILL.md").read_text(
+                encoding="utf-8"
+            )
+            (skill_dir / "SKILL.md").write_bytes(
+                source.replace("\r\n", "\n").replace("\n", "\r\n").encode("utf-8")
+            )
+            self.builder._validate_skill(skill_dir, PurePosixPath("skills/fargowork"))
 
     def test_release_workflow_is_tagged_pinned_and_server_free(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text(
