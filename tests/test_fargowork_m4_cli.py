@@ -138,6 +138,18 @@ class FargoWorkM4CLITests(unittest.TestCase):
         (skill / "SKILL.md").write_text("---\nname: fargowork\n---\n", encoding="utf-8")
         return config
 
+    def test_release_defaults_to_the_office_pilot_and_keeps_loopback_redirect(self):
+        self.assertEqual(self.cli.DEFAULT_ISSUER, "https://fargowork.ansel.vip")
+        self.assertEqual(self.cli.DEFAULT_RESOURCE, "https://fargowork.ansel.vip/mcp")
+        self.assertEqual(
+            self.cli.DEFAULT_RESOURCE_METADATA_URI,
+            "https://fargowork.ansel.vip/.well-known/oauth-protected-resource",
+        )
+        self.assertEqual(
+            self.cli.DEFAULT_REDIRECT_URI,
+            "http://127.0.0.1:37680/oauth/callback",
+        )
+
     def test_login_pkce_callback_and_rotating_refresh_token(self):
         with self.subTest("login"):
             with __import__("tempfile").TemporaryDirectory() as temp:

@@ -43,6 +43,12 @@ FargoWork uses the DingTalk enterprise identity selected during OAuth. Access
 tokens are short-lived; refresh credentials stay in the operating system's
 secure vault.
 
+This RC defaults to the office Pilot service at
+`https://fargowork.ansel.vip/mcp`. Local Server development remains supported
+through explicit `FARGOWORK_ISSUER`, `FARGOWORK_RESOURCE`, and
+`FARGOWORK_RESOURCE_METADATA_URI` overrides; it is not the employee install
+default.
+
 ## Supported client platforms
 
 - Windows x64: CLI, stdio bridge, DPAPI vault, PowerShell installer.

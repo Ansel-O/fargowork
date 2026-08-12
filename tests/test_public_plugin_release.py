@@ -71,6 +71,11 @@ class PublicPluginReleaseTests(unittest.TestCase):
         self.assertEqual(package_manifest["action_result_contract"], 1)
         self.assertEqual(manifest["mcp_protocol_versions"], ["2026-07-28"])
         self.assertEqual(manifest["action_result_contract"], 1)
+        self.assertEqual(
+            manifest["server_endpoint"]["template"],
+            "https://fargowork.ansel.vip/mcp",
+        )
+        self.assertEqual(manifest["server_endpoint"]["status"], "office-pilot")
         self.assertIn("fargowork/skills/fargowork/SKILL.md", names)
         self.assertNotIn("services/", "\n".join(names))
         self.assertEqual(manifest["reserved_artifacts"][0]["status"], "emitted-by-m4-native-builder")

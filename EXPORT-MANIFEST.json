@@ -17,8 +17,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "abe8b75fad5894e809371f1f30f3b356d772faae6e86bf6f96dde0d0de2ce802",
-      "size": 2668
+      "sha256": "b979994717e07ebc951dfda795da11913fcb6eca87d8e18a61889a91cc3c29d3",
+      "size": 2943
     },
     {
       "path": "SECURITY.md",
@@ -72,8 +72,8 @@
     },
     {
       "path": "public/cli/fargowork_cli.py",
-      "sha256": "7860ae10f85f120ca68fe00fd626a994a3a9a25d57f75a84afa2295e7280bdbc",
-      "size": 78912
+      "sha256": "2532ab7dc8e2daafcedb521a5cf5f9fcd1a15e5d2f52580a8b67cbce8edc7ed9",
+      "size": 78930
     },
     {
       "path": "public/install.ps1",
@@ -97,13 +97,13 @@
     },
     {
       "path": "tests/test_fargowork_m4_cli.py",
-      "sha256": "81f612c3f06c701c6006683971c50803e378a92c332d73aa8f732c21f81a829a",
-      "size": 28473
+      "sha256": "3041cbe15c3d90a88145f3165f2c516a003c8c0ecf7f0b7e7b8eb02328c006da",
+      "size": 29027
     },
     {
       "path": "tests/test_public_plugin_release.py",
-      "sha256": "b39a2a62540c353685e1959b9e31a060d314b1c113764746ea8cd28ba7ccd2b3",
-      "size": 10132
+      "sha256": "45f552f831a2d5068f35dc9747424499e6f6d818fec9c0cf4fb40fcc65bae543",
+      "size": 10348
     },
     {
       "path": "tools/release/build_local_release.py",
@@ -112,14 +112,14 @@
     },
     {
       "path": "tools/release/build_public_release.py",
-      "sha256": "08a17e3ccbc41cc7e2791353a0a5ce8b4b663535f2ea5cb2dae6ae8d710fc0aa",
-      "size": 28691
+      "sha256": "38f9ea3049f318ddecb7bc7864fcf76b1f719649ffa18cfe48f5919355a5ffac",
+      "size": 28688
     }
   ],
   "format": "fargowork-public-repository-export/v1",
   "license": "Apache-2.0",
   "private_components_included": false,
   "repository": "Ansel-O/fargowork",
-  "source_revision": "29fe6be3e77696f24483910608cbb6d1064876b1",
+  "source_revision": "0f9cd36e74ab2d7881f4f9c89084093f8af71924",
   "visibility": "public"
 }

@@ -578,9 +578,9 @@ def build_release(
         },
         "server_endpoint": {
             "config_key": "FARGOWORK_MCP_ENDPOINT",
-            "template": "http://127.0.0.1:8080/mcp",
-            "override_owner": "M4 CLI and client adapters",
-            "status": "local-default-not-production",
+            "template": "https://fargowork.ansel.vip/mcp",
+            "override_owner": "FargoWork CLI and client adapters",
+            "status": "office-pilot",
         },
         "public_private_boundary": {
             "public": ["agent-plugin", "non-sensitive-contracts", "release-metadata"],
