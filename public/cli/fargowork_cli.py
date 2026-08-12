@@ -43,7 +43,7 @@ from typing import Any, Callable, Iterable, Mapping
 from urllib.parse import urlsplit
 
 
-VERSION = "0.5.0-rc.3"
+VERSION = "0.5.0-rc.4"
 MCP_PROTOCOL_VERSION = "2026-07-28"
 AGENT_PLUGINS_SPEC_VERSION = "1.0.0"
 ACTION_RESULT_CONTRACT_VERSION = 1

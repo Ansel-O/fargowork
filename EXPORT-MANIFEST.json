@@ -17,7 +17,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "83d966490b305bf96faaf1b4629686d4ad268b0b2115f9553bcf9ae096afa425",
+      "sha256": "e4e829a3fd617a4547ebd4e7269b2a26a093f389f54c288b3e45c24b39cf3d00",
       "size": 2956
     },
     {
@@ -47,7 +47,7 @@
     },
     {
       "path": "public/agent-plugin/fargowork/plugin.json",
-      "sha256": "c1fa4e8d3f78a97f67f3ca37a6f78b0798c90b5c977ffbb30bad845bcf82543d",
+      "sha256": "29aa905059a392aab08162e25bb67a59f889e915248110de97c08334a0046c73",
       "size": 357
     },
     {
@@ -72,17 +72,17 @@
     },
     {
       "path": "public/cli/fargowork_cli.py",
-      "sha256": "1aa4ed1238cafd10a219a104c79d017545385f51fe3c45bba2ddc370a7f32b18",
+      "sha256": "e63db625738dada776c89266ef953a7c09e9b8a45f20226b49d2a6e841183096",
       "size": 78930
     },
     {
       "path": "public/install.ps1",
-      "sha256": "a254142285f4f2bb1926481e7e29ff03aaa404f4456c6c041649fe393de03831",
+      "sha256": "de1ee9074ec94ecc3a22996902e38939c1221a0fdbb9a3a9c72afd052fd9ceca",
       "size": 10188
     },
     {
       "path": "public/install.sh",
-      "sha256": "b04311b2aa235e197bbe9453b861c926b50a655c8da0dd60a162c27a9946b946",
+      "sha256": "8570ca782187f751d0773836d1ee2aa1040e7432096ffa0a13dbe4768daa83f7",
       "size": 7035
     },
     {
@@ -92,7 +92,7 @@
     },
     {
       "path": "public/release/version.json",
-      "sha256": "a6d248b79a5eeb947126476ce31b4d0f68f8d874c3a950efb1d38a251d2818d8",
+      "sha256": "9ba804c73362a17a375395353a64e32961b6f54f552f21464da676569c84cf2e",
       "size": 191
     },
     {
@@ -102,7 +102,7 @@
     },
     {
       "path": "tests/test_public_plugin_release.py",
-      "sha256": "c7b82a03ba96bb1f93edc7a5957fd691cca0dd17e3c327cac45e9c4156bcc1cc",
+      "sha256": "e5f0dd2041a2627328096a123614e8dfedbcaee750ca9bab6552520da39faf66",
       "size": 11394
     },
     {
@@ -120,6 +120,6 @@
   "license": "Apache-2.0",
   "private_components_included": false,
   "repository": "Ansel-O/fargowork",
-  "source_revision": "a7c3fa56bbcf16cbf47640c22b23ca5cdaec72a5",
+  "source_revision": "f4e2d53781735118ea0ef32e2beeaf5efbf19800",
   "visibility": "public"
 }

@@ -10,20 +10,20 @@ not published here.
 
 ## Office pilot release
 
-The first downloadable office pilot release is `v0.5.0-rc.3`. Remote installation becomes
+The first downloadable office pilot release is `v0.5.0-rc.4`. Remote installation becomes
 available only after that immutable GitHub Release is published with Windows and
 Linux artifacts plus `SHA256SUMS`.
 
 Windows PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/Ansel-O/fargowork/v0.5.0-rc.3/public/install.ps1 | iex
+irm https://raw.githubusercontent.com/Ansel-O/fargowork/v0.5.0-rc.4/public/install.ps1 | iex
 ```
 
 Linux shell:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Ansel-O/fargowork/v0.5.0-rc.3/public/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Ansel-O/fargowork/v0.5.0-rc.4/public/install.sh | sh
 ```
 
 The installer verifies SHA-256 checksums, installs one FargoWork CLI and Agent
@@ -64,7 +64,7 @@ compatibility with future breaking MCP revisions.
 Build a native artifact on its matching host platform:
 
 ```powershell
-python tools/release/build_local_release.py --platform windows --arch x64 --version 0.5.0-rc.3 --output-dir dist/release/local
+python tools/release/build_local_release.py --platform windows --arch x64 --version 0.5.0-rc.4 --output-dir dist/release/local
 ```
 
 The release workflow builds Windows x64 and Linux x64 separately. Public export

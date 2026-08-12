@@ -2,7 +2,7 @@
 param(
     [ValidateSet('all', 'workbuddy', 'codex', 'cursor')]
     [string]$Target = 'all',
-    [string]$Version = '0.5.0-rc.3',
+    [string]$Version = '0.5.0-rc.4',
     [string]$LocalArtifactDir,
     [string]$ReleaseBaseUrl,
     [switch]$DryRun,

@@ -36,7 +36,7 @@ class PublicPluginReleaseTests(unittest.TestCase):
 
         self.assertEqual(plugin["$schema"], self.builder.PLUGIN_SCHEMA)
         self.assertEqual(plugin["name"], "fargowork")
-        self.assertEqual(plugin["version"], "0.5.0-rc.3")
+        self.assertEqual(plugin["version"], "0.5.0-rc.4")
         self.assertEqual(plugin["license"], "Apache-2.0")
         mcp = json.loads((SOURCE_ROOT / "mcp.json").read_text(encoding="utf-8"))
         self.assertEqual(mcp["$schema"], self.builder.MCP_SCHEMA)

@@ -2,7 +2,7 @@
 set -eu
 
 target=all
-version=0.5.0-rc.3
+version=0.5.0-rc.4
 local_dir=
 release_base=${FARGOWORK_RELEASE_BASE_URL:-}
 dry_run=0
