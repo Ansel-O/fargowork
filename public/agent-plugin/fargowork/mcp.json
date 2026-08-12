@@ -1,0 +1,11 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "fargowork": {
+      "type": "stdio",
+      "command": "./bin/fargowork.cmd",
+      "args": ["bridge"],
+      "cwd": "${PLUGIN_ROOT}"
+    }
+  }
+}

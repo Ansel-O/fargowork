@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "name": "fargowork-agent-plugin",
+  "source_root": "public/agent-plugin/fargowork",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "bin/fargowork.cmd",
+    "mcp.json",
+    "plugin.json",
+    "skills/fargowork/SKILL.md",
+    "skills/fargowork/references/workflow-annual-leave.md",
+    "skills/fargowork/references/workflow-business-trip.md",
+    "skills/fargowork/references/time-contract.md"
+  ],
+  "denylist": {
+    "path_parts": [
+      ".env",
+      "credentials",
+      "data",
+      "logs",
+      "private",
+      "production",
+      "rules",
+      "secrets",
+      "server",
+      "services",
+      "state"
+    ],
+    "file_names": [
+      "authorization",
+      "credentials.json",
+      "cookies.json",
+      "private.key",
+      "session.json",
+      "token.json"
+    ],
+    "suffixes": [
+      ".crt",
+      ".key",
+      ".log",
+      ".pem",
+      ".pfx",
+      ".p12"
+    ]
+  },
+  "allowed_url_hosts": [
+    "agent-plugins.org",
+    "agentskills.io",
+    "www.apache.org"
+  ],
+  "reserved_artifacts": [
+    {
+      "component": "cli",
+      "pattern": "fargowork-cli-v{version}-{platform}-{arch}.{archive}",
+      "status": "emitted-by-m4-native-builder"
+    },
+    {
+      "component": "bridge",
+      "pattern": "fargowork-bridge-v{version}-{platform}-{arch}.{archive}",
+      "status": "emitted-by-m4-native-builder"
+    }
+  ]
+}

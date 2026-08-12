@@ -1,0 +1,125 @@
+{
+  "files": [
+    {
+      "path": ".github/workflows/release.yml",
+      "sha256": "ab9fec9e162f1ed5ea59160e31acd68661b32e51506c7df1b395084bae6e6716",
+      "size": 7353
+    },
+    {
+      "path": ".gitignore",
+      "sha256": "22d5526a5233f560e8be8b8871e5a316b99b1d9f262a1f7299b9bc6605313d9e",
+      "size": 84
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "9cf9a4f6577442ce23f60fedf41e6c6a6a7d8ae268e139792af1413bfc369a69",
+      "size": 11351
+    },
+    {
+      "path": "README.md",
+      "sha256": "abe8b75fad5894e809371f1f30f3b356d772faae6e86bf6f96dde0d0de2ce802",
+      "size": 2668
+    },
+    {
+      "path": "SECURITY.md",
+      "sha256": "fb06f37bd37a089505f9ba442473f016f83507b71ad4ecc1e6d4905169ac90b1",
+      "size": 407
+    },
+    {
+      "path": "public/agent-plugin/fargowork/LICENSE",
+      "sha256": "9cf9a4f6577442ce23f60fedf41e6c6a6a7d8ae268e139792af1413bfc369a69",
+      "size": 11351
+    },
+    {
+      "path": "public/agent-plugin/fargowork/README.md",
+      "sha256": "7b5f6cafa0fee4947952d568acf7cd84d413ba41492605f4990b0a6dfb4c1003",
+      "size": 1461
+    },
+    {
+      "path": "public/agent-plugin/fargowork/bin/fargowork.cmd",
+      "sha256": "5590f634443b000025b130fa8c3f571fab077de245f3a12291d948df0a397318",
+      "size": 223
+    },
+    {
+      "path": "public/agent-plugin/fargowork/mcp.json",
+      "sha256": "7195fe93cb1033446c5aceec1fa46058334779b702acab4316056784e3f9c6be",
+      "size": 242
+    },
+    {
+      "path": "public/agent-plugin/fargowork/plugin.json",
+      "sha256": "c83078fd222a068f5336fa20837149e85dcf7bd2a78b51736f0c5bd6fb8238c1",
+      "size": 357
+    },
+    {
+      "path": "public/agent-plugin/fargowork/skills/fargowork/SKILL.md",
+      "sha256": "4d43849df8281e21b796478c0d3cde445e50316b96c1d67c0598271f42e75956",
+      "size": 6684
+    },
+    {
+      "path": "public/agent-plugin/fargowork/skills/fargowork/references/time-contract.md",
+      "sha256": "b09088641213ad4d2ae38515333d08ff891ba33345801d45e86d6fa4f22be3bd",
+      "size": 1846
+    },
+    {
+      "path": "public/agent-plugin/fargowork/skills/fargowork/references/workflow-annual-leave.md",
+      "sha256": "c3ab9cdd34bee2013b6fd5088430461f62cd5412fd02778d2626056232d79f14",
+      "size": 2302
+    },
+    {
+      "path": "public/agent-plugin/fargowork/skills/fargowork/references/workflow-business-trip.md",
+      "sha256": "5afd3a514e6a9d7ebfafc3a805e9d37230ad499dd41357efbac44e6a24cf1a1f",
+      "size": 2208
+    },
+    {
+      "path": "public/cli/fargowork_cli.py",
+      "sha256": "7860ae10f85f120ca68fe00fd626a994a3a9a25d57f75a84afa2295e7280bdbc",
+      "size": 78912
+    },
+    {
+      "path": "public/install.ps1",
+      "sha256": "5ac280aae96838dbb9a37501c84dd4478a99d3265245655a2bc7d283c254e56a",
+      "size": 10188
+    },
+    {
+      "path": "public/install.sh",
+      "sha256": "58fc799025865c8ddb1bdef8a9a41cdfc6ae6dd034e780479c84ef284754034c",
+      "size": 7035
+    },
+    {
+      "path": "public/release/public-export.json",
+      "sha256": "8a647748fd1c664d9a1b2cf6d7b3f6af1b9dbe060324c38ae27aad8e637ac84f",
+      "size": 1374
+    },
+    {
+      "path": "public/release/version.json",
+      "sha256": "567134844c78e5852306368e183b6738b6f906229e80af58cbcdb47cc19e2b81",
+      "size": 191
+    },
+    {
+      "path": "tests/test_fargowork_m4_cli.py",
+      "sha256": "81f612c3f06c701c6006683971c50803e378a92c332d73aa8f732c21f81a829a",
+      "size": 28473
+    },
+    {
+      "path": "tests/test_public_plugin_release.py",
+      "sha256": "b39a2a62540c353685e1959b9e31a060d314b1c113764746ea8cd28ba7ccd2b3",
+      "size": 10132
+    },
+    {
+      "path": "tools/release/build_local_release.py",
+      "sha256": "58a97eb187f8a42ac4ce91f0d344107cfb4d0154a8b11f7289fdfaceedf24d13",
+      "size": 11399
+    },
+    {
+      "path": "tools/release/build_public_release.py",
+      "sha256": "08a17e3ccbc41cc7e2791353a0a5ce8b4b663535f2ea5cb2dae6ae8d710fc0aa",
+      "size": 28691
+    }
+  ],
+  "format": "fargowork-public-repository-export/v1",
+  "license": "Apache-2.0",
+  "private_components_included": false,
+  "repository": "Ansel-O/fargowork",
+  "source_revision": "29fe6be3e77696f24483910608cbb6d1064876b1",
+  "visibility": "public"
+}
