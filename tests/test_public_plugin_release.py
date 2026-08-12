@@ -235,6 +235,7 @@ class PublicPluginReleaseTests(unittest.TestCase):
         self.assertIn("artifact-metadata: write", workflow)
         self.assertIn("contents: write", workflow)
         self.assertIn("--draft", workflow)
+        self.assertIn('--repo "${GITHUB_REPOSITORY}"', workflow)
         self.assertNotIn("services/", workflow)
         self.assertNotIn("FARGOWORK_INTERNAL_AUTH_KEY", workflow)
 

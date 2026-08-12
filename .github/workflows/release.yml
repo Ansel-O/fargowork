@@ -164,5 +164,6 @@ jobs:
           dist/release/v${VERSION}/*.zip
           dist/release/v${VERSION}/SHA256SUMS
           dist/release/v${VERSION}/release-manifest.json
+          --repo "${GITHUB_REPOSITORY}"
           --verify-tag --draft --title "FargoWork v${VERSION}"
           --notes "FargoWork office-pilot client RC: one CLI/bridge executable, Agent Plugin, adapters, and checksum-verified installers. WorkBuddy UI trust/enable remains user action; no Server source, rules, credentials, or business data is bundled."

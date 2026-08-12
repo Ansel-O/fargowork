@@ -2,8 +2,8 @@
   "files": [
     {
       "path": ".github/workflows/release.yml",
-      "sha256": "ab9fec9e162f1ed5ea59160e31acd68661b32e51506c7df1b395084bae6e6716",
-      "size": 7353
+      "sha256": "541458d9fcf3b2cfc14b7eb43c5afe617f5b95d8597f0c4415ff147b0a402da8",
+      "size": 7393
     },
     {
       "path": ".gitignore",
@@ -102,8 +102,8 @@
     },
     {
       "path": "tests/test_public_plugin_release.py",
-      "sha256": "9b0f0812ef7d2d49dbedf9599eb101940d6a649f71c8afe976935074148d5572",
-      "size": 11329
+      "sha256": "c7b82a03ba96bb1f93edc7a5957fd691cca0dd17e3c327cac45e9c4156bcc1cc",
+      "size": 11394
     },
     {
       "path": "tools/release/build_local_release.py",
@@ -120,6 +120,6 @@
   "license": "Apache-2.0",
   "private_components_included": false,
   "repository": "Ansel-O/fargowork",
-  "source_revision": "41621da648ee7e05415c3240eb9f0d595758e94c",
+  "source_revision": "a7c3fa56bbcf16cbf47640c22b23ca5cdaec72a5",
   "visibility": "public"
 }
