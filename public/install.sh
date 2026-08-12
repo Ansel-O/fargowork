@@ -2,7 +2,7 @@
 set -eu
 
 target=all
-version=0.5.0-rc.4
+version=0.5.0-rc.5
 local_dir=
 release_base=${FARGOWORK_RELEASE_BASE_URL:-}
 dry_run=0
@@ -46,7 +46,9 @@ fetch() {
   case "$release_base" in *example.invalid*) echo "remote Release URL is a placeholder and unavailable" >&2; exit 4 ;; esac
   case "$release_base" in https://*) ;; *) echo "remote Release URL must use HTTPS" >&2; exit 4 ;; esac
   path=$tmp_dir/$name
-  curl --fail --location --proto '=https' --tlsv1.2 --silent --show-error "$release_base/${name}" -o "$path"
+  curl --fail --location --proto '=https' --tlsv1.2 --silent --show-error \
+    --retry 2 --retry-delay 1 --retry-all-errors \
+    "$release_base/${name}" -o "$path"
   printf '%s\n' "$path"
 }
 

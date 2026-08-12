@@ -2,7 +2,7 @@
 param(
     [ValidateSet('all', 'workbuddy', 'codex', 'cursor')]
     [string]$Target = 'all',
-    [string]$Version = '0.5.0-rc.4',
+    [string]$Version = '0.5.0-rc.5',
     [string]$LocalArtifactDir,
     [string]$ReleaseBaseUrl,
     [switch]$DryRun,
@@ -69,8 +69,19 @@ function Download-OrUseLocal([string]$Name, [string]$LocalDir, [string]$BaseUrl,
     if ($BaseUrl -match 'example\.invalid') { throw 'Remote Release URL is a placeholder and is unavailable.' }
     if ($BaseUrl -notmatch '^https://') { throw 'Remote Release URL must use HTTPS.' }
     $destination = Join-Path $TempDir $Name
-    Invoke-WebRequest -Uri ($BaseUrl.TrimEnd('/') + '/' + [uri]::EscapeDataString($Name)) -OutFile $destination
-    return $destination
+    $uri = $BaseUrl.TrimEnd('/') + '/' + [uri]::EscapeDataString($Name)
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        try {
+            Invoke-WebRequest -Uri $uri -OutFile $destination
+            return $destination
+        } catch {
+            if (Test-Path -LiteralPath $destination) {
+                Remove-Item -LiteralPath $destination -Force -ErrorAction SilentlyContinue
+            }
+            if ($attempt -eq 3) { throw }
+            Start-Sleep -Seconds $attempt
+        }
+    }
 }
 
 try {

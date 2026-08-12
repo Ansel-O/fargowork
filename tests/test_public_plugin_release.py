@@ -36,7 +36,7 @@ class PublicPluginReleaseTests(unittest.TestCase):
 
         self.assertEqual(plugin["$schema"], self.builder.PLUGIN_SCHEMA)
         self.assertEqual(plugin["name"], "fargowork")
-        self.assertEqual(plugin["version"], "0.5.0-rc.4")
+        self.assertEqual(plugin["version"], "0.5.0-rc.5")
         self.assertEqual(plugin["license"], "Apache-2.0")
         mcp = json.loads((SOURCE_ROOT / "mcp.json").read_text(encoding="utf-8"))
         self.assertEqual(mcp["$schema"], self.builder.MCP_SCHEMA)
@@ -238,6 +238,13 @@ class PublicPluginReleaseTests(unittest.TestCase):
         self.assertIn('--repo "${GITHUB_REPOSITORY}"', workflow)
         self.assertNotIn("services/", workflow)
         self.assertNotIn("FARGOWORK_INTERNAL_AUTH_KEY", workflow)
+
+    def test_installers_retry_transient_release_download_failures(self):
+        powershell = (REPO_ROOT / "public" / "install.ps1").read_text(encoding="utf-8")
+        shell = (REPO_ROOT / "public" / "install.sh").read_text(encoding="utf-8")
+        self.assertIn("$attempt -le 3", powershell)
+        self.assertIn("Start-Sleep -Seconds $attempt", powershell)
+        self.assertIn("--retry 2 --retry-delay 1 --retry-all-errors", shell)
 
 
 if __name__ == "__main__":
