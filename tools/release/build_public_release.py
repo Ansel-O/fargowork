@@ -371,7 +371,7 @@ def validate_plugin_contract(payloads: list[tuple[PurePosixPath, bytes]]) -> dic
 
 def _validate_skill_payload(data: bytes, skill_dir: PurePosixPath) -> None:
     try:
-        content = data.decode("utf-8")
+        content = data.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
     except UnicodeDecodeError as exc:
         raise ReleaseGuardError(f"Agent Skill must be UTF-8: {skill_dir}") from exc
     if not content.startswith("---\n") or "\n---\n" not in content[4:]:

@@ -36,7 +36,7 @@ class PublicPluginReleaseTests(unittest.TestCase):
 
         self.assertEqual(plugin["$schema"], self.builder.PLUGIN_SCHEMA)
         self.assertEqual(plugin["name"], "fargowork")
-        self.assertEqual(plugin["version"], "0.5.0-rc.2")
+        self.assertEqual(plugin["version"], "0.5.0-rc.3")
         self.assertEqual(plugin["license"], "Apache-2.0")
         mcp = json.loads((SOURCE_ROOT / "mcp.json").read_text(encoding="utf-8"))
         self.assertEqual(mcp["$schema"], self.builder.MCP_SCHEMA)
@@ -212,6 +212,16 @@ class PublicPluginReleaseTests(unittest.TestCase):
                 source.replace("\r\n", "\n").replace("\n", "\r\n").encode("utf-8")
             )
             self.builder._validate_skill(skill_dir, PurePosixPath("skills/fargowork"))
+
+    def test_skill_payload_accepts_windows_crlf_checkout(self):
+        source = (SOURCE_ROOT / "skills" / "fargowork" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        payload = source.replace("\r\n", "\n").replace("\n", "\r\n").encode("utf-8")
+        self.builder._validate_skill_payload(
+            payload,
+            PurePosixPath("skills/fargowork"),
+        )
 
     def test_release_workflow_is_tagged_pinned_and_server_free(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text(
