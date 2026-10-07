@@ -396,6 +396,7 @@ def _git_output(repo_root: Path, *args: str) -> str:
     result = subprocess.run(
         ["git", *args],
         cwd=repo_root,
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         check=False,
@@ -580,10 +581,10 @@ def build_release(
             "status": "emitted-by-m4-native-builder",
         },
         "server_endpoint": {
-            "config_key": "FARGOWORK_MCP_ENDPOINT",
-            "template": "https://fargowork.ansel.vip/mcp",
-            "override_owner": "FargoWork CLI and client adapters",
-            "status": "office-pilot",
+            "config_key": "service_issuer",
+            "resource_path": "/mcp",
+            "metadata_path": "/.well-known/oauth-protected-resource",
+            "status": "operator-provided-at-employee-install",
         },
         "public_private_boundary": {
             "public": ["agent-plugin", "non-sensitive-contracts", "release-metadata"],

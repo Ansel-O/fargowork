@@ -1,8 +1,8 @@
 {
-  "version": "0.5.0-rc.5",
+  "version": "1.1.0",
   "tag_prefix": "v",
   "agent_plugins_spec": "1.0.0",
   "mcp_protocol_versions": ["2026-07-28"],
   "action_result_contract": 1,
-  "stage": "M6-office-pilot-rc"
+  "stage": "windows-employee-trial"
 }

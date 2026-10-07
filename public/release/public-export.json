@@ -8,10 +8,10 @@
     "bin/fargowork.cmd",
     "mcp.json",
     "plugin.json",
-    "skills/fargowork/SKILL.md",
-    "skills/fargowork/references/workflow-annual-leave.md",
-    "skills/fargowork/references/workflow-business-trip.md",
-    "skills/fargowork/references/time-contract.md"
+    "skills/fargowork-employee/SKILL.md",
+    "skills/fargowork-employee/references/workflow-annual-leave.md",
+    "skills/fargowork-employee/references/workflow-business-trip.md",
+    "skills/fargowork-employee/references/time-contract.md"
   ],
   "denylist": {
     "path_parts": [

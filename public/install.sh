@@ -2,7 +2,8 @@
 set -eu
 
 target=all
-version=0.5.0-rc.5
+version=1.0.0
+service_issuer=
 local_dir=
 release_base=${FARGOWORK_RELEASE_BASE_URL:-}
 dry_run=0
@@ -12,6 +13,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --target) target=$2; shift 2 ;;
     --version) version=$2; shift 2 ;;
+    --service-issuer) service_issuer=$2; shift 2 ;;
     --local-artifact-dir) local_dir=$2; shift 2 ;;
     --release-base-url) release_base=$2; shift 2 ;;
     --dry-run) dry_run=1; shift ;;
@@ -20,11 +22,12 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-if [ -z "$release_base" ]; then
-  release_base="https://github.com/Ansel-O/fargowork/releases/download/v${version}"
-fi
-
 case "$target" in all|workbuddy|codex|cursor) ;; *) echo "invalid target" >&2; exit 2 ;; esac
+case "$service_issuer" in https://* ) ;; *) echo "pass --service-issuer with the HTTPS address supplied by the service administrator" >&2; exit 2 ;; esac
+if [ -z "$local_dir" ] && [ -z "$release_base" ]; then
+  echo "pass --local-artifact-dir for a local candidate or --release-base-url for an explicitly published release" >&2
+  exit 2
+fi
 platform_name=linux
 arch_name=x64
 case "$(uname -s)" in Darwin) echo "macOS native Keychain support is not included in this release; no installation was performed" >&2; exit 4 ;; Linux) platform_name=linux ;; *) echo "unsupported platform" >&2; exit 2 ;; esac
@@ -112,20 +115,20 @@ cli_bin=$(find "$tmp_dir/cli" -type f -name fargowork | head -n 1)
 plugin_source=$tmp_dir/plugin/fargowork
 [ -f "$plugin_source/plugin.json" ] || { echo "Plugin artifact is missing plugin.json" >&2; exit 4; }
 
-install_root=${XDG_CONFIG_HOME:-$HOME/.config}/fargowork
+install_root=${XDG_CONFIG_HOME:-$HOME/.config}/fargowork/employee
 bin_dir=$install_root/bin
-plugin_dest=$install_root/plugin/fargowork
+plugin_dest=$install_root/plugin/fargowork-employee
 stage=$tmp_dir/stage
 mkdir -p "$stage/bin" "$stage/plugin"
 cp "$cli_bin" "$stage/bin/fargowork"
-cp -R "$plugin_source" "$stage/plugin/fargowork"
-cp "$cli_bin" "$stage/plugin/fargowork/bin/fargowork"
-printf 'fargowork-owned-v1\n' > "$stage/plugin/fargowork/.fargowork-owner"
+cp -R "$plugin_source" "$stage/plugin/fargowork-employee"
+cp "$cli_bin" "$stage/plugin/fargowork-employee/bin/fargowork"
+printf 'fargowork-owned-v1\n' > "$stage/plugin/fargowork-employee/.fargowork-owner"
 # The portable package uses the Windows launcher token for the cross-platform
 # Agent Plugin source. Linux installs finalize the same plugin-owned config to
 # the native extensionless executable before the plugin becomes usable.
-sed -i.bak 's#\./bin/fargowork\.cmd#./bin/fargowork#g' "$stage/plugin/fargowork/mcp.json"
-rm -f "$stage/plugin/fargowork/mcp.json.bak"
+sed -i.bak 's#\./bin/fargowork\.cmd#./bin/fargowork#g' "$stage/plugin/fargowork-employee/mcp.json"
+rm -f "$stage/plugin/fargowork-employee/mcp.json.bak"
 mkdir -p "$install_root/plugin"
 backup=$tmp_dir/backup
 mkdir -p "$backup"
@@ -135,9 +138,9 @@ fi
 rollback() { rm -rf "$bin_dir" "$plugin_dest"; [ -e "$backup/bin" ] && mv "$backup/bin" "$bin_dir" || true; [ -e "$backup/plugin" ] && mkdir -p "$(dirname "$plugin_dest")" && mv "$backup/plugin" "$plugin_dest" || true; }
 if [ -d "$bin_dir" ]; then mv "$bin_dir" "$backup/bin"; fi
 if [ -e "$plugin_dest" ]; then mv "$plugin_dest" "$backup/plugin"; fi
-if ! { mv "$stage/bin" "$bin_dir" && mkdir -p "$(dirname "$plugin_dest")" && mv "$stage/plugin/fargowork" "$plugin_dest"; }; then rollback; echo "atomic install failed and was rolled back" >&2; exit 4; fi
+if ! { mv "$stage/bin" "$bin_dir" && mkdir -p "$(dirname "$plugin_dest")" && mv "$stage/plugin/fargowork-employee" "$plugin_dest"; }; then rollback; echo "atomic install failed and was rolled back" >&2; exit 4; fi
 chmod 700 "$bin_dir/fargowork"
-if ! "$bin_dir/fargowork" install --target "$target" --output=jsonl; then rollback; echo "FargoWork post-install failed; previous owned installation was restored" >&2; exit 4; fi
+if ! "$bin_dir/fargowork" install --target "$target" --issuer "$service_issuer" --output=jsonl; then rollback; echo "FargoWork post-install failed; previous owned installation was restored" >&2; exit 4; fi
 doctor_exit=0
 "$bin_dir/fargowork" doctor --target "$target" --output=jsonl || doctor_exit=$?
 if [ "$doctor_exit" -ne 0 ] && [ "$doctor_exit" -ne 3 ]; then rollback; echo "FargoWork doctor failed; previous owned installation was restored" >&2; exit 4; fi

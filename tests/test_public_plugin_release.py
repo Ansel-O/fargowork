@@ -35,12 +35,12 @@ class PublicPluginReleaseTests(unittest.TestCase):
         plugin = self.builder.validate_plugin_contract(payloads)
 
         self.assertEqual(plugin["$schema"], self.builder.PLUGIN_SCHEMA)
-        self.assertEqual(plugin["name"], "fargowork")
-        self.assertEqual(plugin["version"], "0.5.0-rc.5")
+        self.assertEqual(plugin["name"], "fargowork-employee")
+        self.assertEqual(plugin["version"], json.loads(VERSION_FILE.read_text(encoding="utf-8"))["version"])
         self.assertEqual(plugin["license"], "Apache-2.0")
         mcp = json.loads((SOURCE_ROOT / "mcp.json").read_text(encoding="utf-8"))
         self.assertEqual(mcp["$schema"], self.builder.MCP_SCHEMA)
-        server = mcp["mcpServers"]["fargowork"]
+        server = mcp["mcpServers"]["fargowork-employee"]
         self.assertEqual(server["type"], "stdio")
         self.assertEqual(server["command"], "./bin/fargowork.cmd")
         self.assertEqual(server["args"], ["bridge"])
@@ -72,11 +72,12 @@ class PublicPluginReleaseTests(unittest.TestCase):
         self.assertEqual(manifest["mcp_protocol_versions"], ["2026-07-28"])
         self.assertEqual(manifest["action_result_contract"], 1)
         self.assertEqual(
-            manifest["server_endpoint"]["template"],
-            "https://fargowork.ansel.vip/mcp",
+            manifest["server_endpoint"]["config_key"],
+            "service_issuer",
         )
-        self.assertEqual(manifest["server_endpoint"]["status"], "office-pilot")
-        self.assertIn("fargowork/skills/fargowork/SKILL.md", names)
+        self.assertEqual(manifest["server_endpoint"]["status"], "operator-provided-at-employee-install")
+        self.assertNotIn("template", manifest["server_endpoint"])
+        self.assertIn("fargowork/skills/fargowork-employee/SKILL.md", names)
         self.assertNotIn("services/", "\n".join(names))
         self.assertEqual(manifest["reserved_artifacts"][0]["status"], "emitted-by-m4-native-builder")
 
@@ -203,24 +204,24 @@ class PublicPluginReleaseTests(unittest.TestCase):
 
     def test_skill_frontmatter_accepts_windows_crlf_checkout(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            skill_dir = Path(temp_dir) / "fargowork"
+            skill_dir = Path(temp_dir) / "fargowork-employee"
             skill_dir.mkdir()
-            source = (SOURCE_ROOT / "skills" / "fargowork" / "SKILL.md").read_text(
+            source = (SOURCE_ROOT / "skills" / "fargowork-employee" / "SKILL.md").read_text(
                 encoding="utf-8"
             )
             (skill_dir / "SKILL.md").write_bytes(
                 source.replace("\r\n", "\n").replace("\n", "\r\n").encode("utf-8")
             )
-            self.builder._validate_skill(skill_dir, PurePosixPath("skills/fargowork"))
+            self.builder._validate_skill(skill_dir, PurePosixPath("skills/fargowork-employee"))
 
     def test_skill_payload_accepts_windows_crlf_checkout(self):
-        source = (SOURCE_ROOT / "skills" / "fargowork" / "SKILL.md").read_text(
+        source = (SOURCE_ROOT / "skills" / "fargowork-employee" / "SKILL.md").read_text(
             encoding="utf-8"
         )
         payload = source.replace("\r\n", "\n").replace("\n", "\r\n").encode("utf-8")
         self.builder._validate_skill_payload(
             payload,
-            PurePosixPath("skills/fargowork"),
+            PurePosixPath("skills/fargowork-employee"),
         )
 
     def test_release_workflow_is_tagged_pinned_and_server_free(self):
@@ -229,6 +230,7 @@ class PublicPluginReleaseTests(unittest.TestCase):
         )
         self.assertIn('tags:', workflow)
         self.assertIn('"v*.*.*"', workflow)
+        self.assertIn("github.event_name == 'workflow_dispatch'", workflow)
         self.assertIn("actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d", workflow)
         self.assertIn("id-token: write", workflow)
         self.assertIn("attestations: write", workflow)

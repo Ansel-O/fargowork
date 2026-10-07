@@ -1,24 +1,29 @@
 {
   "files": [
     {
+      "path": ".gitattributes",
+      "sha256": "1d459fe85e27a8d6ef6dc148f727684b829690935f00b94ebd601a405b65aafc",
+      "size": 88
+    },
+    {
       "path": ".github/workflows/release.yml",
-      "sha256": "541458d9fcf3b2cfc14b7eb43c5afe617f5b95d8597f0c4415ff147b0a402da8",
-      "size": 7393
+      "sha256": "84486c443b8142d2c8137e01578e2c84d760766c8a1e02dfe07a9366955b37ea",
+      "size": 7645
     },
     {
       "path": ".gitignore",
-      "sha256": "22d5526a5233f560e8be8b8871e5a316b99b1d9f262a1f7299b9bc6605313d9e",
-      "size": 84
+      "sha256": "768acf49216180dd038f938ca5ae54be826d005c7dcc866172a4bd21add6fbb3",
+      "size": 94
     },
     {
       "path": "LICENSE",
-      "sha256": "9cf9a4f6577442ce23f60fedf41e6c6a6a7d8ae268e139792af1413bfc369a69",
-      "size": 11351
+      "sha256": "5b19088d30c5da6ded8e4e0155178d59dc0c3bb2f1ebcb9a4272f8cf0da77ef4",
+      "size": 11552
     },
     {
       "path": "README.md",
-      "sha256": "c2417bc97c038c09c7aeef3366c5634be6f73c342fb49df9af6942f75ffea60b",
-      "size": 2956
+      "sha256": "78027e9ceec64efb50be767b73742cf803b3a12c830974fdda7ab618ec0b84e7",
+      "size": 5075
     },
     {
       "path": "SECURITY.md",
@@ -26,14 +31,24 @@
       "size": 407
     },
     {
+      "path": "public/EMPLOYEE-DATA-NOTE.md",
+      "sha256": "3a5137f98eba120b3cab1ab20d34cfade934f6286801a182ed8edfc17d9379c8",
+      "size": 1034
+    },
+    {
+      "path": "public/EMPLOYEE-README.md",
+      "sha256": "c93dbfefb4322d664a3660f8b2cbafbb482c9cd4b29fd0c36ebbcdf288057788",
+      "size": 3259
+    },
+    {
       "path": "public/agent-plugin/fargowork/LICENSE",
-      "sha256": "9cf9a4f6577442ce23f60fedf41e6c6a6a7d8ae268e139792af1413bfc369a69",
-      "size": 11351
+      "sha256": "5b19088d30c5da6ded8e4e0155178d59dc0c3bb2f1ebcb9a4272f8cf0da77ef4",
+      "size": 11552
     },
     {
       "path": "public/agent-plugin/fargowork/README.md",
-      "sha256": "7b5f6cafa0fee4947952d568acf7cd84d413ba41492605f4990b0a6dfb4c1003",
-      "size": 1461
+      "sha256": "894521165fac9f18b2823cd9a34448ac90f206807aee8e8fa22addbb95f580c9",
+      "size": 1750
     },
     {
       "path": "public/agent-plugin/fargowork/bin/fargowork.cmd",
@@ -42,68 +57,88 @@
     },
     {
       "path": "public/agent-plugin/fargowork/mcp.json",
-      "sha256": "7195fe93cb1033446c5aceec1fa46058334779b702acab4316056784e3f9c6be",
-      "size": 242
+      "sha256": "f16897b8752f7610067e5fda1b109995a1e7610a5bfddc1ad4ed2e179e6efcb8",
+      "size": 251
     },
     {
       "path": "public/agent-plugin/fargowork/plugin.json",
-      "sha256": "4e4349ebd6b01111459dba61c38ff438194df7e2e65c48c6e2ec24ef017ea84f",
-      "size": 357
+      "sha256": "de1f2200f3ed21729415625e726aa6f1fe6512eaa5b6ae25ce8f7319da467d0e",
+      "size": 375
     },
     {
-      "path": "public/agent-plugin/fargowork/skills/fargowork/SKILL.md",
-      "sha256": "4d43849df8281e21b796478c0d3cde445e50316b96c1d67c0598271f42e75956",
-      "size": 6684
+      "path": "public/agent-plugin/fargowork/skills/fargowork-employee/SKILL.md",
+      "sha256": "62aa083cc3f2737f9d0a753f30fa4ce66703aa3750a24674088d957cadb47a82",
+      "size": 9603
     },
     {
-      "path": "public/agent-plugin/fargowork/skills/fargowork/references/time-contract.md",
+      "path": "public/agent-plugin/fargowork/skills/fargowork-employee/references/time-contract.md",
       "sha256": "b09088641213ad4d2ae38515333d08ff891ba33345801d45e86d6fa4f22be3bd",
       "size": 1846
     },
     {
-      "path": "public/agent-plugin/fargowork/skills/fargowork/references/workflow-annual-leave.md",
+      "path": "public/agent-plugin/fargowork/skills/fargowork-employee/references/workflow-annual-leave.md",
       "sha256": "c3ab9cdd34bee2013b6fd5088430461f62cd5412fd02778d2626056232d79f14",
       "size": 2302
     },
     {
-      "path": "public/agent-plugin/fargowork/skills/fargowork/references/workflow-business-trip.md",
+      "path": "public/agent-plugin/fargowork/skills/fargowork-employee/references/workflow-business-trip.md",
       "sha256": "5afd3a514e6a9d7ebfafc3a805e9d37230ad499dd41357efbac44e6a24cf1a1f",
       "size": 2208
     },
     {
+      "path": "public/bootstrap.ps1",
+      "sha256": "fa9add33b69cc60a119fe82cfec4a14f82cf658bcf53e7f4379c7400178d955c",
+      "size": 6775
+    },
+    {
       "path": "public/cli/fargowork_cli.py",
-      "sha256": "74bbba8832fd566d55f192f933642c31f26ff59e9bfb68c4960d7df494a7c6d4",
-      "size": 78930
+      "sha256": "cfde394c4b9870256893aeb821974b9c2a7b0b1a1444cd062ddb887f29438369",
+      "size": 135602
     },
     {
       "path": "public/install.ps1",
-      "sha256": "df933db6acb1b498b000cf8d871e83a6ad2b8830e7f647105255d48dc2f22fea",
-      "size": 10560
+      "sha256": "f9804e7751d41298dcf48a0b103cae5416c44baff6e700040c7b35aafd311cdc",
+      "size": 31439
     },
     {
       "path": "public/install.sh",
-      "sha256": "1a5f84c34fab23a5fff32f1ae56ea6a3a55e7445b6d63cedb0bdf268b010e743",
-      "size": 7092
+      "sha256": "0e954c3e591fbee03180860bd022927a86387a038d3c77290f22ea3615e7be5e",
+      "size": 7474
     },
     {
       "path": "public/release/public-export.json",
-      "sha256": "8a647748fd1c664d9a1b2cf6d7b3f6af1b9dbe060324c38ae27aad8e637ac84f",
-      "size": 1374
+      "sha256": "b5b00a73d30985721e4919124771a1ac25f4619374bafeef36a5c3e5947c92f6",
+      "size": 1410
     },
     {
       "path": "public/release/version.json",
-      "sha256": "6c718ee50451d85bfb5ff53e2ef3ff06c365ef0f075b250bdefba6dd9dec4c16",
-      "size": 191
+      "sha256": "e151bcbe7930bbe827165e3764d28d221f65e5d96089b47e704e97507adad107",
+      "size": 190
+    },
+    {
+      "path": "public/release/windows-trial.json",
+      "sha256": "93a0ebd95adc281cfce838d2de785b1ceb558015ccf021f2fc1184eae2360c32",
+      "size": 847
+    },
+    {
+      "path": "tests/test_employee_candidate_builder.py",
+      "sha256": "3c381d450a2e65389bc8caee8453433398bc9b93d6293b7e010fcf36814e9ae5",
+      "size": 3540
     },
     {
       "path": "tests/test_fargowork_m4_cli.py",
-      "sha256": "3041cbe15c3d90a88145f3165f2c516a003c8c0ecf7f0b7e7b8eb02328c006da",
-      "size": 29027
+      "sha256": "d260735ae962456c46b16f9ed04069293d75909108e34bde6c92e0c954a79124",
+      "size": 102696
     },
     {
       "path": "tests/test_public_plugin_release.py",
-      "sha256": "9a275bac4aaa860cdc4279595045d4f5c172915d68b65a90ee970de21076919f",
-      "size": 11834
+      "sha256": "420835b7a185823c8315d5084b90f5334221b57834dee4b74109737d43628e4f",
+      "size": 12109
+    },
+    {
+      "path": "tools/release/build_employee_candidate.py",
+      "sha256": "d97082ce1c55dbd68864621ed25921a6cd6ccc4ec8e8101dbbfd15f7e75bf867",
+      "size": 14439
     },
     {
       "path": "tools/release/build_local_release.py",
@@ -112,14 +147,34 @@
     },
     {
       "path": "tools/release/build_public_release.py",
-      "sha256": "2b1a6925ce082baa10bec13cd74a391498d4324e00055d2be06f46cf26abe4fd",
-      "size": 28960
+      "sha256": "d41452ffa65191bd330c50b8da532ffdfdac2e92bc20d9a5e663561287d12340",
+      "size": 28992
+    },
+    {
+      "path": "tools/release/test_employee_native_auth.py",
+      "sha256": "10d90f84b050a6695a95624a3a6ce70a4b80da34665cabf5cc1c9af751b6d193",
+      "size": 13081
+    },
+    {
+      "path": "tools/release/test_employee_native_trial.py",
+      "sha256": "2f6324c6cf8cd1f8ae1a297457fe60d4cbfad58a5c597585d98ab511a940eca7",
+      "size": 9217
+    },
+    {
+      "path": "tools/release/test_local_installer.ps1",
+      "sha256": "d2459cedc5e83e810c6d005d76d0ab7e1a9fb107d4c0f2cb6bf8b44f69d65919",
+      "size": 37724
+    },
+    {
+      "path": "tools/release/test_windows_bootstrap.ps1",
+      "sha256": "ee48ab9dc24aae55d6f9ca9368874c8eff2bc7f28779d7c59ce4c5e2fce1564b",
+      "size": 11575
     }
   ],
   "format": "fargowork-public-repository-export/v1",
   "license": "Apache-2.0",
   "private_components_included": false,
   "repository": "Ansel-O/fargowork",
-  "source_revision": "21c139a9c8dc5f87611655daf2735144b4787a58",
+  "source_revision": "6607dfb8a2d7b0ced394f6e159976551533df99a",
   "visibility": "public"
 }

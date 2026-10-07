@@ -16,6 +16,9 @@ permissions:
 
 jobs:
   package-plugin:
+    # A published Windows trial reuses its locally verified frozen bundle.
+    # Tag pushes must not rebuild it or race the manually published Release.
+    if: ${{ github.repository == 'Ansel-O/fargowork' && github.event_name == 'workflow_dispatch' }}
     name: Package Agent Plugin source
     runs-on: ubuntu-latest
     outputs:

@@ -1,0 +1,2 @@
+# Preserve reviewed export bytes so EXPORT-MANIFEST hashes survive Git staging.
+* -text

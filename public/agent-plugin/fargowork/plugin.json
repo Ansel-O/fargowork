@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "fargowork",
-  "version": "0.5.0-rc.5",
-  "description": "FargoWork governed office workflow Agent Plugin.",
+  "name": "fargowork-employee",
+  "version": "1.1.0",
+  "description": "FargoWork governed office workflow Agent Plugin for employees.",
   "author": {
     "name": "FargoWork maintainers"
   },

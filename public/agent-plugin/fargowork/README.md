@@ -1,26 +1,13 @@
-# FargoWork Agent Plugin
+# FargoWork Employee Agent Plugin
 
-This is the FargoWork public Agent Plugin package. It targets Agent Plugins 1.0.0 and
-contains one Agent Skill plus a plugin-relative stdio bridge declaration.
+This portable Agent Plugins 1.0.0 package contains one standard employee Skill and a plugin-relative stdio MCP bridge. The plugin identity is `fargowork-employee`, separate from the maintainer's private development plugin.
 
-The installer places the matching platform `fargowork` executable beside
-`bin/fargowork.cmd`. The executable is the single FargoWork CLI and bridge;
-the plugin does not contain credentials, an endpoint secret, or workflow rules.
+The current employee trial delivers a Windows x64 executable. macOS is deferred. The core Skill and MCP contract are independent of the AI client; installation adapters configure known hosts, while third-party hosts use the emitted absolute executable and `bridge` arguments. Adapter tests are not a claim of actual employee acceptance in every client.
 
-Agent Plugins v1 leaves OAuth, authorization discovery, user interaction, and
-credential storage to the client. FargoWork's CLI owns the OAuth Authorization
-Code + S256 PKCE handoff and stores only the rotated refresh token in the OS
-secure credential store. The bridge keeps access tokens in memory and injects
-them into the configured FargoWork MCP resource.
+The matching executable is installed beside `bin/fargowork.cmd`. The CLI owns FargoWork OAuth Authorization Code + S256 PKCE and Windows DPAPI refresh-credential storage. The bridge keeps access tokens in memory and connects to the administrator-configured cloud MCP resource. Client trust and enable state remain user-controlled.
 
-The installer uses the official CodeBuddy user-scope MCP CLI when it is
-available, registering the installed launcher without copying credentials. On
-WorkBuddy, use Settings -> Connectors -> Custom Connector (or Settings -> MCP)
-to trust and enable the FargoWork entry; this UI trust state remains
-user-controlled and the CLI reports it as `unknown` until enabled.
+Agent Plugins v1 does not define portable OAuth configuration or credential references. Clients differ in plugin path expansion and installation; where native plugin loading is incomplete, use the installation adapter or a verified standard stdio registration. The client-facing Bridge negotiates `2025-11-25`; the cloud uses `2026-07-28`.
 
-The server remains authoritative for workflow manifests, fields, permissions,
-validation, preview, confirmation, submission, and audit. The Skill contains
-only public conversation and safety contracts; it does not contain Yida field
-IDs, form identifiers, internal rules, production configuration, or business
-data.
+The Skill contains public conversation and safety contracts, not Yida field IDs, form identifiers, approval rules, credentials, or business data. The server enforces identity, ownership, permissions, fixed targets, validation, and submission policy. Human preview confirmation currently remains a Skill/chat responsibility.
+
+Use a service issuer provided by the administrator. Keep personal preferences outside the managed official Skill so updates preserve them.
