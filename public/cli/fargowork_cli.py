@@ -27,6 +27,7 @@ import os
 import platform
 import secrets
 import shutil
+import socket
 import stat
 import subprocess
 import sys
@@ -38,14 +39,22 @@ import urllib.parse
 import urllib.request
 import webbrowser
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 from urllib.parse import urlsplit
 
+# The CLI is also imported by the public source tests with importlib.  Keep
+# these two stdlib-only client modules discoverable in that execution mode.
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+from client_diagnostics import DiagnosticError, DiagnosticLog, EVENTS, PHASES, OUTCOMES, diagnostic_id, safe_error_code
+from employee_profile import ProfileError, ProfileStore
 
-VERSION = "1.1.0"
+
+VERSION = "1.2.0"
 MCP_PROTOCOL_VERSION = "2026-07-28"
 BRIDGE_PROTOCOL_VERSION = "2025-11-25"
 BRIDGE_SUPPORTED_PROTOCOL_VERSIONS = (BRIDGE_PROTOCOL_VERSION,)
@@ -90,6 +99,38 @@ class VaultError(FargoWorkError):
 
 _REFRESH_LOCKS: dict[str, threading.Lock] = {}
 _REFRESH_LOCKS_GUARD = threading.Lock()
+_DIAGNOSTIC_CONTEXT: ContextVar[DiagnosticLog | None] = ContextVar("fargowork_client_diagnostics", default=None)
+
+
+def _diagnostic_record(log: DiagnosticLog | None, event: str, phase: str, **fields: Any) -> None:
+    if log is None:
+        return
+    try:
+        written = log.record(event, phase, **fields)
+    except Exception:
+        log.write_failed = True
+        written = False
+    if not written:
+        log.write_failed = True
+    if not written and not log._warned:
+        log._warned = True
+        # stderr is safe for the stdio Bridge.  Never write a diagnostic line
+        # to protocol stdout or make a successful business action fail.
+        try:
+            print("FargoWork: diagnostic_write_failed", file=sys.stderr, flush=True)
+        except (OSError, ValueError):
+            pass
+
+
+def _current_profile(config: "Config", identity: Mapping[str, Any]) -> dict[str, Any]:
+    """Called only with a principal returned by a successful Server me call."""
+    try:
+        profile = ProfileStore(config.home, VERSION).open_for_verified_identity(identity)
+        _diagnostic_record(_DIAGNOSTIC_CONTEXT.get(), "profile_result", "profile", outcome="succeeded")
+        return {"status": "ready", **profile}
+    except (ProfileError, OSError, ValueError) as exc:
+        _diagnostic_record(_DIAGNOSTIC_CONTEXT.get(), "profile_result", "profile", outcome="failed", error_code=getattr(exc, "code", "profile_unavailable"))
+        return {"status": "unavailable", "error_code": getattr(exc, "code", "profile_unavailable")}
 
 
 @contextmanager
@@ -300,6 +341,7 @@ class Config:
     plugin_dir: Path = field(default_factory=_plugin_home)
     version: str = VERSION
     environment: str = CLIENT_ENVIRONMENT
+    codex_path: str = ""
 
     @property
     def credential_fingerprint(self) -> str:
@@ -373,6 +415,7 @@ class Config:
             plugin_dir=Path(str(values.get("plugin_dir", _plugin_home()))).expanduser().resolve() if CLIENT_ENVIRONMENT == "development" else _plugin_home(),
             version=str(values.get("version", VERSION)),
             environment=CLIENT_ENVIRONMENT,
+            codex_path=str(values.get("codex_path") or ""),
         )
         if not config.client_id or any(char.isspace() for char in config.client_id):
             raise FargoWorkError("client_id is invalid", code="invalid_config", exit_code=EXIT_USAGE)
@@ -391,6 +434,7 @@ class Config:
             "plugin_dir": str(self.plugin_dir),
             "version": self.version,
             "environment": self.environment,
+            "codex_path": self.codex_path,
         }
         _atomic_write(self.home / "config.json", _json_bytes(payload))
 
@@ -597,14 +641,24 @@ class TokenSession:
     vault: Any | None = None
     access_token: str | None = None
     access_expires_at: float = 0.0
+    diagnostics: DiagnosticLog | None = None
 
     def __post_init__(self) -> None:
         if self.vault is None:
             self.vault = self.config.secure_vault()
+        if self.diagnostics is None:
+            self.diagnostics = _DIAGNOSTIC_CONTEXT.get() or DiagnosticLog.for_home(self.config.home, version=VERSION)
 
     def _request_json(self, method: str, url: str, *, data: Mapping[str, str] | None = None, headers: Mapping[str, str] | None = None, timeout: float = 15.0) -> tuple[int, dict[str, Any]]:
+        request_id = diagnostic_id()
+        phase = "token" if urlsplit(url).path == "/oauth/token" else "identity" if urlsplit(url).path == "/auth/me" else "login"
+        started = time.monotonic()
         encoded = urllib.parse.urlencode(data or {}).encode("utf-8") if data is not None else None
         request = urllib.request.Request(url, data=encoded, method=method.upper())
+        request.add_header("X-Trace-ID", request_id)
+        request.add_header("X-FargoWork-Attempt-ID", self.diagnostics.attempt_id)
+        if phase == "token":
+            _diagnostic_record(self.diagnostics, "token_request_started", phase, request_id=request_id, outcome="started")
         if data is not None:
             request.add_header("Content-Type", "application/x-www-form-urlencoded")
         for key, value in (headers or {}).items():
@@ -614,8 +668,10 @@ class TokenSession:
             with opener.open(request, timeout=timeout) as response:
                 body = response.read()
                 status = int(response.status)
+                server_trace = response.headers.get("X-Trace-ID", "")
         except urllib.error.HTTPError as exc:
             if 300 <= int(exc.code) < 400:
+                _diagnostic_record(self.diagnostics, "http_request_result", phase, request_id=request_id, http_status=int(exc.code), outcome="rejected", error_code="endpoint_redirect_rejected", duration_ms=int((time.monotonic() - started) * 1000))
                 raise FargoWorkError(
                     "FargoWork endpoint redirected; credential forwarding was refused",
                     code="endpoint_redirect_rejected",
@@ -623,8 +679,11 @@ class TokenSession:
                 ) from exc
             body = exc.read()
             status = int(exc.code)
+            server_trace = exc.headers.get("X-Trace-ID", "")
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            _diagnostic_record(self.diagnostics, "http_request_result", phase, request_id=request_id, outcome="unavailable", error_code="endpoint_unavailable", duration_ms=int((time.monotonic() - started) * 1000))
             raise FargoWorkError(f"FargoWork endpoint is unavailable: {urlsplit(url).netloc}", code="endpoint_unavailable", exit_code=EXIT_UNAVAILABLE) from exc
+        _diagnostic_record(self.diagnostics, "token_request_result" if phase == "token" else "http_request_result", phase, request_id=request_id, server_trace_id=server_trace, http_status=status, duration_ms=int((time.monotonic() - started) * 1000), outcome="succeeded" if status < 400 else "failed")
         try:
             payload = json.loads(body.decode("utf-8")) if body else {}
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -715,14 +774,27 @@ class TokenSession:
             access = self.refresh()
             status, payload = self._request_json("GET", f"{self.config.issuer}/auth/me", headers={"Authorization": f"Bearer {access}"})
         if status >= 400:
+            _diagnostic_record(self.diagnostics, "identity_result", "identity", outcome="failed", error_code="auth_required")
             raise AuthRequired("FargoWork identity could not be verified; login is required")
+        if any(not isinstance(payload.get(key), str) or not payload[key].strip() or len(payload[key]) > 256 or any(ord(char) < 32 or ord(char) == 127 for char in payload[key]) for key in ("userid", "corp_id")):
+            _diagnostic_record(self.diagnostics, "identity_result", "identity", outcome="failed", error_code="invalid_response")
+            raise FargoWorkError("FargoWork identity response is incomplete; current identity could not be verified", code="invalid_response", exit_code=EXIT_UNAVAILABLE)
+        _diagnostic_record(self.diagnostics, "identity_result", "identity", outcome="succeeded")
         return {key: payload[key] for key in ("userid", "name", "corp_id", "scope") if key in payload}
 
     def login(self, *, browser: str = "auto", timeout: float = 300.0) -> tuple[str, dict[str, Any]]:
+        try:
+            return self._login(browser=browser, timeout=timeout)
+        except Exception as exc:
+            _diagnostic_record(self.diagnostics, "login_finished", "finish", outcome="failed", error_code=getattr(exc, "code", "unknown_error"), exit_code=getattr(exc, "exit_code", EXIT_UNAVAILABLE))
+            raise
+
+    def _login(self, *, browser: str = "auto", timeout: float = 300.0) -> tuple[str, dict[str, Any]]:
+        _diagnostic_record(self.diagnostics, "login_started", "login", outcome="started")
         verifier = _b64(secrets.token_bytes(32))
         challenge = _b64(hashlib.sha256(verifier.encode("ascii")).digest())
         state = _b64(secrets.token_bytes(32))
-        callback = _CallbackWaiter(self.config.redirect_uri, expected_state=state, expected_issuer=self.config.issuer)
+        callback = _CallbackWaiter(self.config.redirect_uri, expected_state=state, expected_issuer=self.config.issuer, diagnostics=self.diagnostics)
         query = urllib.parse.urlencode({
             "client_id": self.config.client_id,
             "redirect_uri": self.config.redirect_uri,
@@ -732,17 +804,23 @@ class TokenSession:
             "resource": self.config.resource,
             "scope": self.config.scope,
             "state": state,
+            "diagnostic_attempt_id": self.diagnostics.attempt_id,
         })
         auth_url = f"{self.config.issuer}/oauth/authorize?{query}"
-        callback.start()
         try:
+            callback.start()
             if browser != "never":
                 try:
-                    webbrowser.open(auth_url, new=2)
+                    opened = webbrowser.open(auth_url, new=2)
+                    _diagnostic_record(self.diagnostics, "browser_open_result", "browser", outcome="succeeded" if opened else "unavailable")
                 except Exception:
+                    _diagnostic_record(self.diagnostics, "browser_open_result", "browser", outcome="unavailable", error_code="browser_unavailable")
                     if browser == "always":
                         raise FargoWorkError("browser could not be opened; use --browser never and open the displayed URL", code="browser_unavailable", exit_code=EXIT_NEEDS_ACTION)
+            else:
+                _diagnostic_record(self.diagnostics, "browser_open_result", "browser", outcome="not_attempted")
             _emit_event({"event": "login_authorization_url", "url": auth_url}, force_json=True)
+            _diagnostic_record(self.diagnostics, "authorization_waiting", "callback", outcome="waiting")
             result = callback.wait(timeout)
         finally:
             callback.close()
@@ -770,7 +848,9 @@ class TokenSession:
         if status >= 400:
             raise FargoWorkError("OAuth authorization code exchange failed", code=str(payload.get("error") or "token_exchange_failed"), exit_code=EXIT_NEEDS_ACTION)
         self._set_access(payload)
-        return auth_url, self.me()
+        identity = self.me()
+        _diagnostic_record(self.diagnostics, "login_finished", "finish", outcome="succeeded")
+        return auth_url, identity
 
 
 class _CallbackHandler(BaseHTTPRequestHandler):
@@ -780,25 +860,61 @@ class _CallbackHandler(BaseHTTPRequestHandler):
         if parsed.path != waiter.path:
             self.send_error(404)
             return
+        if len(parsed.query) > 8192:
+            waiter.reject(self, "oauth_callback_invalid")
+            return
         params = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
-        waiter.result = {key: values[-1] for key, values in params.items()}
+        if any(len(values) != 1 for values in params.values()):
+            waiter.reject(self, "oauth_callback_invalid")
+            return
+        result = {key: values[0] for key, values in params.items() if key in {"state", "iss", "code", "error"}}
+        if not result.get("state", "").isascii() or not hmac.compare_digest(result.get("state", ""), waiter.expected_state):
+            waiter.reject(self, "oauth_state_mismatch")
+            return
+        if result.get("iss", "") != waiter.expected_issuer:
+            waiter.reject(self, "oauth_issuer_mismatch")
+            return
+        if not result.get("code") and not result.get("error"):
+            waiter.reject(self, "oauth_callback_invalid")
+            return
+        with waiter.result_lock:
+            if waiter.event.is_set():
+                self.send_error(409, "This login callback was already received.")
+                return
+            waiter.result = result
+            waiter.event.set()
+        _diagnostic_record(waiter.diagnostics, "callback_accepted", "callback", outcome="matched", matched=True)
         self.send_response(200)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.end_headers()
-        self.wfile.write(b"FargoWork login callback received. You can close this window.")
-        waiter.event.set()
+        self.wfile.write(b"FargoWork callback validated. Return to your AI client to confirm that token exchange and identity verification completed.")
 
     def log_message(self, _format: str, *_args: Any) -> None:
         return
 
 
+class _ExclusiveCallbackServer(ThreadingHTTPServer):
+    # SO_REUSEADDR on Windows can allow two active listeners on one callback
+    # port.  This loopback listener must have exactly one owner.
+    allow_reuse_address = False
+    allow_reuse_port = False
+
+    def server_bind(self) -> None:
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 class _CallbackWaiter:
-    def __init__(self, redirect_uri: str, *, expected_state: str, expected_issuer: str):
-        del expected_state, expected_issuer
+    def __init__(self, redirect_uri: str, *, expected_state: str, expected_issuer: str, diagnostics: DiagnosticLog | None = None):
+        self.expected_state = expected_state
+        self.expected_issuer = expected_issuer
+        self.diagnostics = diagnostics
         parsed = urlsplit(redirect_uri)
         self.path = parsed.path
         self.event = threading.Event()
         self.result: dict[str, str] = {}
+        self.result_lock = threading.Lock()
         self.server: ThreadingHTTPServer | None = None
         self.thread: threading.Thread | None = None
         self.redirect_uri = redirect_uri
@@ -809,13 +925,22 @@ class _CallbackWaiter:
         if host not in {"127.0.0.1", "::1"} or parsed.port is None:
             raise FargoWorkError("OAuth redirect must use the fixed loopback callback", code="invalid_redirect", exit_code=EXIT_USAGE)
         try:
-            self.server = ThreadingHTTPServer((host, parsed.port), _CallbackHandler)
+            self.server = _ExclusiveCallbackServer((host, parsed.port), _CallbackHandler)
         except OSError as exc:
-            raise FargoWorkError("OAuth callback port 37680 is unavailable", code="callback_port_unavailable", exit_code=EXIT_NEEDS_ACTION) from exc
+            _diagnostic_record(self.diagnostics, "listener_failed", "listener", outcome="failed", error_code="callback_port_unavailable")
+            raise FargoWorkError("OAuth callback port 37680 is unavailable. Another login may be waiting; finish or cancel that login before retrying. The existing login was left unchanged.", code="callback_port_unavailable", exit_code=EXIT_NEEDS_ACTION) from exc
         self.server.daemon_threads = True
         self.server.waiter = self  # type: ignore[attr-defined]
         self.thread = threading.Thread(target=self.server.serve_forever, name="fargowork-oauth-callback", daemon=True)
         self.thread.start()
+        _diagnostic_record(self.diagnostics, "listener_ready", "listener", outcome="succeeded")
+
+    def reject(self, handler: _CallbackHandler, reason: str) -> None:
+        _diagnostic_record(self.diagnostics, "callback_rejected", "callback", outcome="mismatch", error_code=reason, matched=False)
+        handler.send_response(400)
+        handler.send_header("Content-Type", "text/plain; charset=utf-8")
+        handler.end_headers()
+        handler.wfile.write(b"This callback does not belong to the waiting FargoWork login and was rejected. Open the current login link; the current login is still waiting.")
 
     def wait(self, timeout: float) -> dict[str, str]:
         if not self.event.wait(timeout):
@@ -857,6 +982,8 @@ class MCPHTTPClient:
         return self._decode(result)
 
     def _post(self, message: Mapping[str, Any], method: str, access: str) -> HTTPResult:
+        request_id = diagnostic_id()
+        started = time.monotonic()
         parsed = urlsplit(self.session.config.resource)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
             raise FargoWorkError("MCP resource endpoint is invalid", code="invalid_config", exit_code=EXIT_USAGE)
@@ -867,6 +994,8 @@ class MCPHTTPClient:
             "Authorization": f"Bearer {access}",
             "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
             "Mcp-Method": method,
+            "X-Trace-ID": request_id,
+            "X-FargoWork-Attempt-ID": self.session.diagnostics.attempt_id,
         }
         if method == "tools/call":
             params = message.get("params")
@@ -886,8 +1015,11 @@ class MCPHTTPClient:
             connection.request("POST", path, body=body, headers=headers)
             response = connection.getresponse()
             raw = response.read()
-            return HTTPResult(response.status, {key.lower(): value for key, value in response.getheaders()}, raw)
+            response_headers = {key.lower(): value for key, value in response.getheaders()}
+            _diagnostic_record(self.session.diagnostics, "http_request_result", "bridge", request_id=request_id, server_trace_id=response_headers.get("x-trace-id", ""), http_status=response.status, duration_ms=int((time.monotonic() - started) * 1000), outcome="succeeded" if response.status < 400 else "failed")
+            return HTTPResult(response.status, response_headers, raw)
         except (OSError, http.client.HTTPException) as exc:
+            _diagnostic_record(self.session.diagnostics, "http_request_result", "bridge", request_id=request_id, outcome="unavailable", error_code="endpoint_unavailable", duration_ms=int((time.monotonic() - started) * 1000))
             raise FargoWorkError(f"MCP endpoint is unavailable: {parsed.netloc}", code="mcp_unavailable", exit_code=EXIT_UNAVAILABLE) from exc
         finally:
             try:
@@ -1161,6 +1293,9 @@ def run_bridge(
 
 
 def _emit_event(payload: Mapping[str, Any], *, force_json: bool = False, output: str = "human") -> None:
+    log = _DIAGNOSTIC_CONTEXT.get()
+    if log is not None:
+        payload = {**payload, "attempt_id": log.attempt_id, "diagnostic_log_dir": str(log.root), "diagnostic_write_failed": log.write_failed}
     if force_json or output == "jsonl":
         # ASCII escapes preserve Unicode paths through Windows PowerShell 5.1
         # native-command pipes, regardless of the console's current code page.
@@ -1307,6 +1442,15 @@ def _detect_command(*names: str) -> dict[str, Any]:
         if path:
             return {"detected": True, "executable": path}
     return {"detected": False, "executable": None}
+
+
+def _explicit_codex_path(value: str) -> str:
+    path = Path(value).expanduser()
+    if not path.is_absolute() or path.name.lower() not in {"codex", "codex.exe"}:
+        raise FargoWorkError("--codex-path must be an absolute path to codex.exe (or codex)", code="client_not_detected", exit_code=EXIT_NEEDS_ACTION)
+    if _is_link_or_reparse(path) or not path.is_file():
+        raise FargoWorkError("The specified Codex executable is unavailable; supply its current path. No alternate executable was guessed.", code="client_not_detected", exit_code=EXIT_NEEDS_ACTION)
+    return str(path.absolute())
 
 
 def _owned_path(path: Path) -> bool:
@@ -1481,6 +1625,15 @@ class ClientAdapters:
 
     def _native_bridge_command(self) -> str:
         return _manual_mcp_registration(self.config)["command"]
+
+    def _detect_codex(self) -> dict[str, Any]:
+        if self.config.codex_path:
+            try:
+                path = _explicit_codex_path(self.config.codex_path)
+                return {"detected": True, "executable": path, "detection": "explicit-path"}
+            except FargoWorkError:
+                return {"detected": False, "executable": None, "detection": "explicit-path-unavailable", "reason": "Configured Codex executable is unavailable; use --codex-path with the current path. No alternate executable was guessed."}
+        return _detect_command("codex")
 
     def manual(self) -> dict[str, Any]:
         return {
@@ -1704,7 +1857,7 @@ class ClientAdapters:
         return self.workbuddy()
 
     def codex(self) -> dict[str, Any]:
-        detected = _detect_command("codex")
+        detected = self._detect_codex()
         path = self.config.home / "adapters" / "codex.json"
         foreign, owned = self._foreign_or_owned_entry(path)
         skill = self._codex_skill_status()
@@ -1994,7 +2147,7 @@ class ClientAdapters:
         return self._codex_native_entry_matches(entry)
 
     def _register_codex_official(self, path: Path) -> dict[str, Any]:
-        detected = _detect_command("codex")
+        detected = self._detect_codex()
         if not detected["detected"]:
             return {**self.codex(), "registration": "not_detected", "needs_user_action": False, "reason": "Codex is not installed; skipped."}
         self._install_codex_skill()
@@ -2064,7 +2217,7 @@ class ClientAdapters:
         registration = owned.get("registration")
         if registration == "fargowork-owned-fixture":
             if self.config.environment != "development":
-                detected = _detect_command("codex")
+                detected = self._detect_codex()
                 if not detected["detected"]:
                     return {"uninstalled": False, "needs_user_action": True, "reason": "fixture sidecar is not ownership proof for the employee release; Codex could not be verified, so it was preserved."}
                 native = self._codex_mcp_state(detected["executable"])
@@ -2077,7 +2230,7 @@ class ClientAdapters:
         if registration != "official-codex-cli":
             return {"uninstalled": False, "needs_user_action": True, "reason": "Codex sidecar does not identify an owned official registration; it was preserved."}
 
-        detected = _detect_command("codex")
+        detected = self._detect_codex()
         if not detected["detected"]:
             return {"uninstalled": False, "needs_user_action": True, "reason": "Codex is unavailable; the owned registration and Skill were preserved."}
         native = self._codex_mcp_state(detected["executable"])
@@ -2359,7 +2512,7 @@ class ClientAdapters:
                 except (OSError, ValueError, json.JSONDecodeError):
                     pass
                 if entry.get("registration") == "official-codex-cli" and name == "codex":
-                    executable = _detect_command("codex")["executable"]
+                    executable = self._detect_codex()["executable"]
                     if executable:
                         result = subprocess.run([executable, "mcp", "remove", PLUGIN_NAME], capture_output=True, text=True, encoding="utf-8", check=False)
                         if result.returncode != 0:
@@ -2472,6 +2625,8 @@ def _build_parser() -> argparse.ArgumentParser:
     install.add_argument("--redirect-uri")
     install.add_argument("--registration-mode", choices=registration_modes, default="auto")
     install.add_argument("--output", choices=("human", "jsonl"), default="human")
+    install.add_argument("--codex-path")
+    install.add_argument("--attempt-id")
 
     for name in ("doctor", "repair", "uninstall", "status", "logout"):
         command = sub.add_parser(name, help=f"{name} FargoWork")
@@ -2479,20 +2634,47 @@ def _build_parser() -> argparse.ArgumentParser:
         if name == "repair":
             command.add_argument("--registration-mode", choices=registration_modes, default="auto")
         command.add_argument("--output", choices=("human", "jsonl"), default="human")
+        command.add_argument("--codex-path")
+        command.add_argument("--attempt-id")
 
     login = sub.add_parser("login", help="login with DingTalk-backed FargoWork OAuth")
     login.add_argument("--browser", choices=("auto", "always", "never"), default="auto")
     login.add_argument("--timeout", type=float, default=300.0)
     login.add_argument("--output", choices=("human", "jsonl"), default="human")
+    login.add_argument("--attempt-id")
 
     update = sub.add_parser("update", help="check for a stable public Release")
     update.add_argument("--output", choices=("human", "jsonl"), default="human")
+    update.add_argument("--attempt-id")
 
     version_command = sub.add_parser("version", help="print the FargoWork CLI version")
     version_command.add_argument("--output", choices=("human", "jsonl"), default="human")
+    version_command.add_argument("--attempt-id")
 
     bridge = sub.add_parser("bridge", help="proxy MCP JSON-RPC over stdio")
     bridge.add_argument("--output", choices=("human", "jsonl"), default="jsonl")
+    bridge.add_argument("--attempt-id")
+
+    profile = sub.add_parser("profile", help="manage only the Server-verified current employee's local preferences")
+    profile.add_argument("profile_action", choices=("show", "keep", "reset", "set"))
+    profile.add_argument("--language", choices=("zh-CN", "en"))
+    profile.add_argument("--response-style", choices=("concise", "balanced", "detailed"))
+    profile.add_argument("--attempt-id")
+    profile.add_argument("--output", choices=("human", "jsonl"), default="human")
+
+    diagnostics = sub.add_parser("diagnostics", help="record or explicitly export only payload-free local diagnostics")
+    diagnostics.add_argument("diagnostic_action", choices=("record", "export"))
+    diagnostics.add_argument("--event", choices=sorted(EVENTS))
+    diagnostics.add_argument("--phase", choices=sorted(PHASES))
+    diagnostics.add_argument("--component", choices=("cli", "bridge", "installer", "bootstrap", "launcher"), default="cli")
+    diagnostics.add_argument("--outcome", choices=sorted(OUTCOMES))
+    diagnostics.add_argument("--error-code")
+    diagnostics.add_argument("--exit-code", type=int)
+    diagnostics.add_argument("--duration-ms", type=int)
+    diagnostics.add_argument("--attempt-id")
+    diagnostics.add_argument("--days", type=int, default=7)
+    diagnostics.add_argument("--destination", type=Path)
+    diagnostics.add_argument("--output", choices=("human", "jsonl"), default="human")
     return parser
 
 
@@ -2528,11 +2710,20 @@ def _require_configured(config: Config) -> None:
         raise FargoWorkError("FargoWork service is not configured; install with the service issuer supplied by your administrator", code="configuration_required", exit_code=EXIT_USAGE)
 
 
-def main(argv: Iterable[str] | None = None) -> int:
-    args = _build_parser().parse_args(list(argv) if argv is not None else None)
+def _run_main(args: argparse.Namespace, holder: dict[str, Any]) -> int:
     output = getattr(args, "output", "human")
     try:
         config = Config.load()
+        attempt = getattr(args, "attempt_id", None)
+        try:
+            log = DiagnosticLog.for_home(config.home, version=VERSION, command=args.command, component="bridge" if args.command == "bridge" else getattr(args, "component", "cli"), attempt_id=attempt)
+        except ValueError as exc:
+            raise FargoWorkError("--attempt-id must be a canonical lowercase UUID", code="usage", exit_code=EXIT_USAGE) from exc
+        holder["log"] = log
+        holder["context_token"] = _DIAGNOSTIC_CONTEXT.set(log)
+        _diagnostic_record(log, "cli_started", "start", outcome="started")
+        if getattr(args, "codex_path", None):
+            config.codex_path = _explicit_codex_path(args.codex_path)
         adapters = ClientAdapters(config, registration_mode=getattr(args, "registration_mode", "auto"))
         if args.command == "version":
             _emit_event(
@@ -2570,6 +2761,8 @@ def main(argv: Iterable[str] | None = None) -> int:
             _emit_event(payload, output=output)
             return EXIT_NEEDS_ACTION if payload["status"] == "needs_user_action" else EXIT_OK
         if args.command == "repair":
+            if getattr(args, "codex_path", None):
+                config.save()
             _prepare_plugin(config)
             _prepare_canonical_skill(config)
             clients = adapters.register(args.target)
@@ -2595,6 +2788,8 @@ def main(argv: Iterable[str] | None = None) -> int:
             session = TokenSession(config)
             auth_url, identity = session.login(browser=args.browser, timeout=args.timeout)
             payload = {"event": "logged_in", "connected": True, "identity_verified": True, "identity": identity, "issuer": config.issuer, "resource": config.resource}
+            payload["profile"] = _current_profile(config, identity)
+            payload["profile_pending_reset"] = payload["profile"].get("reset_prompt_pending") is True
             _emit_event(payload, output=output)
             return EXIT_OK
         if args.command == "logout":
@@ -2619,6 +2814,9 @@ def main(argv: Iterable[str] | None = None) -> int:
                 connected=connected,
                 identity=identity,
             )
+            if identity is not None:
+                payload["profile"] = _current_profile(config, identity)
+                payload["profile_pending_reset"] = payload["profile"].get("reset_prompt_pending") is True
             _emit_event(payload, output=output)
             return EXIT_NEEDS_ACTION if payload["needs_user_action"] else EXIT_OK
         if args.command == "update":
@@ -2628,15 +2826,91 @@ def main(argv: Iterable[str] | None = None) -> int:
         if args.command == "bridge":
             _require_configured(config)
             return run_bridge(TokenSession(config))
+        if args.command == "profile":
+            _require_configured(config)
+            if args.profile_action != "set" and (args.language or args.response_style):
+                raise FargoWorkError("Preference flags are accepted only by profile set", code="usage", exit_code=EXIT_USAGE)
+            identity = TokenSession(config).me()
+            store = ProfileStore(config.home, VERSION)
+            try:
+                if args.profile_action == "show":
+                    result = store.open_for_verified_identity(identity)
+                elif args.profile_action in {"keep", "reset"}:
+                    result = store.decide_reset(identity, reset=args.profile_action == "reset")
+                else:
+                    preferences = {}
+                    if args.language:
+                        preferences["language"] = args.language
+                    if args.response_style:
+                        preferences["response_style"] = args.response_style
+                    if not preferences:
+                        raise FargoWorkError("profile set requires a preference flag", code="usage", exit_code=EXIT_USAGE)
+                    result = store.update_preferences(identity, preferences)
+            except ProfileError as exc:
+                raise FargoWorkError(str(exc), code=exc.code, exit_code=EXIT_NEEDS_ACTION) from exc
+            _diagnostic_record(log, "profile_result", "profile", outcome="succeeded")
+            _emit_event({"event": "profile", "status": "ready", "action": args.profile_action, "identity_verified": True, "identity": {key: identity[key] for key in ("corp_id", "userid") if key in identity}, "profile": result, "profile_pending_reset": result.get("reset_prompt_pending") is True}, output=output)
+            return EXIT_OK
+        if args.command == "diagnostics":
+            if args.diagnostic_action == "record":
+                if not args.event or not args.phase:
+                    raise FargoWorkError("diagnostics record requires --event and --phase", code="usage", exit_code=EXIT_USAGE)
+                recorded = log.record(args.event, args.phase, outcome=args.outcome, error_code=args.error_code, exit_code=args.exit_code, duration_ms=args.duration_ms)
+                _emit_event({"event": "diagnostic_recorded" if recorded else "diagnostic_write_failed", "recorded": recorded}, output=output)
+                return EXIT_OK if recorded else EXIT_UNAVAILABLE
+            if args.destination is None:
+                raise FargoWorkError("diagnostics export requires --destination NEW_FILE.zip", code="usage", exit_code=EXIT_USAGE)
+            try:
+                result = log.export(args.destination, days=args.days)
+            except DiagnosticError as exc:
+                raise FargoWorkError(str(exc), code="diagnostic_export_failed", exit_code=EXIT_UNAVAILABLE) from exc
+            _diagnostic_record(log, "diagnostic_exported", "export", outcome="succeeded")
+            _emit_event({"event": "diagnostics_exported", "status": "ready", **result}, output=output)
+            return EXIT_OK
         raise FargoWorkError("unknown command", code="usage", exit_code=EXIT_USAGE)
     except FargoWorkError as exc:
-        payload = {"event": "error", "status": "error", "code": exc.code, "message": str(exc), "needs_user_action": exc.exit_code == EXIT_NEEDS_ACTION, "mutation_may_have_happened": exc.code == "registration_rollback_required" or bool(getattr(exc, "mutation_may_have_happened", False))}
-        _emit_event(payload, output=output)
+        holder["error_code"] = exc.code
+        payload = {"event": "error", "status": "error", "error_code": safe_error_code(exc.code), "exit_code": exc.exit_code, "message": str(exc), "needs_user_action": exc.exit_code == EXIT_NEEDS_ACTION, "mutation_may_have_happened": exc.code == "registration_rollback_required" or bool(getattr(exc, "mutation_may_have_happened", False))}
+        if args.command == "bridge":
+            print(f"FargoWork Bridge: {safe_error_code(exc.code)}", file=sys.stderr, flush=True)
+        else:
+            _emit_event(payload, output=output)
         return exc.exit_code
     except (OSError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
-        payload = {"event": "error", "status": "error", "code": "runtime_error", "message": "FargoWork could not complete the operation", "needs_user_action": False}
-        _emit_event(payload, output=output)
+        holder["error_code"] = "runtime_error"
+        payload = {"event": "error", "status": "error", "error_code": "runtime_error", "exit_code": EXIT_UNAVAILABLE, "message": "FargoWork could not complete the operation", "needs_user_action": False}
+        if args.command == "bridge":
+            print("FargoWork Bridge: runtime_error", file=sys.stderr, flush=True)
+        else:
+            _emit_event(payload, output=output)
         return EXIT_UNAVAILABLE
+
+
+def main(argv: Iterable[str] | None = None) -> int:
+    args = _build_parser().parse_args(list(argv) if argv is not None else None)
+    holder: dict[str, Any] = {}
+    code = EXIT_UNAVAILABLE
+    try:
+        code = _run_main(args, holder)
+        return code
+    except KeyboardInterrupt:
+        code = EXIT_NEEDS_ACTION
+        holder["error_code"] = "login_cancelled"
+        payload = {"event": "error", "error_code": "login_cancelled", "status": "cancelled", "message": "FargoWork operation cancelled. Check status before starting another login; no cleanup or business retry was performed."}
+        if args.command == "bridge":
+            print("FargoWork Bridge: login_cancelled", file=sys.stderr, flush=True)
+        else:
+            _emit_event(payload, output=getattr(args, "output", "human"))
+        return code
+    finally:
+        log = holder.get("log")
+        if log is not None:
+            fields = {"outcome": "succeeded" if code == EXIT_OK else "failed", "exit_code": code}
+            if holder.get("error_code"):
+                fields["error_code"] = holder["error_code"]
+            _diagnostic_record(log, "cli_finished", "finish", **fields)
+        if "context_token" in holder:
+            _DIAGNOSTIC_CONTEXT.reset(holder["context_token"])
 
 
 if __name__ == "__main__":

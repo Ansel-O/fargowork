@@ -5,11 +5,11 @@
     "ordinary_employee_oauth": "not-yet-accepted"
   },
   "archive": {
-    "name": "fargowork-employee-v1.1.0-windows-x64.zip",
-    "sha256": "546fedc5fde349172ada5d1f3bae6b46e466d8b6541acf64112ca10cdf4d1fd5",
-    "size": 30577844
+    "name": "fargowork-employee-v1.2.0-windows-x64.zip",
+    "sha256": "433e8db0d2fb26697368bffedf89d6afb502748808f7886407f0131648a3a2e3",
+    "size": 30814902
   },
-  "business_submission": "disabled",
+  "business_submission": "dingtalk_role_test_only",
   "ci_provenance": "not-claimed",
   "format": "fargowork-windows-trial/v1",
   "installation_targets": [
@@ -25,6 +25,6 @@
   "service_issuer": "https://fargowork.fargowealthapp.com",
   "signing": "not-configured",
   "stage": "employee-trial",
-  "tag": "v1.1.0",
-  "version": "1.1.0"
+  "tag": "v1.2.0",
+  "version": "1.2.0"
 }

@@ -26,6 +26,8 @@ EMPLOYEE_README = ROOT / "public" / "EMPLOYEE-README.md"
 DATA_NOTE = ROOT / "public" / "EMPLOYEE-DATA-NOTE.md"
 SOURCE_ALLOWLIST = (
     "public/cli/fargowork_cli.py",
+    "public/cli/client_diagnostics.py",
+    "public/cli/employee_profile.py",
     "public/install.ps1",
     "public/EMPLOYEE-README.md",
     "public/EMPLOYEE-DATA-NOTE.md",

@@ -82,6 +82,8 @@ def _build_executable(version: str, platform_name: str, arch: str, staging: Path
             "--noconfirm",
             "--clean",
             "--onefile",
+            "--paths",
+            str(CLI_SOURCE.parent),
             "--name",
             "fargowork",
             "--distpath",

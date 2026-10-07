@@ -10,4 +10,6 @@ Agent Plugins v1 does not define portable OAuth configuration or credential refe
 
 The Skill contains public conversation and safety contracts, not Yida field IDs, form identifiers, approval rules, credentials, or business data. The server enforces identity, ownership, permissions, fixed targets, validation, and submission policy. Human preview confirmation currently remains a Skill/chat responsibility.
 
-Use a service issuer provided by the administrator. Keep personal preferences outside the managed official Skill so updates preserve them.
+Use a service issuer provided by the administrator. The official installer is a single entry for the complete Windows package; known native registration or the verified manual stdio/Skill contract remains a host responsibility.
+
+Preferences live in independent documents scoped to the verified enterprise/user. Updates preserve them and prompt once to keep or reset the current account, defaulting to keep. They never grant Server permissions. Local diagnostics share `%APPDATA%\FargoWork\diagnostics`, retain up to seven days/20 MiB, and require voluntary allowlisted export. No credentials, profile bodies or workflow bodies are included. Fargo AI/Fargo Pass is a separate product and its files are outside this package's ownership.
