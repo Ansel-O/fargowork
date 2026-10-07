@@ -2,17 +2,19 @@
   "acceptance": {
     "client_ui": "not-yet-accepted",
     "native_package": "automated-isolated-profile",
-    "ordinary_employee_oauth": "not-yet-accepted"
+    "ordinary_employee_oauth": "not-yet-accepted",
+    "business_cli": "automated-loopback-fixture"
   },
   "archive": {
-    "name": "fargowork-employee-v1.2.0-windows-x64.zip",
-    "sha256": "433e8db0d2fb26697368bffedf89d6afb502748808f7886407f0131648a3a2e3",
-    "size": 30814902
+    "name": "fargowork-employee-v1.3.0-windows-x64.zip",
+    "sha256": "89fca3b212d367eed9eb2ab023c19467dd9601bb4aca42945de8e1b9bf74751f",
+    "size": 30854565
   },
   "business_submission": "dingtalk_role_test_only",
   "ci_provenance": "not-claimed",
   "format": "fargowork-windows-trial/v1",
   "installation_targets": [
+    "cli",
     "manual",
     "cursor",
     "codex",
@@ -25,6 +27,9 @@
   "service_issuer": "https://fargowork.fargowealthapp.com",
   "signing": "not-configured",
   "stage": "employee-trial",
-  "tag": "v1.2.0",
-  "version": "1.2.0"
+  "tag": "v1.3.0",
+  "version": "1.3.0",
+  "default_installation_target": "cli",
+  "business_interface": "official-cli",
+  "host_mcp_registration_required": false
 }

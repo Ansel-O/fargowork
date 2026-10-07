@@ -25,6 +25,7 @@ import ipaddress
 import json
 import os
 import platform
+import re
 import secrets
 import shutil
 import socket
@@ -54,7 +55,7 @@ from client_diagnostics import DiagnosticError, DiagnosticLog, EVENTS, PHASES, O
 from employee_profile import ProfileError, ProfileStore
 
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 MCP_PROTOCOL_VERSION = "2026-07-28"
 BRIDGE_PROTOCOL_VERSION = "2025-11-25"
 BRIDGE_SUPPORTED_PROTOCOL_VERSIONS = (BRIDGE_PROTOCOL_VERSION,)
@@ -812,14 +813,19 @@ class TokenSession:
             if browser != "never":
                 try:
                     opened = webbrowser.open(auth_url, new=2)
-                    _diagnostic_record(self.diagnostics, "browser_open_result", "browser", outcome="succeeded" if opened else "unavailable")
                 except Exception:
                     _diagnostic_record(self.diagnostics, "browser_open_result", "browser", outcome="unavailable", error_code="browser_unavailable")
-                    if browser == "always":
-                        raise FargoWorkError("browser could not be opened; use --browser never and open the displayed URL", code="browser_unavailable", exit_code=EXIT_NEEDS_ACTION)
+                    raise FargoWorkError("browser could not be opened; use --browser never and open the displayed URL", code="browser_unavailable", exit_code=EXIT_NEEDS_ACTION) from None
+                if not opened:
+                    _diagnostic_record(self.diagnostics, "browser_open_result", "browser", outcome="unavailable", error_code="browser_unavailable")
+                    raise FargoWorkError("browser could not be opened; use --browser never and open the displayed URL", code="browser_unavailable", exit_code=EXIT_NEEDS_ACTION)
+                _diagnostic_record(self.diagnostics, "browser_open_result", "browser", outcome="succeeded")
             else:
                 _diagnostic_record(self.diagnostics, "browser_open_result", "browser", outcome="not_attempted")
-            _emit_event({"event": "login_authorization_url", "url": auth_url}, force_json=True)
+            if browser == "never":
+                _emit_event({"event": "login_authorization_url", "url": auth_url}, force_json=True)
+            else:
+                _emit_event({"event": "login_browser_opened", "message": "浏览器已打开，请完成钉钉授权，然后返回当前 AI。"}, force_json=True)
             _diagnostic_record(self.diagnostics, "authorization_waiting", "callback", outcome="waiting")
             result = callback.wait(timeout)
         finally:
@@ -964,6 +970,9 @@ class MCPHTTPClient:
     def __init__(self, session: TokenSession, *, timeout: float = 30.0):
         self.session = session
         self.timeout = timeout
+        self.last_request_id: str | None = None
+        self.last_server_trace_id: str | None = None
+        self.last_http_status: int | None = None
 
     def request(self, message: Mapping[str, Any], *, method: str | None = None, retry_401: bool = True) -> dict[str, Any] | None:
         if not isinstance(message, Mapping):
@@ -983,6 +992,9 @@ class MCPHTTPClient:
 
     def _post(self, message: Mapping[str, Any], method: str, access: str) -> HTTPResult:
         request_id = diagnostic_id()
+        self.last_request_id = request_id
+        self.last_server_trace_id = None
+        self.last_http_status = None
         started = time.monotonic()
         parsed = urlsplit(self.session.config.resource)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
@@ -1016,6 +1028,11 @@ class MCPHTTPClient:
             response = connection.getresponse()
             raw = response.read()
             response_headers = {key.lower(): value for key, value in response.getheaders()}
+            self.last_http_status = response.status
+            try:
+                self.last_server_trace_id = diagnostic_id(response_headers.get("x-trace-id")) if response_headers.get("x-trace-id") else None
+            except ValueError:
+                pass
             _diagnostic_record(self.session.diagnostics, "http_request_result", "bridge", request_id=request_id, server_trace_id=response_headers.get("x-trace-id", ""), http_status=response.status, duration_ms=int((time.monotonic() - started) * 1000), outcome="succeeded" if response.status < 400 else "failed")
             return HTTPResult(response.status, response_headers, raw)
         except (OSError, http.client.HTTPException) as exc:
@@ -1077,6 +1094,264 @@ def _with_modern_meta(message: Mapping[str, Any]) -> dict[str, Any]:
     params["_meta"] = meta
     translated["params"] = params
     return translated
+
+
+MAX_TOOL_INPUT_BYTES = 64 * 1024
+MAX_TOOL_PAGES = 32
+MAX_PUBLIC_TOOLS = 512
+_TOOL_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_.:\-]{0,127}\Z")
+_TOOL_RESERVED_INPUTS = frozenset((
+    "userid", "user_id", "corp_id", "corpId", "operator_userid", "operator_corp_id",
+    "actor_userid", "identity_subject_hash", "authorization", "bearer", "access_token",
+    "refresh_token", "client_secret", "headers", "endpoint", "issuer", "resource",
+    "resource_metadata_uri", "_meta", "form_data", "form_uuid", "process_code", "process_data",
+))
+
+
+class BusinessToolError(FargoWorkError):
+    """A bounded CLI failure, carrying only a public result and safe trace IDs."""
+
+    def __init__(self, code: str, *, kind: str, exit_code: int = EXIT_PROTOCOL,
+                 result: dict[str, Any] | None = None, trace: dict[str, Any] | None = None,
+                 rpc_code: int | None = None):
+        super().__init__("FargoWork business command could not complete", code=code, exit_code=exit_code)
+        self.kind = kind
+        self.result = result
+        self.trace = trace or {}
+        self.rpc_code = rpc_code
+
+
+def _tool_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON key")
+        result[key] = value
+    return result
+
+
+def _tool_arguments(args: argparse.Namespace) -> dict[str, Any]:
+    """Read one bounded UTF-8 arguments object; never execute or echo input."""
+    try:
+        if args.input_file is not None:
+            path = args.input_file
+            if _is_link_or_reparse(path) or not path.is_file():
+                raise ValueError("input must be a regular file")
+            with path.open("rb") as source:
+                raw = source.read(MAX_TOOL_INPUT_BYTES + 1)
+            if len(raw) > MAX_TOOL_INPUT_BYTES:
+                raise ValueError("input too large")
+            text = raw.decode("utf-8-sig")
+        elif args.input_json is not None:
+            text = args.input_json
+        elif getattr(sys.stdin, "isatty", lambda: False)():
+            text = ""
+        else:
+            # Windows redirected stdin may use a legacy text encoding. The
+            # business input contract is UTF-8, independent of that wrapper.
+            source = getattr(sys.stdin, "buffer", None)
+            if source is not None:
+                raw = source.read(MAX_TOOL_INPUT_BYTES + 1)
+                if len(raw) > MAX_TOOL_INPUT_BYTES:
+                    raise ValueError("input too large")
+                text = raw.decode("utf-8-sig")
+            else:
+                # StringIO and other already-decoded caller/test streams.
+                text = sys.stdin.read(MAX_TOOL_INPUT_BYTES + 1)
+        if len(text.encode("utf-8")) > MAX_TOOL_INPUT_BYTES:
+            raise ValueError("input too large")
+        def reject_constant(_value: str) -> None:
+            raise ValueError("non-finite JSON value")
+        value = json.loads(text, object_pairs_hook=_tool_json_object,
+                           parse_constant=reject_constant) if text.strip() else {}
+        if not isinstance(value, dict):
+            raise ValueError("arguments must be an object")
+        def check_keys(item: Any, depth: int = 0) -> None:
+            if depth > 32:
+                raise ValueError("input nesting too deep")
+            if isinstance(item, dict):
+                for key, child in item.items():
+                    if key in _TOOL_RESERVED_INPUTS or key.lower() in {"authorization", "bearer", "access_token", "refresh_token", "client_secret"}:
+                        raise ValueError("managed identity or transport input")
+                    check_keys(child, depth + 1)
+            elif isinstance(item, list):
+                for child in item:
+                    check_keys(child, depth + 1)
+        check_keys(value)
+        return value
+    except (OSError, UnicodeError, ValueError, TypeError, RecursionError):
+        raise BusinessToolError("tool_input_invalid", kind="input", exit_code=EXIT_USAGE) from None
+
+
+def _public_tool_result(value: Any, *, access_token: str | None = None) -> Any:
+    """Preserve the Server's public business object, never credential fields."""
+    secrets = {"token", "access_token", "refresh_token", "secret", "client_secret", "authorization",
+               "cookie", "cookies", "code_verifier", "private_key", "password", "headers"}
+    if isinstance(value, Mapping):
+        return {str(key): _public_tool_result(item, access_token=access_token)
+                for key, item in value.items() if str(key).lower() not in secrets}
+    if isinstance(value, list):
+        return [_public_tool_result(item, access_token=access_token) for item in value]
+    if isinstance(value, str):
+        if access_token:
+            value = value.replace(access_token, "[REDACTED]")
+        return re.sub(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=\-]+", "Bearer [REDACTED]", value)
+    return value
+
+
+class EmployeeToolsClient:
+    """Official CLI facade over the same authenticated employee MCP resource.
+
+    The employee Server publishes the public catalog. No workflow, identity,
+    role decision or submission confirmation is implemented in this facade.
+    Every command rediscovers the catalog and sends a business call at most once.
+    """
+
+    def __init__(self, session: TokenSession):
+        self.session = session
+        self.http = MCPHTTPClient(session)
+        self.identity: dict[str, Any] = {}
+        self.server_info: dict[str, Any] = {}
+
+    def trace(self) -> dict[str, Any]:
+        return {key: value for key, value in {
+            "request_id": self.http.last_request_id,
+            "server_trace_id": self.http.last_server_trace_id,
+            "http_status": self.http.last_http_status,
+        }.items() if value is not None}
+
+    def _rpc(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        request_id = diagnostic_id()
+        message = _with_modern_meta({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
+        try:
+            # No 401 replay for this facade: even a failed tool call is never
+            # repeated. A subsequent user command may sign in and start anew.
+            response = self.http.request(message, method=method, retry_401=False)
+        except FargoWorkError as exc:
+            if self.http.last_http_status == 401:
+                raise BusinessToolError("auth_required", kind="auth", exit_code=EXIT_NEEDS_ACTION, trace=self.trace()) from None
+            if self.http.last_http_status is not None and self.http.last_http_status >= 400:
+                raise BusinessToolError("tool_http_error", kind="server", trace=self.trace()) from None
+            raise BusinessToolError("tool_transport_failed", kind="transport", exit_code=EXIT_UNAVAILABLE, trace=self.trace()) from None
+        except (ValueError, UnicodeError, TypeError):
+            raise BusinessToolError("tool_response_invalid", kind="transport", trace=self.trace()) from None
+        if not isinstance(response, Mapping) or response.get("jsonrpc") != "2.0" or response.get("id") != request_id:
+            raise BusinessToolError("tool_response_invalid", kind="transport", trace=self.trace())
+        if "error" in response:
+            error = response.get("error")
+            rpc_code = error.get("code") if isinstance(error, Mapping) else None
+            raise BusinessToolError("tool_server_error", kind="server", trace=self.trace(),
+                                    rpc_code=rpc_code if type(rpc_code) is int else None)
+        result = response.get("result")
+        if not isinstance(result, dict):
+            raise BusinessToolError("tool_response_invalid", kind="transport", trace=self.trace())
+        return result
+
+    def discover(self) -> list[dict[str, Any]]:
+        self.identity = self.session.me()
+        discovery = self._rpc("server/discover", {})
+        if MCP_PROTOCOL_VERSION not in discovery.get("supportedVersions", []):
+            raise BusinessToolError("mcp_protocol_version_unsupported", kind="transport", trace=self.trace())
+        capabilities = discovery.get("capabilities") or discovery.get("serverCapabilities")
+        if not isinstance(capabilities, Mapping) or not isinstance(capabilities.get("tools"), Mapping):
+            raise BusinessToolError("tools_discovery_invalid", kind="transport", trace=self.trace())
+        info = discovery.get("serverInfo")
+        if isinstance(info, Mapping) and all(isinstance(info.get(key), str) for key in ("name", "version")):
+            self.server_info = {key: info[key] for key in ("name", "version")}
+        tools: list[dict[str, Any]] = []
+        names: set[str] = set()
+        cursors: set[str] = set()
+        cursor = None
+        for _ in range(MAX_TOOL_PAGES):
+            page = self._rpc("tools/list", {"cursor": cursor} if cursor is not None else {})
+            entries = page.get("tools")
+            if not isinstance(entries, list):
+                raise BusinessToolError("tools_discovery_invalid", kind="transport", trace=self.trace())
+            for entry in entries:
+                if not isinstance(entry, dict) or not isinstance(entry.get("name"), str) or not _TOOL_NAME.fullmatch(entry["name"]):
+                    raise BusinessToolError("tools_discovery_invalid", kind="transport", trace=self.trace())
+                name = entry["name"]
+                if name in names or not isinstance(entry.get("inputSchema"), dict):
+                    raise BusinessToolError("tools_discovery_invalid", kind="transport", trace=self.trace())
+                names.add(name)
+                if len(names) > MAX_PUBLIC_TOOLS:
+                    raise BusinessToolError("tools_discovery_invalid", kind="transport", trace=self.trace())
+                metadata = entry.get("_meta") if isinstance(entry.get("_meta"), Mapping) else {}
+                if entry.get("visibility", metadata.get("visibility", "public")) != "public":
+                    continue
+                tools.append(_public_tool_result(entry, access_token=self.session.access_token))
+            cursor = page.get("nextCursor")
+            if cursor is None:
+                return tools
+            if not isinstance(cursor, str) or not cursor or len(cursor) > 1024 or cursor in cursors:
+                raise BusinessToolError("tools_discovery_invalid", kind="transport", trace=self.trace())
+            cursors.add(cursor)
+        raise BusinessToolError("tools_discovery_invalid", kind="transport", trace=self.trace())
+
+    def call(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if not _TOOL_NAME.fullmatch(name):
+            raise BusinessToolError("tool_not_public", kind="input", exit_code=EXIT_USAGE)
+        catalog = {item["name"]: item for item in self.discover()}
+        if name not in catalog:
+            raise BusinessToolError("tool_not_public", kind="input", exit_code=EXIT_USAGE, trace=self.trace())
+        schema = catalog[name]["inputSchema"]
+        properties = schema.get("properties")
+        if isinstance(properties, Mapping) and any(key not in properties for key in arguments):
+            raise BusinessToolError("tool_input_invalid", kind="input", exit_code=EXIT_USAGE, trace=self.trace())
+        result = self._rpc("tools/call", {"name": name, "arguments": arguments})
+        if not isinstance(result.get("content"), list) or ("isError" in result and type(result["isError"]) is not bool):
+            raise BusinessToolError("tool_response_invalid", kind="transport", trace=self.trace())
+        safe = _public_tool_result(result, access_token=self.session.access_token)
+        # SDK exception text is not the governed public contract. Do not echo
+        # opaque server exception messages; structured public results survive.
+        if safe.get("isError") is True and not isinstance(safe.get("structuredContent"), Mapping):
+            safe = {"isError": True}
+        elif isinstance(safe.get("structuredContent"), Mapping):
+            safe["content"] = [{"type": "text", "text": json.dumps(safe["structuredContent"], ensure_ascii=False)}]
+        else:
+            for item in safe.get("content", []):
+                if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("text"), str):
+                    try:
+                        value = json.loads(item["text"])
+                    except ValueError:
+                        continue
+                    item["text"] = json.dumps(_public_tool_result(value, access_token=self.session.access_token), ensure_ascii=False)
+        if safe.get("isError") is True:
+            raise BusinessToolError("tool_server_error", kind="server", result=safe, trace=self.trace())
+        return safe
+
+
+def _emit_business_result(payload: Mapping[str, Any]) -> None:
+    log = _DIAGNOSTIC_CONTEXT.get()
+    if log is not None:
+        payload = {**payload, "attempt_id": log.attempt_id, "diagnostic_log_dir": str(log.root),
+                   "diagnostic_write_failed": log.write_failed}
+    print(json.dumps(_public_tool_result(payload), ensure_ascii=True, separators=(",", ":")), flush=True)
+
+
+def _business_error_payload(error: FargoWorkError, config: "Config | None" = None) -> dict[str, Any]:
+    kind = getattr(error, "kind", None)
+    if kind is None:
+        kind = "auth" if error.code in {"auth_required", "invalid_grant", "invalid_token", "secure_storage_unavailable"} else "input" if error.exit_code == EXIT_USAGE else "transport"
+    messages = {
+        "input": "Use a published tool name and one UTF-8 JSON arguments object; managed identity, credentials and endpoint overrides are not accepted.",
+        "auth": "FargoWork login is required. Use the official employee CLI login command.",
+        "transport": "FargoWork could not confirm the response. Stop; no business retry was performed. Provide the support trace.",
+        "server": "The FargoWork Server rejected or could not complete the request. Follow any public result and provide the support trace; no business retry was performed.",
+    }
+    payload: dict[str, Any] = {"event": "error", "status": "error", "error_kind": kind,
+        "error_code": safe_error_code(error.code), "exit_code": error.exit_code,
+        "message": messages[kind], "automatic_retry_allowed": False, **getattr(error, "trace", {})}
+    if getattr(error, "result", None) is not None:
+        payload["result"] = error.result
+    if getattr(error, "rpc_code", None) is not None:
+        payload["server_error_code"] = error.rpc_code
+    if kind == "auth":
+        payload["next_action"] = "login"
+        if config is not None:
+            payload["login_command"] = str(config.home / "bin" / ("fargowork.exe" if platform.system() == "Windows" else "fargowork"))
+            payload["login_args"] = ["login", "--browser", "always"]
+    return payload
 
 
 def _translate_initialize(message: Mapping[str, Any]) -> dict[str, Any]:
@@ -1367,6 +1642,8 @@ def _prepare_canonical_skill(config: Config) -> None:
 
 
 def _client_trust(clients: Mapping[str, Mapping[str, Any]], target: str) -> bool | str:
+    if target == "cli":
+        return "not_required"
     if target != "all":
         return clients.get(target, {}).get("trusted", "unknown")
     return clients.get("workbuddy", {}).get("trusted", "unknown")
@@ -1383,7 +1660,7 @@ def _clients_need_action(
 
 
 def _registration_failed(clients: Mapping[str, Mapping[str, Any]], target: str) -> bool:
-    return target != "manual" and any(
+    return target not in {"manual", "cli"} and any(
         client.get("registered") is not True and (
             bool(client.get("detected")) or target not in {"all", "auto"}
         ) for client in clients.values()
@@ -1399,6 +1676,9 @@ def _status_payload(
     identity: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     plugin_ready = (config.plugin_dir / "plugin.json").is_file() and (config.plugin_dir / "mcp.json").is_file()
+    if target == "cli":
+        executable = config.home / "bin" / ("fargowork.exe" if platform.system() == "Windows" else "fargowork")
+        plugin_ready = executable.is_file() and (_canonical_skill_path(config) / "SKILL.md").is_file()
     needs_action = (
         target == "manual"
         or not plugin_ready
@@ -1407,7 +1687,7 @@ def _status_payload(
     )
     payload = {
         "event": "status",
-        "status": "ok" if plugin_ready else "not_installed",
+        "status": ("ready" if not needs_action else "needs_user_action") if target == "cli" and plugin_ready else "ok" if plugin_ready else "not_installed",
         "target": target,
         "version": VERSION,
         "compatibility": _compatibility_contract(),
@@ -1428,9 +1708,13 @@ def _status_payload(
             "scope": config.scope,
         },
         "clients": clients,
-        "manual_mcp_registration": _manual_mcp_registration(config),
         "skill_path": str(_canonical_skill_path(config) / "SKILL.md"),
     }
+    if target == "cli":
+        payload.update(connection_mode="cli", mcp_registration_required=False,
+                       business_cli_available=plugin_ready, tool_capability="not_checked")
+    else:
+        payload["manual_mcp_registration"] = _manual_mcp_registration(config)
     if identity:
         payload["identity"] = identity
     return payload
@@ -1645,6 +1929,12 @@ class ClientAdapters:
             "reason": "Import the stdio MCP entry and the employee Skill in your client; client registration and trust were not inspected.",
             "skill_path": str(_canonical_skill_path(self.config) / "SKILL.md"),
         }
+
+    def cli(self) -> dict[str, Any]:
+        return {"detected": True, "registered": False, "registration": "cli-no-mcp",
+                "trusted": "not_required", "needs_user_action": False,
+                "skill_path": str(_canonical_skill_path(self.config) / "SKILL.md"),
+                "reason": "Use the official FargoWork tools CLI; host MCP registration is not required."}
 
     def _host_skill_path(self, target: str) -> Path:
         if target == "codex":
@@ -1937,6 +2227,8 @@ class ClientAdapters:
             return self.all()
         if target == "manual":
             return {"manual": self.manual()}
+        if target == "cli":
+            return {"cli": self.cli()}
         if target == "claude-code":
             return {target: self.claude_code()}
         return {target: getattr(self, target)()}
@@ -2423,7 +2715,7 @@ class ClientAdapters:
         return {"uninstalled": True, "needs_user_action": False}
 
     def register(self, target: str) -> dict[str, Any]:
-        if target == "manual":
+        if target in {"manual", "cli"}:
             return self.selected(target)
         self.config.home.joinpath("adapters").mkdir(parents=True, exist_ok=True)
         results = {}
@@ -2459,6 +2751,9 @@ class ClientAdapters:
         return results
 
     def uninstall(self, target: str) -> dict[str, Any]:
+        if target == "cli":
+            return {"cli": {"uninstalled": False, "needs_user_action": False,
+                            "reason": "CLI mode has no host MCP registration; employee files and credentials were preserved."}}
         if target == "manual":
             return {"manual": {"uninstalled": False, "needs_user_action": True, "reason": "Remove the MCP entry and Skill from your client manually; client files, shared employee files and credentials were preserved."}}
         targets = ["workbuddy", "codex", "cursor", "claude-code"] if target in {"all", "auto"} else [target]
@@ -2558,6 +2853,9 @@ def _doctor(config: Config, *, target: str = "all") -> dict[str, Any]:
     adapters = ClientAdapters(config)
     clients = adapters.selected(target)
     plugin_ready = (config.plugin_dir / "plugin.json").is_file() and (config.plugin_dir / "mcp.json").is_file()
+    if target == "cli":
+        executable = config.home / "bin" / ("fargowork.exe" if platform.system() == "Windows" else "fargowork")
+        plugin_ready = executable.is_file() and (_canonical_skill_path(config) / "SKILL.md").is_file()
     vault_present = False
     vault_error = None
     configured = bool(config.issuer and config.resource and config.resource_metadata_uri)
@@ -2589,7 +2887,7 @@ def _doctor(config: Config, *, target: str = "all") -> dict[str, Any]:
         or not vault_present
         or _clients_need_action(clients, target=target)
     )
-    return {
+    payload = {
         "event": "doctor",
         "status": "needs_user_action" if needs_action else "ready",
         "target": target,
@@ -2601,18 +2899,34 @@ def _doctor(config: Config, *, target: str = "all") -> dict[str, Any]:
         "checks": checks,
         "clients": clients,
         "compatibility": _compatibility_contract(),
-        "manual_mcp_registration": _manual_mcp_registration(config),
         "skill_path": str(_canonical_skill_path(config) / "SKILL.md"),
     }
+    if target == "cli":
+        payload.update(connection_mode="cli", mcp_registration_required=False,
+                       business_cli_available=plugin_ready, tool_capability="not_checked")
+    else:
+        payload["manual_mcp_registration"] = _manual_mcp_registration(config)
+    return payload
+
+
+class FargoWorkArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        if getattr(self, "_business_errors", False) or " tools" in self.prog:
+            # argparse's normal error includes the rejected argument text. An
+            # accidental token/JSON value must not be reflected into output.
+            _emit_business_result(_business_error_payload(BusinessToolError(
+                "tool_input_invalid", kind="input", exit_code=EXIT_USAGE)))
+            self.exit(EXIT_USAGE)
+        super().error(message)
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="fargowork", description="FargoWork CLI and MCP bridge")
+    parser = FargoWorkArgumentParser(prog="fargowork", description="FargoWork employee business CLI and optional MCP bridge")
     parser.add_argument("--output", choices=("human", "jsonl"), default="human")
     parser.add_argument("--version", action="version", version=VERSION)
     sub = parser.add_subparsers(dest="command", required=True)
-    client_targets = ("manual", "auto", "all", "workbuddy", "codex", "cursor", "claude-code")
-    default_target = "manual" if CLIENT_ENVIRONMENT == "employee" else "all"
+    client_targets = ("cli", "manual", "auto", "all", "workbuddy", "codex", "cursor", "claude-code")
+    default_target = "cli" if CLIENT_ENVIRONMENT == "employee" else "all"
     registration_modes = ("auto", "official") if CLIENT_ENVIRONMENT == "employee" else ("auto", "official", "fixture")
 
     install = sub.add_parser("install", help="prepare the employee plugin; register a client only when explicitly selected")
@@ -2675,6 +2989,19 @@ def _build_parser() -> argparse.ArgumentParser:
     diagnostics.add_argument("--days", type=int, default=7)
     diagnostics.add_argument("--destination", type=Path)
     diagnostics.add_argument("--output", choices=("human", "jsonl"), default="human")
+
+    tools = sub.add_parser("tools", help="discover/call Server-published employee tools without host MCP registration")
+    actions = tools.add_subparsers(dest="tools_action", required=True)
+    for name in ("list", "call"):
+        command = actions.add_parser(name, help="list public tools and input schemas" if name == "list" else "call one published tool once; submission requires prior user confirmation")
+        if name == "call":
+            command.add_argument("tool_name", help="exact public tool name returned by tools list")
+            inputs = command.add_mutually_exclusive_group()
+            inputs.add_argument("--input-file", type=Path, help="UTF-8 JSON arguments object from a regular file (max 64 KiB)")
+            inputs.add_argument("--input-json", help="literal JSON arguments object; prefer stdin/input-file to avoid shell quoting")
+            command.description = "Send one JSON arguments object. With no input flag read stdin; empty/interactive stdin means {}. No automatic login, business retry, endpoint override or Bearer parameter. A completed call is not submission success; inspect the public result."
+        command.add_argument("--attempt-id", help="optional canonical UUID for payload-free diagnostics")
+        command.add_argument("--output", choices=("jsonl", "json"), default="jsonl", help="one final JSON object; no progress on stdout")
     return parser
 
 
@@ -2714,6 +3041,7 @@ def _run_main(args: argparse.Namespace, holder: dict[str, Any]) -> int:
     output = getattr(args, "output", "human")
     try:
         config = Config.load()
+        holder["config"] = config
         attempt = getattr(args, "attempt_id", None)
         try:
             log = DiagnosticLog.for_home(config.home, version=VERSION, command=args.command, component="bridge" if args.command == "bridge" else getattr(args, "component", "cli"), attempt_id=attempt)
@@ -2722,6 +3050,20 @@ def _run_main(args: argparse.Namespace, holder: dict[str, Any]) -> int:
         holder["log"] = log
         holder["context_token"] = _DIAGNOSTIC_CONTEXT.set(log)
         _diagnostic_record(log, "cli_started", "start", outcome="started")
+        if args.command == "tools":
+            _require_configured(config)
+            arguments = _tool_arguments(args) if args.tools_action == "call" else None
+            client = EmployeeToolsClient(TokenSession(config))
+            if args.tools_action == "list":
+                result = {"event": "tools_list", "status": "ready", "tools": client.discover(),
+                          "server_info": client.server_info}
+            else:
+                result = {"event": "tool_result", "status": "completed", "tool": args.tool_name,
+                          "result": client.call(args.tool_name, arguments or {})}
+            result.update(identity_verified=True, identity=client.identity, tool_capability="available",
+                          automatic_retry_allowed=False, **client.trace())
+            _emit_business_result(result)
+            return EXIT_OK
         if getattr(args, "codex_path", None):
             config.codex_path = _explicit_codex_path(args.codex_path)
         adapters = ClientAdapters(config, registration_mode=getattr(args, "registration_mode", "auto"))
@@ -2750,6 +3092,8 @@ def _run_main(args: argparse.Namespace, holder: dict[str, Any]) -> int:
             )
             payload["event"] = "installed"
             payload["message"] = (
+                "Employee files prepared for the official business CLI; host MCP registration is not required."
+                if args.target == "cli" else
                 "Employee files prepared; the requested client was not registered."
                 if _registration_failed(clients, args.target)
                 else "Employee files prepared; sign in and complete any client approval shown in the status."
@@ -2870,6 +3214,9 @@ def _run_main(args: argparse.Namespace, holder: dict[str, Any]) -> int:
         raise FargoWorkError("unknown command", code="usage", exit_code=EXIT_USAGE)
     except FargoWorkError as exc:
         holder["error_code"] = exc.code
+        if args.command == "tools":
+            _emit_business_result(_business_error_payload(exc, holder.get("config")))
+            return exc.exit_code
         payload = {"event": "error", "status": "error", "error_code": safe_error_code(exc.code), "exit_code": exc.exit_code, "message": str(exc), "needs_user_action": exc.exit_code == EXIT_NEEDS_ACTION, "mutation_may_have_happened": exc.code == "registration_rollback_required" or bool(getattr(exc, "mutation_may_have_happened", False))}
         if args.command == "bridge":
             print(f"FargoWork Bridge: {safe_error_code(exc.code)}", file=sys.stderr, flush=True)
@@ -2878,6 +3225,9 @@ def _run_main(args: argparse.Namespace, holder: dict[str, Any]) -> int:
         return exc.exit_code
     except (OSError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
         holder["error_code"] = "runtime_error"
+        if args.command == "tools":
+            _emit_business_result(_business_error_payload(BusinessToolError("tool_transport_failed", kind="transport", exit_code=EXIT_UNAVAILABLE)))
+            return EXIT_UNAVAILABLE
         payload = {"event": "error", "status": "error", "error_code": "runtime_error", "exit_code": EXIT_UNAVAILABLE, "message": "FargoWork could not complete the operation", "needs_user_action": False}
         if args.command == "bridge":
             print("FargoWork Bridge: runtime_error", file=sys.stderr, flush=True)
@@ -2887,7 +3237,10 @@ def _run_main(args: argparse.Namespace, holder: dict[str, Any]) -> int:
 
 
 def main(argv: Iterable[str] | None = None) -> int:
-    args = _build_parser().parse_args(list(argv) if argv is not None else None)
+    raw_args = list(argv) if argv is not None else sys.argv[1:]
+    parser = _build_parser()
+    parser._business_errors = "tools" in raw_args[:3]
+    args = parser.parse_args(raw_args)
     holder: dict[str, Any] = {}
     code = EXIT_UNAVAILABLE
     try:
@@ -2897,7 +3250,9 @@ def main(argv: Iterable[str] | None = None) -> int:
         code = EXIT_NEEDS_ACTION
         holder["error_code"] = "login_cancelled"
         payload = {"event": "error", "error_code": "login_cancelled", "status": "cancelled", "message": "FargoWork operation cancelled. Check status before starting another login; no cleanup or business retry was performed."}
-        if args.command == "bridge":
+        if args.command == "tools":
+            _emit_business_result(_business_error_payload(BusinessToolError("login_cancelled", kind="transport", exit_code=code)))
+        elif args.command == "bridge":
             print("FargoWork Bridge: login_cancelled", file=sys.stderr, flush=True)
         else:
             _emit_event(payload, output=getattr(args, "output", "human"))

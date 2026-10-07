@@ -1,8 +1,8 @@
 # FargoWork date and time contract
 
-Load this reference whenever a supported workflow contains a date, period, or
-relative-date expression. The Server Manifest remains authoritative for each
-field's semantic type.
+Read this reference silently when a supported workflow contains a date, period
+or relative date. Do not narrate its loading. The Server Manifest remains
+authoritative for each field's semantic type.
 
 ## Client rules
 

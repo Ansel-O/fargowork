@@ -14,6 +14,7 @@ $oldLocalAppData = $env:LOCALAPPDATA
 $oldUserProfile = $env:USERPROFILE
 $oldCodexHome = $env:CODEX_HOME
 $oldHome = $env:HOME
+$oldClaudeConfigDir = $env:CLAUDE_CONFIG_DIR
 $oldTemp = $env:TEMP
 $oldTmp = $env:TMP
 $oldPath = $env:PATH
@@ -51,6 +52,7 @@ function Invoke-FixtureInstaller([string]$Roaming, [string]$Mode = 'success', [s
     $env:USERPROFILE = Split-Path -Parent $Roaming
     $env:HOME = $env:USERPROFILE
     $env:CODEX_HOME = Join-Path $env:USERPROFILE '.codex-fixture'
+    $env:CLAUDE_CONFIG_DIR = Join-Path $env:USERPROFILE '.claude-fixture'
     $env:TEMP = Join-Path $env:USERPROFILE 'Temp'
     $env:TMP = $env:TEMP
     New-Item -ItemType Directory -Path $env:LOCALAPPDATA, $env:CODEX_HOME, $env:TEMP -Force | Out-Null
@@ -86,6 +88,7 @@ function Invoke-FixtureInstaller([string]$Roaming, [string]$Mode = 'success', [s
     if ($WithLogin) { $parameters.Login = $true; $parameters.OpenBrowser = 'always' }
     $output = @(& $script:FixtureInstaller @parameters 2>&1 6>&1)
     $payload = Get-FixturePayload $output
+    Assert-Fixture ($output.Count -eq 1) 'Installer emitted phase summaries in addition to its final machine-readable result'
     foreach ($sentinel in $hostSentinels) {
         Assert-Fixture ((Get-FileHash -LiteralPath $sentinel -Algorithm SHA256).Hash -eq $hostHashes[$sentinel]) "Installer changed a foreign host configuration or Skill: $sentinel"
     }
@@ -191,6 +194,15 @@ function global:Move-Item {
 
 try {
     New-Item -ItemType Directory -Path $testRoot | Out-Null
+    $env:USERPROFILE = Join-Path $testRoot 'native-helper-profile'
+    $env:HOME = $env:USERPROFILE
+    $env:APPDATA = Join-Path $env:USERPROFILE 'Roaming'
+    $env:LOCALAPPDATA = Join-Path $env:USERPROFILE 'Local'
+    $env:CODEX_HOME = Join-Path $env:USERPROFILE '.codex-fixture'
+    $env:CLAUDE_CONFIG_DIR = Join-Path $env:USERPROFILE '.claude-fixture'
+    $env:TEMP = Join-Path $testRoot 'native-helper-temp'
+    $env:TMP = $env:TEMP
+    New-Item -ItemType Directory -Path $env:APPDATA, $env:LOCALAPPDATA, $env:CODEX_HOME, $env:CLAUDE_CONFIG_DIR, $env:TEMP -Force | Out-Null
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $script:FixtureArtifactDir = Join-Path $testRoot 'artifacts'
     New-Item -ItemType Directory -Path $script:FixtureArtifactDir | Out-Null
@@ -209,8 +221,9 @@ function Invoke-EmployeeCli([string]$Exe, [string[]]$Arguments) {
     $selected = if ($targetIndex -ge 0) { $Arguments[$targetIndex + 1] } else { '' }
     $global:EmployeeFixtureCalls.Add(@{ command = $command; target = $selected; arguments = $Arguments })
     $manual = @{ config = @{ mcpServers = @{ 'fargowork-employee' = @{ command = $Exe; args = @('bridge') } } }; skill_path = (Join-Path $script:installRoot 'skills\fargowork-employee\SKILL.md') }
-    $client = @{ registered = $selected -ne 'manual'; trusted = 'unknown'; needs_user_action = $true }
-    $payload = @{ installed = $true; connected = $null; identity_verified = $false; trusted = 'unknown'; needs_user_action = $true; clients = @{ $selected = $client }; manual_mcp_registration = $manual; skill_path = $manual.skill_path }
+    $client = @{ detected = $true; registered = $selected -notin @('cli', 'manual'); trusted = if ($selected -eq 'cli') { 'not_required' } else { 'unknown' }; registration = if ($selected -eq 'cli') { 'cli-no-mcp' } else { 'official-codex-cli' }; needs_user_action = $selected -ne 'cli' }
+    $payload = @{ installed = $true; connected = $null; identity_verified = $false; trusted = $client.trusted; needs_user_action = $true; clients = @{ $selected = $client }; skill_path = $manual.skill_path; connection_mode = if ($selected -eq 'cli') { 'cli' } else { 'mcp' }; mcp_registration_required = $selected -ne 'cli'; business_cli_available = $true; tool_capability = 'not_checked' }
+    if ($selected -eq 'manual') { $payload.manual_mcp_registration = $manual }
     $code = 0
     switch ($command) {
         'install' {
@@ -218,7 +231,7 @@ function Invoke-EmployeeCli([string]$Exe, [string[]]$Arguments) {
             if ($selected -eq $global:EmployeeFixtureFailTarget) { $code = 41 }
             $payload.event = if ($code -eq 0) { 'installed' } else { 'error' }
             $payload.installed = $code -eq 0
-            $client.registered = $code -eq 0 -and $selected -ne 'manual'
+            $client.registered = $code -eq 0 -and $selected -notin @('cli', 'manual')
             if ($global:EmployeeFixtureReason) { $client.reason = $global:EmployeeFixtureReason }
             switch ($global:EmployeeFixtureRegistrationSignal) {
                 'rollback-required' { $payload.code = 'registration_rollback_required' }
@@ -234,7 +247,8 @@ function Invoke-EmployeeCli([string]$Exe, [string[]]$Arguments) {
         }
         'status' {
             $payload.event = 'status'; $payload.identity_verified = [bool]$global:EmployeeFixtureIdentity
-            $payload.connected = $payload.identity_verified; $code = 3
+            $payload.connected = $payload.identity_verified; $code = if ($selected -eq 'cli' -and $payload.identity_verified) { 0 } else { 3 }
+            $payload.needs_user_action = $selected -ne 'cli' -or -not $payload.identity_verified
             $payload.identity = @{ userid = 'private-fixture-user'; corp_id = 'private-fixture-corp' }
             $payload.profile_pending_reset = $true
             $payload.profile = @{ status = 'ready'; reset_prompt_pending = $true; markdown_path = (Join-Path $script:installRoot 'profiles\fixture\profile.md') }
@@ -260,29 +274,44 @@ Write-Output ('{"event":"doctor","installed":true,"target":"' + $Target + '","pa
 exit 3
 '@
     [IO.File]::WriteAllText($nativeFixture, $nativeFixtureText, [Text.UTF8Encoding]::new($true))
-    $nativeReply = Invoke-NativeFixtureCli (Get-Command powershell.exe).Source @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $nativeFixture, '-Target', 'cursor,codex')
+    $nativeReply = Invoke-NativeFixtureCli (Get-Command powershell.exe).Source @('-NoProfile', '-File', $nativeFixture, '-Target', 'cursor,codex')
     Assert-Fixture ($nativeReply.ExitCode -eq 3 -and $nativeReply.Payload.event -eq 'doctor' -and $nativeReply.Payload.target -eq 'cursor,codex') 'Native JSONL/exit-code capture or Windows comma target transport failed'
     $expectedUnicodePath = 'C:\' + [char]0x6d4b + [char]0x8bd5 + ' space\fargowork.exe'
     Assert-Fixture ($nativeReply.Payload.path -ceq $expectedUnicodePath) 'ASCII-escaped native JSONL did not preserve Unicode paths'
     $streamingFixture = Join-Path $nativeFixtureDir 'streaming-native.ps1'
     $streamAcknowledgement = Join-Path $nativeFixtureDir 'streaming-visible.fixture'
     [IO.File]::WriteAllText($streamingFixture, @'
-param([string]$Acknowledgement)
-Write-Output '{"event":"login_started","phase":"login","outcome":"started"}'
+param([string]$Acknowledgement, [string]$Browser = 'always')
+Write-Output '{"event":"listener_ready","phase":"listener","outcome":"started"}'
+if ($Browser -eq 'never') { Write-Output '{"event":"login_authorization_url","url":"https://employee-fixture.invalid/oauth/authorize?state=private-fixture-state&code_challenge=private-fixture-challenge","private":"secret-fixture-extra-must-not-appear"}' }
+else { Write-Output '{"event":"login_browser_opened","private":"secret-fixture-extra-must-not-appear"}' }
 $deadline = [DateTime]::UtcNow.AddSeconds(3)
 while (-not (Test-Path -LiteralPath $Acknowledgement) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 20 }
 if (-not (Test-Path -LiteralPath $Acknowledgement)) { exit 77 }
 Write-Output 'secret-fixture-native-stderr-must-not-persist'
 [Console]::Error.WriteLine('secret-fixture-native-stderr-must-not-persist')
+[Console]::Error.WriteLine('{"event":"error","message":"secret-fixture-json-stderr-must-not-persist"}')
 Write-Output '{"event":"logged_in","connected":true,"identity":{"userid":"private-fixture-user"}}'
 exit 0
 '@, [Text.UTF8Encoding]::new($true))
+    $OpenBrowser = 'always'
+    $OutputJsonl = $true
+    $streamingMessages = [System.Collections.Generic.List[string]]::new()
     function Write-Host([object]$Object) {
-        if ([string]$Object -match 'login_started') { [IO.File]::WriteAllText($streamAcknowledgement, 'streamed-before-child-exit') }
+        $streamingMessages.Add([string]$Object)
+        if ([string]$Object -match 'opened browser|login_authorization_url') { [IO.File]::WriteAllText($streamAcknowledgement, 'streamed-before-child-exit') }
     }
     try {
         $streamingReply = Invoke-NativeFixtureCli (Get-Command powershell.exe).Source @('-NoProfile', '-File', $streamingFixture, '-Acknowledgement', $streamAcknowledgement)
         Assert-Fixture ($streamingReply.ExitCode -eq 0 -and $streamingReply.Payload.event -eq 'logged_in' -and (Test-Path -LiteralPath $streamAcknowledgement)) 'Login event was buffered until native process exit'
+        Assert-Fixture ($streamingMessages.Count -eq 1 -and ($streamingMessages -join ' ') -notmatch 'private-fixture|secret-fixture|login_started|code_challenge') 'Default login leaked diagnostics or its authorization query'
+        Remove-Item -LiteralPath $streamAcknowledgement
+        $streamingMessages.Clear()
+        $OpenBrowser = 'never'
+        $manualReply = Invoke-NativeFixtureCli (Get-Command powershell.exe).Source @('-NoProfile', '-File', $streamingFixture, '-Acknowledgement', $streamAcknowledgement, '-Browser', 'never')
+        $manualLink = $streamingMessages[0] | ConvertFrom-Json
+        Assert-Fixture ($manualReply.ExitCode -eq 0 -and $streamingMessages.Count -eq 1 -and $manualLink.event -eq 'login_authorization_url' -and $manualLink.url -match '^https://employee-fixture.invalid/') 'Explicit browser=never did not stream its necessary authorization link'
+        Assert-Fixture (($streamingMessages -join ' ') -notmatch 'secret-fixture|private-fixture-user|login_started') 'Manual authorization exposed unrelated native payload fields'
     } finally { Remove-Item Function:\Write-Host -ErrorAction SilentlyContinue }
     $scriptText = $scriptText.Remove($extent.StartOffset, $extent.EndOffset - $extent.StartOffset).Insert($extent.StartOffset, $fixtureCliFunction)
     $preflightAst = [System.Management.Automation.Language.Parser]::ParseInput($scriptText, [ref]$null, [ref]$null)
@@ -291,7 +320,7 @@ exit 0
     $preflightExtent = $preflightFunctions[0].Extent
     $scriptText = $scriptText.Remove($preflightExtent.StartOffset, $preflightExtent.EndOffset - $preflightExtent.StartOffset).Insert($preflightExtent.StartOffset, 'function Invoke-HostPreflight([string[]]$Targets) { if (''codex'' -in $Targets) { $script:resolvedCodexPath = ''C:\fixture\codex.exe'' } }')
     $scriptText = $scriptText.Replace('exit 0', '$global:EmployeeInstallerFixtureExitCode = 0; return')
-    $scriptText = $scriptText.Replace('exit 4', '$global:EmployeeInstallerFixtureExitCode = 4; return')
+    $scriptText = $scriptText.Replace('exit $script:failureExitCode', '$global:EmployeeInstallerFixtureExitCode = $script:failureExitCode; return')
     $script:FixtureInstaller = Join-Path $testRoot 'install-fixture.ps1'
     [IO.File]::WriteAllText($script:FixtureInstaller, $scriptText, [Text.UTF8Encoding]::new($false))
 
@@ -374,7 +403,8 @@ exit 0
         $fixture = New-UpdateFixture $case.Name
         $global:EmployeeFixtureInstallRoot = $fixture.EmployeeRoot
         $result = Invoke-FixtureInstaller $fixture.Roaming $case.Mode $case.Fault
-        Assert-Fixture ($result.ExitCode -eq 4 -and $result.Payload.code -eq $case.Expected) "$($case.Name): expected installer rollback failure result"
+        $expectedExit = if ($case.Mode -eq 'install-fail') { 41 } elseif ($case.Mode -eq 'doctor-fail') { 42 } else { 4 }
+        Assert-Fixture ($result.ExitCode -eq $expectedExit -and $result.Payload.code -eq $case.Expected) "$($case.Name): expected installer rollback failure result"
         if ($case.Mode -eq 'doctor-fail') {
             Assert-Fixture ($result.Payload.installed -and (Test-Path -LiteralPath (Join-Path $fixture.Bin 'fargowork.exe'))) 'A diagnostic failure removed an executable already referenced by installed clients'
         } else { Assert-OldInstallRestored $fixture }
@@ -385,7 +415,7 @@ exit 0
     $restoreFixture = New-UpdateFixture 'restore-failure'
     $global:EmployeeFixtureInstallRoot = $restoreFixture.EmployeeRoot
     $restoreResult = Invoke-FixtureInstaller $restoreFixture.Roaming 'install-fail' 'restore-plugin'
-    Assert-Fixture ($restoreResult.ExitCode -eq 4 -and $restoreResult.Payload.code -eq 'install_failed_recovery_required') 'restore failure did not report recoverable state'
+    Assert-Fixture ($restoreResult.ExitCode -eq 41 -and $restoreResult.Payload.code -eq 'install_failed_recovery_required') 'restore failure did not report recoverable state'
     Assert-Fixture ([string]$restoreResult.Payload.recovery_path -match '\\.fargowork-stage-') 'restore failure did not expose the retained recovery path'
     Assert-Fixture (Test-Path -LiteralPath (Join-Path $restoreFixture.Bin 'old-client.txt')) 'restore failure did not keep restored client backup'
     Assert-Fixture (Test-Path -LiteralPath (Join-Path $restoreResult.Payload.recovery_path 'backup\plugin\old-plugin.txt')) 'restore failure deleted the previous plugin backup'
@@ -403,23 +433,26 @@ exit 0
     Assert-Fixture (@(Get-ChildItem -LiteralPath $successFixture.EmployeeRoot -Directory -Filter '.fargowork-stage-*').Count -eq 0) 'successful update did not remove its backup stage'
     Assert-Fixture ($null -eq $successResult.Payload.connected -and -not $successResult.Payload.identity_verified) 'Installation claimed an authenticated connection without identity verification'
     Assert-Fixture (@($successResult.Calls | Where-Object { $_.command -in @('login', 'status') }).Count -eq 0) 'Default installation performed login or identity queries'
-    Assert-Fixture (@($successResult.Payload.targets).Count -eq 1 -and $successResult.Payload.targets[0].target -eq 'manual') 'Default installation did not select manual only'
-    Assert-Fixture ([IO.Path]::IsPathRooted($successResult.Payload.manual_mcp_registration.config.mcpServers.'fargowork-employee'.command) -and $successResult.Payload.manual_mcp_registration.config.mcpServers.'fargowork-employee'.args[0] -eq 'bridge') 'Manual configuration is not an absolute standard stdio command'
-    Assert-Fixture ([IO.Path]::IsPathRooted($successResult.Payload.skill_path)) 'Manual Skill path is not absolute'
+    Assert-Fixture (@($successResult.Payload.targets).Count -eq 1 -and $successResult.Payload.targets[0].target -eq 'cli') 'Default installation did not select CLI only'
+    Assert-Fixture ($successResult.Payload.connection_mode -eq 'cli' -and -not $successResult.Payload.mcp_registration_required -and $successResult.Payload.business_cli_available -and $successResult.Payload.tool_capability -eq 'not_checked' -and $successResult.Payload.trusted -eq 'not_required') 'Default CLI capability or MCP trust boundary was misreported'
+    Assert-Fixture ($null -eq $successResult.Payload.manual_mcp_registration -and -not $successResult.Payload.targets[0].clients.cli.registered -and $successResult.Payload.targets[0].clients.cli.registration -eq 'cli-no-mcp') 'Default CLI mode requested MCP configuration or registration'
+    Assert-Fixture ([IO.Path]::IsPathRooted($successResult.Payload.skill_path)) 'CLI Skill path is not absolute'
+    Assert-Fixture ($successResult.Payload.cli_path -ceq (Join-Path $successFixture.Bin 'fargowork.exe')) 'Installer did not return its verified absolute CLI entry'
 
-    foreach ($knownTarget in @('codex', 'cursor', 'workbuddy', 'claude-code')) {
+    foreach ($knownTarget in @('manual', 'codex', 'cursor', 'workbuddy', 'claude-code')) {
         $hostFixture = New-UpdateFixture ('target-' + $knownTarget)
         $global:EmployeeFixtureInstallRoot = $hostFixture.EmployeeRoot
         $hostResult = Invoke-FixtureInstaller $hostFixture.Roaming 'success' '' @($knownTarget)
         Assert-Fixture ($hostResult.ExitCode -eq 0 -and $hostResult.Payload.targets[0].target -eq $knownTarget) "Target was not passed accurately to the CLI: $knownTarget"
         Assert-ProfileStatePreserved $hostFixture
+        if ($knownTarget -eq 'manual') { Assert-Fixture ([IO.Path]::IsPathRooted($hostResult.Payload.manual_mcp_registration.config.mcpServers.'fargowork-employee'.command)) 'Explicit manual target lost its standard stdio configuration' }
     }
 
     foreach ($reasonMode in @('missing-client', 'unsafe-reason')) {
         $reasonFixture = New-UpdateFixture $reasonMode
         $global:EmployeeFixtureInstallRoot = $reasonFixture.EmployeeRoot
         $reasonResult = Invoke-FixtureInstaller $reasonFixture.Roaming $reasonMode '' @('codex')
-        Assert-Fixture ($reasonResult.ExitCode -eq 4 -and $reasonResult.Payload.targets[0].status -eq 'error') "$reasonMode`: registration failure did not stop the official attempt"
+        Assert-Fixture ($reasonResult.ExitCode -eq $(if ($reasonMode -eq 'missing-client') { 3 } else { 41 }) -and $reasonResult.Payload.targets[0].status -eq 'error') "$reasonMode`: registration failure did not stop the official attempt"
         if ($reasonMode -eq 'missing-client') {
             Assert-Fixture ($reasonResult.Payload.targets[0].message -eq 'Codex is not installed; skipped.') 'Safe client failure reason was replaced by a generic exit code'
         } else {
@@ -439,7 +472,7 @@ exit 0
     $partial = New-UpdateFixture 'partial-target-failure'
     $global:EmployeeFixtureInstallRoot = $partial.EmployeeRoot
     $partialResult = Invoke-FixtureInstaller $partial.Roaming 'partial-fail' '' @('codex', 'cursor', 'manual')
-    Assert-Fixture ($partialResult.ExitCode -eq 4 -and $partialResult.Payload.installed -and $partialResult.Payload.code -eq 'post_install_failed') 'Partial host failure did not return nonzero while retaining successful installations'
+    Assert-Fixture ($partialResult.ExitCode -eq 41 -and $partialResult.Payload.installed -and $partialResult.Payload.code -eq 'post_install_failed') 'Partial host failure did not return nonzero while retaining successful installations'
     Assert-Fixture (($partialResult.Payload.targets | Where-Object { $_.target -eq 'cursor' }).status -eq 'error') 'Partial failure was not attributed to the failed target'
     Assert-Fixture (Test-Path -LiteralPath (Join-Path $partial.Bin 'fargowork.exe')) 'Partial host failure rolled back the executable used by successful targets'
     Assert-Fixture (-not (Test-Path -LiteralPath (Join-Path $partial.Bin 'old-client.txt'))) 'Partial host failure restored the previous incompatible client'
@@ -449,7 +482,7 @@ exit 0
         $registrationFixture = New-UpdateFixture ('failed-registration-' + $signal)
         $global:EmployeeFixtureInstallRoot = $registrationFixture.EmployeeRoot
         $registrationResult = Invoke-FixtureInstaller $registrationFixture.Roaming $signal '' @('codex')
-        Assert-Fixture ($registrationResult.ExitCode -eq 4 -and $registrationResult.Payload.installed -and $registrationResult.Payload.code -eq 'post_install_failed') "$signal`: possibly registered host failure did not retain the package with nonzero exit"
+        Assert-Fixture ($registrationResult.ExitCode -eq 41 -and $registrationResult.Payload.installed -and $registrationResult.Payload.code -eq 'post_install_failed') "$signal`: possibly registered host failure did not retain the package with nonzero exit"
         Assert-Fixture ($registrationResult.Payload.targets[0].requires_manual_recovery -and -not $registrationResult.Payload.targets[0].installed -and -not $registrationResult.Payload.targets[0].rolled_back) "$signal`: uncertain host recovery or installation status was not reported accurately"
         Assert-Fixture (Test-Path -LiteralPath (Join-Path $registrationFixture.Bin 'fargowork.exe')) "$signal`: failed registration removed an executable which may already be referenced"
         Assert-Fixture (-not (Test-Path -LiteralPath (Join-Path $registrationFixture.Bin 'old-client.txt'))) "$signal`: installer restored the previous executable despite host mutation evidence"
@@ -469,11 +502,19 @@ exit 0
             Assert-Fixture (@($loginResult.Calls | Where-Object { $_.command -eq 'status' }).Count -eq 2) 'Login did not verify identity for each target'
             Assert-Fixture ($loginResult.Payload.profile_pending_reset -and $loginResult.Payload.profile.status -eq 'ready') 'Profile upgrade default-keep prompt was swallowed by the installer'
         } else {
-            Assert-Fixture ($loginResult.ExitCode -eq 4 -and $loginResult.Payload.installed -and -not $loginResult.Payload.connected -and -not $loginResult.Payload.identity_verified) "$loginMode`: post-install authentication failure was misreported"
+            Assert-Fixture ($loginResult.ExitCode -eq $(if ($loginMode -eq 'login-fail') { 43 } else { 3 }) -and $loginResult.Payload.installed -and -not $loginResult.Payload.connected -and -not $loginResult.Payload.identity_verified) "$loginMode`: post-install authentication failure was misreported"
             Assert-Fixture (Test-Path -LiteralPath (Join-Path $loginFixture.Bin 'fargowork.exe')) "$loginMode`: authentication failure rolled back installed files"
         }
         Assert-ProfileStatePreserved $loginFixture
     }
+
+    $cliLoginFixture = New-UpdateFixture 'default-cli-login-ready'
+    $global:EmployeeFixtureInstallRoot = $cliLoginFixture.EmployeeRoot
+    $cliLoginResult = Invoke-FixtureInstaller $cliLoginFixture.Roaming 'success' '' -WithLogin
+    Assert-Fixture ($cliLoginResult.ExitCode -eq 0 -and $cliLoginResult.Payload.status -eq 'ready' -and $cliLoginResult.Payload.identity_verified -and -not $cliLoginResult.Payload.needs_user_action) 'Verified CLI login remained blocked on host MCP trust'
+    Assert-Fixture ($cliLoginResult.Payload.trusted -eq 'not_required' -and $cliLoginResult.Payload.tool_capability -eq 'not_checked' -and -not $cliLoginResult.Payload.mcp_registration_required) 'CLI login claimed business validation or MCP approval'
+    Assert-Fixture (@($cliLoginResult.Calls | Where-Object { $_.command -notin @('install', 'doctor', 'login', 'status') }).Count -eq 0) 'Installer automatically executed a business tool'
+    Assert-ProfileStatePreserved $cliLoginFixture
 
     $attemptIds = @($successResult.Calls | ForEach-Object { $argumentIndex = [Array]::IndexOf($_.arguments, '--attempt-id'); if ($argumentIndex -ge 0) { $_.arguments[$argumentIndex + 1] } } | Select-Object -Unique)
     Assert-Fixture ($attemptIds.Count -eq 1 -and $attemptIds[0] -ceq $successResult.Payload.attempt_id) 'Installer commands did not share one correlated attempt'
@@ -571,7 +612,7 @@ exit 0
     $env:APPDATA = Join-Path $testRoot 'diagnostic-profile\Roaming'
     $env:USERPROFILE = Split-Path -Parent $env:APPDATA
     $env:HOME = $env:USERPROFILE
-    $Version = '1.2.0'
+    $Version = '1.3.0'
     $AttemptId = 'f8efce4b-c0db-4a93-8f1a-a74a3c1808b8'
     $script:diagnosticComponent = 'installer'
     Resolve-InstallationAttempt
@@ -594,13 +635,14 @@ exit 0
     Write-InstallationDiagnostic 'installation_finished' 'finish' 'failed' 'unknown_error' 4
     Assert-Fixture ($script:diagnosticUnavailable -and (Get-FileHash -LiteralPath $foreign -Algorithm SHA256).Hash -ceq $foreignHash) 'Full diagnostic budget modified foreign files or blocked without a safe failure'
 
-    Write-Output 'employee installer fixture: PASS (manual default; five targets; safe failure reason/stop action; shared attempt/Codex path; nonblocking profile prompt; seven-day bounded diagnostics; comma/array dedup; partial host failure; optional single login with identity verification; checksum rejection; old/new move rollback; diagnostic failure retains installed client; retained recovery; ownership/junction rejection; foreign host config/Skills and personal state preserved)'
+    Write-Output 'Employee installer fixture: PASS (quiet default CLI; optional MCP targets; no automatic business calls; browser guidance and explicit manual URL; real native exit; bounded diagnostics; identity verification; package rejection; rollback/recovery; foreign host configuration and personal state preserved)'
 } finally {
     $env:APPDATA = $oldAppData
     $env:LOCALAPPDATA = $oldLocalAppData
     $env:USERPROFILE = $oldUserProfile
     $env:CODEX_HOME = $oldCodexHome
     $env:HOME = $oldHome
+    $env:CLAUDE_CONFIG_DIR = $oldClaudeConfigDir
     $env:TEMP = $oldTemp
     $env:TMP = $oldTmp
     $env:PATH = $oldPath

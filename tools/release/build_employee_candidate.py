@@ -24,6 +24,9 @@ PUBLIC_BUILDER = ROOT / "tools" / "release" / "build_public_release.py"
 INSTALLER = ROOT / "public" / "install.ps1"
 EMPLOYEE_README = ROOT / "public" / "EMPLOYEE-README.md"
 DATA_NOTE = ROOT / "public" / "EMPLOYEE-DATA-NOTE.md"
+DEBUG_NOTE = ROOT / "public" / "DEBUG.md"
+if not DEBUG_NOTE.exists():
+    DEBUG_NOTE = ROOT / "DEBUG.md"
 SOURCE_ALLOWLIST = (
     "public/cli/fargowork_cli.py",
     "public/cli/client_diagnostics.py",
@@ -31,6 +34,7 @@ SOURCE_ALLOWLIST = (
     "public/install.ps1",
     "public/EMPLOYEE-README.md",
     "public/EMPLOYEE-DATA-NOTE.md",
+    DEBUG_NOTE.relative_to(ROOT).as_posix(),
     "public/release/public-export.json",
     "public/release/version.json",
     "tools/release/build_public_release.py",
@@ -40,6 +44,7 @@ SOURCE_ALLOWLIST = (
 BUNDLE_FIXED_FILES = {
     "README.md",
     "DATA-AND-SUPPORT.md",
+    "DEBUG.md",
     "install.ps1",
     "release-manifest.json",
     "SHA256SUMS",
@@ -209,8 +214,11 @@ def build(*, platform_name: str, arch: str, output_dir: Path) -> dict[str, Any]:
         for artifact in artifacts:
             shutil.copy2(artifact, bundle_root / artifact.name)
         shutil.copy2(INSTALLER, bundle_root / "install.ps1")
-        shutil.copy2(EMPLOYEE_README, bundle_root / "README.md")
+        employee_readme = EMPLOYEE_README.read_text(encoding="utf-8")
+        employee_readme = employee_readme.replace("](../DEBUG.md)", "](DEBUG.md)").replace("](EMPLOYEE-DATA-NOTE.md)", "](DATA-AND-SUPPORT.md)")
+        (bundle_root / "README.md").write_text(employee_readme, encoding="utf-8")
         shutil.copy2(DATA_NOTE, bundle_root / "DATA-AND-SUPPORT.md")
+        shutil.copy2(DEBUG_NOTE, bundle_root / "DEBUG.md")
         shutil.copy2(native_dir / "SHA256SUMS", bundle_root / "SHA256SUMS")
         employee_release_manifest = {
             "format": "fargowork-employee-release-manifest/v1",
@@ -327,7 +335,7 @@ def main() -> int:
         output_dir=args.output_dir.resolve(),
     )
     print(f"Built local employee candidate: {args.output_dir.resolve()}")
-    print(f"Version: {manifest['version']}; scope: Windows x64 + stdio MCP clients")
+    print(f"Version: {manifest['version']}; scope: Windows x64 business CLI + optional stdio MCP")
     print(f"SHA-256: {manifest['candidate_archive']['sha256']}")
     return 0
 

@@ -1,193 +1,135 @@
 ---
 name: fargowork-employee
-description: FargoWork governed office workflow assistant. Use when the configured FargoWork employee MCP connection is available and the user asks to discover, prepare, preview, refresh, or explicitly submit a workflow published by the current Server Manifest.
+description: Help an employee prepare, preview and explicitly submit FargoWork workflows through the installed official CLI. Use for company travel, leave, procurement or payment requests published by the current Server.
 ---
 
-# FargoWork workflow skill
+# FargoWork employee Skill
 
-This file is the employee Agent Skill contract. It describes conversation safety
-and the semantic MCP contract; the private Server Manifest remains authoritative
-for the actual workflow set, inputs, candidates, validation, and submission.
+## Default execution path
 
-## Package status
+Use the installed official CLI, normally
+`$env:APPDATA\FargoWork\employee\bin\fargowork.exe`. Use the verified
+installed absolute path; never guess another executable or service endpoint.
 
-This trial delivers a Windows x64 connection program for stdio MCP clients.
-Known clients have installation adapters; other clients require verified
-stdio configuration and Skill loading. Its configured MCP connection is
-named `fargowork-employee`; the plugin-relative stdio bridge talks to the
-configured FargoWork MCP resource and performs no legacy session fallback.
+- `fargowork tools list --output jsonl` discovers current public tools.
+- `fargowork tools call NAME --output jsonl` accepts one UTF-8 JSON argument
+  object on stdin, or `--input-file PATH` for that object.
+- Only invoke public names returned by this service. Read their declared input
+  contract and pass semantic employee inputs, never a raw upstream request.
+- CLI `tool_result` contains the MCP result: use its `structuredContent`, or
+  parse its JSON text content when needed. `status=completed` means the call
+  finished, not that the application was submitted. Respect `isError` and the
+  business result's blocked, needs-input, submitted or unknown state.
+- Use a safe structured stdin/file operation. Do not interpolate employee text
+  into shell code. If an input file is needed, create a new temporary file for
+  this call, keep it out of diagnostic/profile folders, and remove only that
+  file after the call; never retain business bodies as troubleshooting logs.
 
-If a client has no separately configured FargoWork employee MCP connection, report that
-the connection is not configured and stop. Do not invent an endpoint, add a
-Bearer header, recover the old Local/client-session path, or ask the user to
-copy a token.
+Calling the official CLI for workflow tools, login, current-account preferences
+or voluntary diagnostic export is permitted. Do not install an ad hoc runtime,
+create a temporary Node/Python MCP client, edit MCP JSON or request FullAccess
+as a prerequisite. If the host actually denies an operation, show the specific
+necessary step once; do not claim or infer its permission state.
 
-## Identity and connection
+A separately configured native FargoWork MCP connection is an optional
+alternative. If using it, keep the same verified account and workflow contract.
+Do not require registration, trust or enable steps to finish the CLI path.
+Fargo AI/Fargo Pass is a separate product; its credentials, Skill and successful
+calls are not FargoWork evidence.
 
-1. Use only a configured FargoWork MCP connection. The M2 identity boundary is
-   FargoWork OAuth Authorization Code + S256 PKCE bound to the DingTalk
-   enterprise identity; it is not replaced by a client-supplied userid or corp.
-2. When the connection is available, call `get_current_user` through the
-   configured `fargowork-employee` MCP connection and confirm the returned
-   identity before reading workflow data.
-3. If authentication is missing, expired, revoked, or ambiguous, stop and tell
-   the user to run the employee CLI from PowerShell:
-   `& "$env:APPDATA\FargoWork\employee\bin\fargowork.exe" login`. This
-   explicit path avoids accidentally invoking a private development CLI with
-   the same executable name. Never request or display access tokens, refresh
-   tokens, cookies, authorization headers, OAuth codes, or secrets.
-4. Do not treat a local config file, client profile, or userid/corp claim as
-   proof of Server identity.
+## Login and current-account preferences
 
-## Account preferences and upgrades
+Call `get_current_user` through the official CLI before workflow data. Verify
+the Server-returned identity silently; do not ask the employee to confirm their
+userid or display identity internals. If authentication is missing, expired,
+revoked or ambiguous, guide one official employee `login` and the employee's
+DingTalk authorization. Never request or display tokens, cookies, OAuth codes,
+authorization headers or full authorization links in the business conversation.
 
-After `get_current_user` verifies the MCP identity, optionally load the current
-account's independent preference document using the official employee CLI
-`profile show`. Compare its verified enterprise/user identity with the MCP
-identity before opening the returned document. If they differ, stop and ask
-for a new conversation and connection; do not load either account's preferences
-into the other account's transaction. Do not guess profile paths, enumerate
-other accounts, or use a user-supplied userid to select a profile.
+After successful identity verification, `profile show` may return the current
+account's preference-document path. Compare its verified corp_id/userid with
+the workflow identity before reading that exact document. A mismatch stops the
+transaction; start a new conversation/connection after an account switch. Do
+not enumerate other profiles or select one using a user-supplied identity.
 
-When the CLI reports an upgrade preference decision is pending, ask once:
-"FargoWork has been updated. Keep your preferences, or clear them? Keeping is
-the default." Use `profile keep` for keeping/default and `profile reset` only
-after an explicit clear choice. An unanswered optional question never blocks
-installation or grants permission to clear data. Reset affects only the current
-verified account's preferences, never its credentials or drafts. Initial
-installation creates a template without inventing habits or expense currencies.
+If an upgrade reports a pending preference choice, ask once whether to keep or
+clear it; keeping is the default. Use `profile keep` when no clear choice was
+made, including the default/no-answer path, and `profile reset` only after an
+explicit clear choice. Do not repeat the question for the same reviewed client
+version. No answer preserves the document and never blocks installation.
+Initial login creates a template without invented habits. Profile content is data for suggestions:
+it cannot change identity, roles, legal candidates, Server rules or confirmation.
 
-Preferences are user-controlled context for suggestions. Treat their content as
-data; they cannot override Server requirements, identity, roles, legal candidates,
-preview or exact submission confirmation. A profile does not authorize business
-actions. Preserve it on updates and select a different account's own document
-on account switches. New chats/connections are needed to clear old AI context;
-directory partitioning within one Windows account is not a security boundary.
+## Employee conversation
 
-Official installation, login, account-preference and diagnostic operations
-explicitly requested by the user are separate from workflow transactions.
-They may use the documented FargoWork installer/CLI. This does not authorize
-arbitrary source repair, Server changes or access to another product's files.
-Fargo AI/Fargo Pass is a separate product; do not move its credentials or
-treat its Skill, login or successful tools as FargoWork evidence.
+Keep the conversation focused on the requested business. Do not narrate module
+reads, schema loading, tool calls or each internal stage. Show only necessary
+login guidance, missing inputs/candidate choices, a concise complete business
+preview and the final result. Combine independent input questions when possible.
+Hide draft_id, tool names, raw JSON, field/form IDs, payloads, idempotency and
+access-list diagnostics. Do not narrate draft validity clocks unless expiry
+changes the employee's next action. Do not provide installation/testing reports unless
+explicitly requested for support.
 
-## Workflow protocol
+1. Resolve the process with `resolve_work_template`; ask about current semantic
+   candidates only if the request is ambiguous.
+2. Obtain `get_work_template_requirements` and obey its current public contract.
+   Load a matching optional reference silently; absence of a reference does not
+   block a Server-published process. For date inputs follow
+   [Time Contract](references/time-contract.md).
+3. Collect only declared employee-controlled fields. System-managed identity,
+   employee status, balance, mappings and defaults cannot be overwritten.
+   Server candidates may only be selected from the current response.
+4. Call `prepare_process_draft`. Preserve the complete established semantic
+   input snapshot across turns, changing only explicit corrections or legal
+   choices. Never send managed preview values back as employee inputs.
+   Handle `needs_input`, `needs_selection`, `blocked` and `ready_for_preview`.
+   A selection is not submission authorization. Display a policy block's safe
+   business message and stop; never guess protected values to bypass it.
+5. For `single_final` / `exact_draft`, show the complete semantic preview,
+   important warnings and declared decision items in concise business language.
+   Ask once: “确认提交这份申请吗？” An explicit natural reply such as “提交吧”
+   after that preview authorizes that exact draft; no fixed phrase is required.
+6. If the same exact draft has already been previewed and clearly confirmed,
+   and has not changed or expired, call `submit_process_draft` directly once.
+   Do not ask again or add a second permission/FullAccess question. Pass only
+   the Server-issued draft_id. Render `action_result.display_message` verbatim
+   afterward; do not append generic retry or implementation commentary.
+7. A changed material value, refreshed authoritative data, new draft or expired
+   draft invalidates the old confirmation. Prepare and preview again, then
+   obtain one confirmation for the revised draft. “Change X and submit” before
+   the revised preview is not its final confirmation. Drafts remain valid only
+   on their Asia/Singapore creation date; expiry is enforced by the Server.
 
-1. Discover the exact process with `resolve_work_template` through the
-   `fargowork-employee` connection. If the request is vague, show the Server's
-   current semantic candidates and ask the user to choose; do not guess.
-2. After resolving a process, call `get_work_template_requirements` through
-   the same connection and follow its current input, preview, submission,
-   public-tools, and recommended-flow contract.
-   Load only a matching optional reference module under `references/` when one
-   exists. Reference modules organize conversation; they do not replace the
-   Server Manifest, and their absence does not block a Server-published process.
-   For any date or time input, also load [Time Contract](references/time-contract.md)
-   and follow its semantic-date rules without doing independent timezone math.
-3. Read the public input, preview, and `input_contract.constraints`. Collect
-   only values declared as employee `user_input`. `system_managed` values
-   cannot be supplied or changed by the user. `server_candidate` values may
-   only be selected from the current Server response. If an optional
-   recommendation extractor or process-specific reference is unavailable,
-   continue using the current legal public candidates and ask the employee to
-   clarify; never guess, bypass a Server requirement, or ask for a client
-   update solely because a new process was published.
-4. Prepare a draft with `prepare_process_draft` through the
-   `fargowork-employee` connection. Handle structured `needs_input`,
-   `needs_selection`, `blocked`, and `ready_for_preview` outcomes explicitly.
-   Prefer `needs_selection`; treat `needs_confirmation` with
-   `interaction=selection` only as its compatibility alias. A candidate
-   selection is never submission authorization. Combine independent selections
-   into one concise question when practical. A policy block is an answer, not
-   an invitation to retry with altered system fields.
-   Keep the complete declared semantic input snapshot across clarification
-   turns: preserve every amount, currency, date, and explicit choice, apply
-   only established corrections or legal editable suggestions, and send the
-   whole snapshot on each preparation rather than only the latest answer.
-   Never send managed preview values as employee inputs.
-5. For `ready_for_preview`, present the semantic preview returned by the Server.
-   Do not expose raw upstream responses, field IDs, form identifiers, internal
-   source maps, permission facts, or submission payloads.
-6. Follow the Server's `review.confirmation_mode`. For `single_final`, show
-   safe recommended defaults and alternatives together with the complete
-   semantic preview, then ask once for authorization of that exact draft.
-   Treat `ready_for_preview` as readiness to preview, never as submit
-   authorization.
-7. Call `submit_process_draft` through `fargowork-employee` only after the user
-   has seen the final preview and clearly confirmed that exact action. Pass
-   only the Server-issued `draft_id`; never construct a Yida payload in the
-   client. Before a normal submit, do not narrate retry or idempotency policy.
-   After the call, render `action_result.display_message` verbatim. Do not
-   paraphrase it or append a generic retry warning.
-8. If the user changes a material value after preview, prepare again, show the
-   revised preview, and obtain confirmation for the new draft. A request such
-   as “change X and submit” does not replace that revised preview and
-   confirmation.
-9. If authoritative data changed and the user explicitly asks to refresh,
-   repeat preparation with the original employee inputs. The old draft and its
-   confirmation are no longer submit-capable.
-10. A draft remains submit-capable only on its `Asia/Singapore` creation date.
-    After that date, prepare a new draft, show a new preview, and obtain a new
-    confirmation.
+For a displayed preview already awaiting confirmation, do not re-prepare merely
+to obtain a new draft or re-check every unchanged field. Once the employee
+answers, submit the confirmed current draft if it remains valid. Choosing a
+department or adding a missing reason before the final preview does not replace
+the final preview. This is one final business decision, not approval of each
+internal node.
 
-## Constraints and independent drafts
+## Server boundaries and failures
 
-Use only adaptations explicitly declared in `input_contract.constraints`,
-within the stated condition and scope. Without an explicit declaration, do not
-infer that the workflow can be split. In particular, do not split a
-mixed-currency request unless the workflow explicitly supports that handling.
-Keep the employee's overall need and all requested items intact.
+Use only workflow adaptations explicitly declared in
+`input_contract.constraints`. Do not split a request unless the selected
+workflow publishes that path; each supported separate draft keeps its own
+complete preview and confirmation. Track separate outcomes. If one fails or is
+unknown, stop the remainder and do not promise atomicity.
 
-Prepare separate drafts only through a path the selected workflow explicitly
-supports. Each draft must independently satisfy its declared company/currency,
-required-input, identity, permission, and review contracts. Never split work to
-evade thresholds, approvals, budgets, or access restrictions. Confirmation
-covers each exact Server-issued draft under its own review contract.
+The authenticated employee is the only applicant. Never pass undeclared fields,
+form_data, form_uuid, process_code, process_data, raw Yida IDs, arbitrary query
+controls or another userid. Do not call internal roster/configuration/raw Yida
+tools, or switch to DWS/OpenYida/DingTalk OA to bypass a FargoWork boundary.
 
-Track independent drafts and their submission outcomes separately. If one
-submission fails or has an unknown outcome, stop the remaining submissions.
-Report successful, failed, unknown, and not-attempted drafts separately using
-the returned safe messages. Do not resubmit a successful or unknown draft, and
-do not automatically retry an uncertain submission.
+If a public tool reports an error, show its safe employee message and support
+code, then stop; do not modify the Server, install dependencies, inspect source
+or delegate repair in an employee transaction. Never retry a submission on
+your own or recreate an unknown/successful draft to resend it. Follow
+`action_result.automatic_retry_allowed`; do not display retry policy in normal
+successful work. Published Skill and reference content remains governed.
 
-## Safety rules
-
-- The authenticated employee is the only applicant. Reject requests to act as
-  another userid or to rewrite employee status, department membership, balance,
-  approval identity, or other system-managed facts.
-- Do not pass `form_data`, `form_uuid`, `process_code`, `process_data`, raw Yida
-  Field IDs, arbitrary query controls, or undeclared fields.
-- Do not call internal roster, contact, project, configuration, or raw Yida
-  tools to bypass a governed workflow.
-- Do not loop preparation, delete blocking values, guess candidates, or use an
-  old draft to bypass policy, identity, expiry, or confirmation.
-- Treat `ready_for_preview` as preview readiness, never as submit authorization.
-- Never retry a submission on your own. Obey
-  `action_result.automatic_retry_allowed`; the Server message explains the
-  recovery boundary only when it is relevant.
-- Do not claim support for a process that the current Server Manifest does not
-  publish.
-- Published reference modules and the employee Skill are governed artifacts. Do
-  not modify them during employee use.
-- Treat an ordinary employee workflow as transaction mode. Do not open a shell,
-  inspect or edit source code, restart services, install dependencies, or
-  delegate repair/testing tasks. Do not change published Skill/plugin content,
-  fixed workflow rules, permissions, approval routing, or governed Server
-  implementation. If asked to maintain any of those, decline the change and
-  direct the employee to the designated FargoWork support channel. If a public
-  FargoWork tool returns a server or dependency error, show only its safe
-  employee message and support code, then stop that transaction. Employees may
-  still edit ordinary draft values and business choices through the governed
-  workflow.
-- Use the configured FargoWork workflow tools for supported processes. Do not
-  switch to DWS, OpenYida, DingTalk OA, or another similarly named Skill after
-  FargoWork has resolved the process unless the user explicitly changes tools.
-
-## Public reference modules
-
-- [Business Trip](references/workflow-business-trip.md)
-- [Annual Leave](references/workflow-annual-leave.md)
-- [Time Contract](references/time-contract.md)
-
-These modules intentionally contain no field IDs, form UUIDs, production
-endpoints, credentials, private rules, or real employee data.
+Installation/update completion needs the official CLI, employee login, loaded
+Skill and successful read-only identity/workflow checks. Native MCP is optional.
+Success reporting is only “已安装并登录，可以开始办理申请。” If incomplete,
+report only the missing step. Do not substitute successful login for tools
+verification or submit a workflow as an installation test.

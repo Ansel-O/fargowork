@@ -12,9 +12,10 @@ field mapping.
 
 ## Conversation flow
 
-1. Confirm the authenticated FargoWork identity. If identity is unavailable,
+1. Verify the FargoWork identity silently through the official CLI. If unavailable,
    stop and follow the core Skill connection rules.
-2. Resolve the exact process and read its public input contract.
+2. Resolve the process and read its public contract without narrating tool or
+   module loading. Use the core Skill's official `tools call` path.
 3. Collect only employee-controlled inputs such as readable dates, locations,
    purpose, budget, project intent, and other values declared by the Manifest.
    Follow the shared Time Contract: send `YYYY-MM-DD` semantic dates and never
@@ -27,8 +28,10 @@ field mapping.
    candidates and let the user choose. Never invent or concatenate candidate
    identifiers.
 6. Re-prepare with the selected Server candidate when the contract asks for it.
-7. Show the semantic preview returned by the Server, then wait for explicit
-   natural-language confirmation before submitting the Server-issued draft.
+7. Show a concise, complete semantic preview and ask once for natural-language
+   confirmation. If that same unchanged, unexpired draft has already been
+   previewed and confirmed, submit it once without asking again. Hide draft IDs,
+   tool names and permission checks from the business conversation.
 
 ## Do not do
 

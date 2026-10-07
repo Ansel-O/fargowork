@@ -1,15 +1,23 @@
 # FargoWork Employee Agent Plugin
 
-This portable Agent Plugins 1.0.0 package contains one standard employee Skill and a plugin-relative stdio MCP bridge. The plugin identity is `fargowork-employee`, separate from the maintainer's private development plugin.
+The Windows x64 employee package contains the standard FargoWork Skill and
+official CLI. The default workflow path is `fargowork tools list` and
+`fargowork tools call NAME`; the CLI owns OAuth, protected credential storage
+and access to the administrator-configured service.
 
-The current employee trial delivers a Windows x64 executable. macOS is deferred. The core Skill and MCP contract are independent of the AI client; installation adapters configure known hosts, while third-party hosts use the emitted absolute executable and `bridge` arguments. Adapter tests are not a claim of actual employee acceptance in every client.
+Load the employee Skill and complete employee login. The employee can then
+request a workflow without editing MCP JSON, installing a temporary Node
+client or changing the host to FullAccess. An optional plugin-relative stdio
+MCP bridge remains available for compatible clients; native MCP registration
+is not a prerequisite for the CLI path.
 
-The matching executable is installed beside `bin/fargowork.cmd`. The CLI owns FargoWork OAuth Authorization Code + S256 PKCE and Windows DPAPI refresh-credential storage. The bridge keeps access tokens in memory and connects to the administrator-configured cloud MCP resource. Client trust and enable state remain user-controlled.
+The Server Manifest controls workflows, inputs and permissions. The Skill
+shows a complete business preview and obtains one natural-language confirmation
+for the exact draft. Do not ask again for an unchanged, unexpired, confirmed
+draft. Stop on unsafe errors or unknown outcomes; never automatically resubmit.
 
-Agent Plugins v1 does not define portable OAuth configuration or credential references. Clients differ in plugin path expansion and installation; where native plugin loading is incomplete, use the installation adapter or a verified standard stdio registration. The client-facing Bridge negotiates `2025-11-25`; the cloud uses `2026-07-28`.
-
-The Skill contains public conversation and safety contracts, not Yida field IDs, form identifiers, approval rules, credentials, or business data. The server enforces identity, ownership, permissions, fixed targets, validation, and submission policy. Human preview confirmation currently remains a Skill/chat responsibility.
-
-Use a service issuer provided by the administrator. The official installer is a single entry for the complete Windows package; known native registration or the verified manual stdio/Skill contract remains a host responsibility.
-
-Preferences live in independent documents scoped to the verified enterprise/user. Updates preserve them and prompt once to keep or reset the current account, defaulting to keep. They never grant Server permissions. Local diagnostics share `%APPDATA%\FargoWork\diagnostics`, retain up to seven days/20 MiB, and require voluntary allowlisted export. No credentials, profile bodies or workflow bodies are included. Fargo AI/Fargo Pass is a separate product and its files are outside this package's ownership.
+Account preferences are separate, editable documents for the verified employee.
+Updates preserve them and ask once about reset, defaulting to keep. Local
+diagnostics are payload-free and voluntarily exported. Fargo AI/Fargo Pass is
+a separate product whose credentials and configuration are outside this package.
+macOS support is deferred; current company workflows are for testing.

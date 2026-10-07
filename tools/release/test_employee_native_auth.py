@@ -30,14 +30,15 @@ import zipfile
 
 
 CALLBACK = "http://127.0.0.1:37680/oauth/callback"
-CLIENT_VERSION = "1.2.0"
+CLIENT_VERSION = ""
 DIAGNOSTIC_EVENTS = frozenset("cli_started cli_finished installation_started preflight_result package_verified files_staged client_detection_result client_registration_result installation_finished launcher_started launcher_finished login_started login_finished listener_ready listener_failed browser_open_result authorization_waiting callback_rejected callback_accepted token_request_started token_request_result identity_result http_request_result profile_result diagnostic_exported".split())
 DIAGNOSTIC_PHASES = frozenset("start preflight download verify stage detect register login listener browser callback token identity profile export finish cleanup bridge".split())
 DIAGNOSTIC_OUTCOMES = frozenset("started succeeded failed rejected waiting unavailable cancelled skipped pending matched mismatch accepted denied not_attempted".split())
 DIAGNOSTIC_COMPONENTS = frozenset(("cli", "bridge", "installer", "bootstrap", "launcher"))
-DIAGNOSTIC_COMMANDS = frozenset("install repair uninstall login logout status doctor bridge version profile diagnostics".split())
+DIAGNOSTIC_COMMANDS = frozenset("install repair uninstall login logout status doctor bridge version profile diagnostics tools".split())
 DIAGNOSTIC_ERROR_CODES = frozenset("unknown_error diagnostic_write_failed diagnostic_export_failed usage invalid_config configuration_required runtime_error auth_required endpoint_unavailable endpoint_redirect_rejected invalid_response invalid_token_response invalid_grant invalid_token invalid_client invalid_target invalid_scope temporarily_unavailable server_error refresh_failed token_exchange_failed access_denied oauth_state_mismatch oauth_issuer_mismatch oauth_callback_invalid oauth_callback_timeout callback_port_unavailable invalid_redirect browser_unavailable secure_storage_unavailable logout_remote_failed logout_remote_unavailable invalid_jsonrpc invalid_params mcp_http_error bridge_failed missing_server_info missing_modern_capabilities mcp_protocol_version_unsupported registration_rollback_required ownership_conflict unsafe_path skill_missing invalid_client_config client_config_changed install_failed install_failed_recovery_required post_install_failed preflight_failed package_verification_failed client_not_detected client_registration_failed profile_unavailable profile_invalid profile_unsafe_path profile_write_failed profile_identity_invalid profile_preferences_invalid profile_version_invalid attempt_id_invalid codex_path_invalid client_probe_failed artifact_invalid installation_failed registration_failed login_failed identity_verification_failed permission_denied incomplete_install diagnostic_failed login_cancelled mcp_unavailable invalid_registration_mode profile_path_unsafe profile_storage_unavailable profile_data_invalid profile_incomplete profile_review_limit".split())
 DIAGNOSTIC_FIELDS = frozenset("timestamp component event phase attempt_id request_id server_trace_id pid parent_pid version command outcome duration_ms http_status exit_code error_code matched".split())
+DIAGNOSTIC_ERROR_CODES = DIAGNOSTIC_ERROR_CODES | frozenset("tool_input_invalid tool_not_public tool_transport_failed tool_http_error tool_response_invalid tool_server_error tools_discovery_invalid".split())
 STREAM_METADATA = frozenset(("diagnostic_log_dir", "diagnostic_write_failed"))
 UUID_PATTERN = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z")
 LOG_PATTERN = re.compile(r"diagnostic-\d{4}-\d{2}-\d{2}-\d{6}\.jsonl\Z")
@@ -189,7 +190,69 @@ class Fixture(BaseHTTPRequestHandler):
             state["unexpected"] += 1
             self.reply(400, {"error": "invalid_request"})
             return
-        form = {k: v[-1] for k, v in parse_qs(self.rfile.read(length).decode()).items()}
+        raw = self.rfile.read(length)
+        if self.path == "/mcp":
+            message = json.loads(raw)
+            method = message.get("method")
+            check(self.headers.get("Authorization") == "Bearer " + state["access"], "business fixture requires current bearer")
+            check(self.headers.get("MCP-Protocol-Version") == "2026-07-28" and self.headers.get("Mcp-Method") == method,
+                  "business fixture requires modern protocol headers")
+            schemas = {
+                "get_current_user": {}, "list_work_templates": {},
+                "resolve_work_template": {"query": {"type": "string"}},
+                "get_work_template_requirements": {"template_key": {"type": "string"}},
+                "prepare_process_draft": {"process_key": {"type": "string"}, "user_inputs": {"type": "object"}},
+                "submit_process_draft": {"draft_id": {"type": "string"}},
+            }
+            if method == "server/discover":
+                result = {"supportedVersions": ["2026-07-28"], "capabilities": {"tools": {"listChanged": False}},
+                          "serverInfo": {"name": "native-business-fixture", "version": "1"}}
+            elif method == "tools/list":
+                result = {"tools": [{"name": name, "description": "isolated employee business fixture",
+                    "inputSchema": {"type": "object", "properties": properties, "additionalProperties": False}}
+                    for name, properties in schemas.items()]}
+            elif method == "tools/call":
+                params = message.get("params", {})
+                name = params.get("name")
+                check(name in schemas and self.headers.get("Mcp-Name") == name, "business fixture tool was not published")
+                inputs = params.get("arguments", {})
+                state["business_calls"].append(name)
+                if name == "get_current_user":
+                    value = {"userid": "fixture-user", "corp_id": "fixture-corp", "name": "Native Fixture"}
+                elif name == "list_work_templates":
+                    value = {"templates": [{"key": "annual_leave"}, {"key": "future_workflow"}]}
+                elif name == "resolve_work_template":
+                    value = {"matched": True, "template": {"key": "future_workflow" if inputs["query"] == "future" else "annual_leave"}}
+                elif name == "get_work_template_requirements":
+                    value = {"key": inputs["template_key"], "input_contract": {"required": ["reason"]},
+                             "review": {"confirmation_mode": "single_final"}}
+                elif name == "prepare_process_draft":
+                    if not inputs.get("user_inputs", {}).get("reason"):
+                        value = {"status": "needs_input", "missing_fields": ["reason"]}
+                    else:
+                        value = {"status": "ready_for_preview", "draft_id": "11111111-1111-4111-8111-111111111111",
+                                 "semantic_preview": {"reason": inputs["user_inputs"]["reason"], "leave_days": 0.5}}
+                else:
+                    draft = inputs["draft_id"]
+                    if draft == "role-blocked":
+                        value = {"status": "blocked", "action_result": {"display_message": "未获得测试提交权限。", "automatic_retry_allowed": False}}
+                    elif draft == "foreign-draft":
+                        value = {"status": "blocked", "action_result": {"display_message": "无法提交此申请。", "automatic_retry_allowed": False}}
+                    elif draft == "unknown-outcome":
+                        self.reply(503, {"error": "server_error"})
+                        return
+                    else:
+                        check(draft == "11111111-1111-4111-8111-111111111111", "unexpected business draft")
+                        value = {"status": "submitted", "action_result": {"display_message": "申请已提交。", "automatic_retry_allowed": False}}
+                result = {"content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False)}],
+                          "structuredContent": value, "isError": False}
+            else:
+                state["unexpected"] += 1
+                self.reply(400, {"error": "invalid_request"})
+                return
+            self.reply(200, {"jsonrpc": "2.0", "id": message.get("id"), "result": result})
+            return
+        form = {k: v[-1] for k, v in parse_qs(raw.decode()).items()}
         if self.path == "/oauth/logout" and form.get("token") == state["refresh"]:
             state["logout"] += 1
             state["refresh"] = ""
@@ -292,14 +355,83 @@ def verify_export(path, payload, sensitive_values):
     return total_events
 
 
+def verify_business(exe, env, cwd, state):
+    """Use only the official EXE; this fixture stands in for the cloud service."""
+    def command(arguments, payload=None):
+        result = subprocess.run([str(exe), "tools", *arguments, "--output", "jsonl"],
+            input=json.dumps(payload or {}, ensure_ascii=False) if arguments[0] == "call" else None,
+            env=env, cwd=cwd, capture_output=True, text=True, encoding="utf-8", timeout=35)
+        lines = result.stdout.splitlines()
+        check(len(lines) == 1 and not result.stderr.strip(), "business CLI emitted progress or unstructured stderr")
+        value = json.loads(lines[0])
+        check(isinstance(value, dict), "business CLI did not return one JSON object")
+        check(all(token not in result.stdout for token in state["issued_tokens"]), "business CLI disclosed a fixture credential")
+        return result.returncode, value
+
+    def objects(value):
+        if isinstance(value, dict):
+            yield value
+            for item in value.values():
+                yield from objects(item)
+        elif isinstance(value, list):
+            for item in value:
+                yield from objects(item)
+        elif isinstance(value, str) and value.startswith("{"):
+            try:
+                yield from objects(json.loads(value))
+            except ValueError:
+                pass
+
+    def has(value, key, expected):
+        return any(item.get(key) == expected for item in objects(value))
+
+    code, value = command(["list"])
+    check(code == 0 and has(value, "name", "prepare_process_draft"), "native business discovery failed")
+    code, value = command(["call", "get_current_user"], {})
+    check(code == 0 and has(value, "userid", "fixture-user"), "native business identity failed")
+    code, value = command(["call", "list_work_templates"], {})
+    check(code == 0 and has(value, "key", "annual_leave"), "native business templates failed")
+    code, value = command(["call", "resolve_work_template"], {"query": "leave"})
+    check(code == 0 and has(value, "key", "annual_leave"), "native business resolution failed")
+    code, value = command(["call", "get_work_template_requirements"], {"template_key": "annual_leave"})
+    check(code == 0 and has(value, "confirmation_mode", "single_final"), "native business requirements failed")
+    code, value = command(["call", "prepare_process_draft"], {"process_key": "annual_leave", "user_inputs": {}})
+    check(code == 0 and has(value, "status", "needs_input") and "submit_process_draft" not in state["business_calls"],
+          "native business missing-input preparation submitted anything")
+    code, value = command(["call", "prepare_process_draft"], {"process_key": "annual_leave", "user_inputs": {"reason": "个人事务"}})
+    preview_checks = {"exit_ok": code == 0, "ready": has(value, "status", "ready_for_preview"),
+                      "utf8_reason": has(value, "reason", "个人事务"),
+                      "not_submitted": "submit_process_draft" not in state["business_calls"]}
+    check(all(preview_checks.values()), "native business preview failed: " + json.dumps(preview_checks))
+    # Synthetic confirmation here represents the next explicit caller action;
+    # CLI flags are not an independently trusted proof of human confirmation.
+    code, value = command(["call", "submit_process_draft"], {"draft_id": "11111111-1111-4111-8111-111111111111"})
+    check(code == 0 and has(value, "status", "submitted"), "native business explicit submit failed")
+    for draft in ("role-blocked", "foreign-draft", "unknown-outcome"):
+        before = state["business_calls"].count("submit_process_draft")
+        code, value = command(["call", "submit_process_draft"], {"draft_id": draft})
+        check(state["business_calls"].count("submit_process_draft") == before + 1,
+              "native business failure was automatically retried")
+        check(code != 0 if draft == "unknown-outcome" else has(value, "status", "blocked"),
+              "native business failure was reported as successful")
+    code, value = command(["call", "resolve_work_template"], {"query": "future"})
+    check(code == 0 and has(value, "key", "future_workflow"), "native business workflow discovery was hardcoded")
+    profile = Path(env["USERPROFILE"])
+    check(not any((profile / name).exists() for name in (".codex", ".cursor", ".claude")),
+          "business CLI required or changed host MCP configuration")
+
+
 def main():
+    global CLIENT_VERSION
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive", type=Path)
     parser.add_argument("--expected-sha256")
     parser.add_argument("--evidence", type=Path)
+    parser.add_argument("--business", action="store_true", help="also exercise official business CLI against this loopback fixture")
     args = parser.parse_args()
     check(os.name == "nt", "Windows is required for real DPAPI")
     archive = args.archive.resolve(strict=True)
+    CLIENT_VERSION = archive.name.removeprefix("fargowork-employee-v").removesuffix("-windows-x64.zip")
     archive_sha256 = hashlib.sha256(archive.read_bytes()).hexdigest()
     if args.expected_sha256:
         check(archive_sha256 == args.expected_sha256.lower(), "frozen employee archive checksum differs")
@@ -313,7 +445,7 @@ def main():
         except OSError:
             raise RuntimeError("callback port 37680 is occupied; no native login was started") from None
     state = dict(access="", refresh="", code="fixture-code-" + secrets.token_hex(16),
-                 me=0, code_exchange=0, refresh_exchange=0, logout=0, unexpected=0, issued_tokens=[])
+                 me=0, code_exchange=0, refresh_exchange=0, logout=0, unexpected=0, issued_tokens=[], business_calls=[])
     counts = dict(progress_events=0)
     server = ThreadingHTTPServer(("127.0.0.1", 0), Fixture)
     server.daemon_threads = True
@@ -432,6 +564,8 @@ def main():
             check(state["me"] == 5 and state["refresh_exchange"] == 4
                   and unprotect_fixture(slots[0].read_bytes()) == state["refresh"].encode(),
                   "profile operations did not reverify identity and rotate refresh once per command")
+            if args.business:
+                verify_business(exe, env, root, state)
             code, result = native(exe, ["logout"], env, root, counts)
             check(code == 0 and result.get("remote_revocation") == "confirmed" and result.get("local_credentials_cleared") is True and not slots[0].exists(), "native logout did not revoke fixture and clear slot")
             code, result = native(exe, ["status", "--target", "manual"], env, root, counts)
@@ -444,7 +578,8 @@ def main():
             diagnostic_events = verify_export(export_path, result, [*state["issued_tokens"], state["code"],
                 first["url"], query["state"][0], query["code_challenge"][0], state["issuer"], CALLBACK,
                 "fixture-user", "fixture-corp", "Native Fixture", custom_content, customized_markdown.decode("utf-8")])
-            check(request_counts == {"code_exchange": 1, "refresh_exchange": 4, "me": 5, "logout": 1, "unexpected": 0},
+            check(request_counts["code_exchange"] == 1 and request_counts["logout"] == 1 and request_counts["unexpected"] == 0
+                  and (args.business or request_counts == {"code_exchange": 1, "refresh_exchange": 4, "me": 5, "logout": 1, "unexpected": 0}),
                   "unexpected fixture request sequence")
     finally:
         server.shutdown()
@@ -457,6 +592,9 @@ def main():
                    "diagnostic_export_has_no_network", "logout_remote_and_local", "logged_out_rejection"],
         "request_counts": request_counts, "stdout_progress_events": counts["progress_events"], "exported_diagnostic_events": diagnostic_events,
         "network": "loopback_fixture_only", "real_employee_oauth": "NOT_RUN", "cloud_acceptance": "NOT_RUN"}
+    if args.business:
+        evidence["business_cli_without_host_mcp"] = "PASS"
+        evidence["business_calls"] = state["business_calls"]
     if args.evidence:
         args.evidence.parent.mkdir(parents=True, exist_ok=True)
         with args.evidence.open("x", encoding="utf-8") as output:

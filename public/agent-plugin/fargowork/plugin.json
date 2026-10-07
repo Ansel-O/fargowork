@@ -1,14 +1,15 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "fargowork-employee",
-  "version": "1.2.0",
-  "description": "FargoWork governed office workflow Agent Plugin for employees.",
+  "version": "1.3.0",
+  "description": "FargoWork employee workflow Skill using the official CLI, with optional MCP compatibility.",
   "author": {
     "name": "FargoWork maintainers"
   },
   "license": "Apache-2.0",
   "keywords": [
     "fargowork",
+    "cli",
     "mcp",
     "skills",
     "workflow"

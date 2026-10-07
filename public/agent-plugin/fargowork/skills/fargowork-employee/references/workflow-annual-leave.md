@@ -12,9 +12,10 @@ organizes safe conversation and human confirmation.
 
 ## Conversation flow
 
-1. Confirm the authenticated employee identity; the applicant is always the
-   current identity.
-2. Resolve the exact process and read its public input contract.
+1. Verify the authenticated employee silently through the official CLI; the
+   applicant is always that identity, never an employee-supplied userid.
+2. Resolve the process and read its public contract without narrating tool or
+   module loading. Use the core Skill's official `tools call` path.
 3. Collect only employee-controlled dates, time ranges, and reason values
    declared by the Manifest. Do not copy a fixed hidden field list into the
    Skill. Follow the shared Time Contract: send dates as `YYYY-MM-DD` and use
@@ -27,8 +28,10 @@ organizes safe conversation and human confirmation.
 6. If the user explicitly says that authoritative data was updated and asks for
    a fresh check, re-prepare with the original business inputs. The old draft
    and confirmation expire for submission.
-7. Show the semantic preview returned by the Server and wait for explicit
-   natural-language confirmation before submitting the Server-issued draft.
+7. Show a concise, complete semantic preview and ask once for natural-language
+   confirmation. If that same unchanged, unexpired draft has already been
+   previewed and confirmed, submit it once without asking again. Hide draft IDs,
+   tool names and permission checks from the business conversation.
 
 ## Do not do
 

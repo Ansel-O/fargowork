@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
-    [string[]]$Target = @('manual'),
-    [string]$Version = '1.2.0',
+    [string[]]$Target = @('cli'),
+    [string]$Version = '1.3.0',
     [string]$ServiceIssuer,
     [string]$LocalArtifactDir,
     [string]$ReleaseBaseUrl,
@@ -221,30 +221,18 @@ function Emit-Result([hashtable]$Payload) {
     $Payload.attempt_id = $script:attemptId
     $Payload.diagnostic_log_dir = $script:diagnosticDirectory
     $Payload.diagnostic_available = -not $script:diagnosticUnavailable
-    if ($OutputJsonl) {
-        $Payload | ConvertTo-Json -Compress -Depth 10
-    } else {
-        $detail = if ($Payload.message) { $Payload.message } elseif ($Payload.status) { $Payload.status } else { '' }
-        Write-Output ("{0}: {1}" -f $Payload.event, $detail)
-        foreach ($result in @($Payload.targets | Where-Object { $null -ne $_ })) {
-            Write-Output ("{0}: {1}" -f $result.target, $result.status)
-        }
-        if ($Payload.manual_mcp_registration) {
-            Write-Output 'Standard stdio MCP configuration:'
-            $Payload.manual_mcp_registration.config | ConvertTo-Json -Depth 10
-            Write-Output ("Skill: {0}" -f $Payload.skill_path)
-        }
-        if ($Payload.login_command) { Write-Output ("Login: {0}" -f $Payload.login_command) }
-    }
+    # One terminal machine-readable result is the default contract. Support
+    # diagnostics remain in the bounded log rather than becoming an Agent report.
+    $Payload | ConvertTo-Json -Compress -Depth 10
 }
 
 function Resolve-Targets([string[]]$Values) {
-    $allowed = @('manual', 'codex', 'cursor', 'workbuddy', 'claude-code')
+    $allowed = @('cli', 'manual', 'codex', 'cursor', 'workbuddy', 'claude-code')
     $selected = [System.Collections.Generic.List[string]]::new()
     foreach ($value in $Values) {
         foreach ($part in $value.Split(',')) {
             $name = $part.Trim().ToLowerInvariant()
-            if ($name -notin $allowed) { throw "Unsupported FargoWork target: $name. Choose manual, codex, cursor, workbuddy, or claude-code." }
+            if ($name -notin $allowed) { throw "Unsupported FargoWork target: $name. Choose cli, manual, codex, cursor, workbuddy, or claude-code." }
             if (-not $selected.Contains($name)) { $selected.Add($name) }
         }
     }
@@ -253,9 +241,10 @@ function Resolve-Targets([string[]]$Values) {
 }
 
 function Invoke-EmployeeCli([string]$Exe, [string[]]$Arguments) {
-    # Keep identity responses in memory. Only the interactive authorization URL
-    # is streamed so browser=never remains usable while the CLI waits.
+    # Keep identity and diagnostic responses in memory. Browser guidance is the
+    # only progress output; an explicit browser=never needs its functional URL.
     $capture = @{ payload = $null }
+    $browserPrompted = $false
     $previousErrorPreference = $ErrorActionPreference
     try {
         # Windows PowerShell converts native stderr into ErrorRecords. Keep
@@ -263,22 +252,22 @@ function Invoke-EmployeeCli([string]$Exe, [string[]]$Arguments) {
         $ErrorActionPreference = 'Continue'
         & $Exe @Arguments 2>&1 | ForEach-Object {
         try {
+            if ($_ -is [System.Management.Automation.ErrorRecord]) { return }
             $event = [string]$_ | ConvertFrom-Json -ErrorAction Stop
             if ($event.event -eq 'login_authorization_url') {
-                if ($OutputJsonl) { Write-Host ($event | ConvertTo-Json -Compress -Depth 10) }
-                else { Write-Host ("Open this login URL: {0}" -f $event.url) }
+                if ($OpenBrowser -eq 'never') {
+                    # This is an interactive authorization link, never a log
+                    # event or part of the final installation result.
+                    Write-Host (@{ event = 'login_authorization_url'; url = [string]$event.url; attempt_id = $script:attemptId } | ConvertTo-Json -Compress -Depth 3)
+                } elseif (-not $browserPrompted) {
+                    Write-Host 'Complete DingTalk authorization in the opened browser.'
+                    $browserPrompted = $true
+                }
             } elseif ($event.event -in @('installed', 'doctor', 'logged_in', 'status', 'error')) {
                 $capture.payload = $event
-            } elseif ($event.event -in @('login_started', 'listener_ready', 'browser_open_result', 'authorization_waiting',
-                                         'callback_rejected', 'callback_accepted', 'token_request_result', 'identity_result')) {
-                $safeProgress = @{ event = $event.event; attempt_id = $script:attemptId }
-                if ($event.phase -cin @('login', 'listener', 'browser', 'callback', 'token', 'identity')) { $safeProgress.phase = $event.phase }
-                if ($event.outcome -cin @('started', 'succeeded', 'failed', 'rejected', 'waiting', 'unavailable', 'cancelled', 'matched', 'mismatch', 'accepted', 'denied')) { $safeProgress.outcome = $event.outcome }
-                if ($event.error_code -cin @('callback_port_unavailable', 'oauth_state_mismatch', 'oauth_issuer_mismatch', 'oauth_callback_invalid', 'oauth_callback_timeout', 'browser_unavailable', 'auth_required', 'token_exchange_failed', 'identity_verification_failed')) { $safeProgress.error_code = $event.error_code }
-                if ($event.exit_code -is [int] -or $event.exit_code -is [long]) { $safeProgress.exit_code = $event.exit_code }
-                if ($event.matched -is [bool]) { $safeProgress.matched = $event.matched }
-                if ($OutputJsonl) { Write-Host ($safeProgress | ConvertTo-Json -Compress -Depth 3) }
-                else { Write-Host ("{0}: {1}" -f $safeProgress.event, $safeProgress.outcome) }
+            } elseif ($event.event -in @('login_browser_opened', 'login_started') -and $OpenBrowser -ne 'never' -and -not $browserPrompted) {
+                Write-Host 'Complete DingTalk authorization in the opened browser.'
+                $browserPrompted = $true
             }
         } catch {
             # Unexpected native diagnostics are not copied into structured logs.
@@ -330,17 +319,17 @@ function Get-SafeClientFailure([object]$Payload, [string]$Target, [string]$Phase
 
 function Get-SafeClientSummary([object]$Payload) {
     $summary = @{}
-    foreach ($name in @('manual', 'codex', 'cursor', 'workbuddy', 'claude-code')) {
+    foreach ($name in @('cli', 'manual', 'codex', 'cursor', 'workbuddy', 'claude-code')) {
         $client = if ($Payload.clients) { $Payload.clients.$name } else { $null }
         if (-not $client) { continue }
         $record = @{}
         foreach ($field in @('detected', 'registered', 'needs_user_action', 'mutation_may_have_happened')) {
             if ($client.$field -is [bool]) { $record[$field] = $client.$field }
         }
-        $record.trusted = if ($client.trusted -is [bool]) { $client.trusted } else { 'unknown' }
+        $record.trusted = if ($client.trusted -is [bool]) { $client.trusted } elseif ($name -eq 'cli' -and $client.trusted -ceq 'not_required') { 'not_required' } else { 'unknown' }
         if ($client.registration -cin @('not_detected', 'not_registered', 'conflict', 'registration_missing',
                 'registration_unverified', 'official-cli-error', 'official-cli-failed', 'config_unreadable',
-                'official-codex-cli', 'official-cursor-user-json', 'official-claude-code-user', 'official-codebuddy-user')) {
+                'official-codex-cli', 'official-cursor-user-json', 'official-claude-code-user', 'official-codebuddy-user', 'cli-no-mcp')) {
             $record.registration = $client.registration
         }
         if ($client.reason) { $record.reason = Get-SafeClientFailure $Payload $name 'client setup' 3 }
@@ -593,6 +582,8 @@ $script:installationPhase = 'preflight'
 $script:profileResult = $null
 $script:profilePendingReset = $false
 $script:authenticationErrorCode = $null
+$script:failureExitCode = 4
+$script:businessCliAvailable = $false
 
 try {
     $selectedTargets = @(Resolve-Targets $Target)
@@ -646,7 +637,7 @@ try {
     if ($pluginManifest.name -ne 'fargowork-employee' -or $pluginManifest.version -ne $Version) { throw '[artifact_invalid] Plugin identity or version does not match this employee candidate.' }
     if ($DryRun) {
         Write-InstallationDiagnostic 'installation_finished' 'finish' 'succeeded' '' 0
-        Emit-Result @{ event = 'dry_run'; status = 'verified'; installed = $false; connected = $null; identity_verified = $false; trusted = 'unknown'; needs_user_action = $true; selected_targets = $selectedTargets; login_requested = [bool]$Login; employee_configuration_changed = $false; temporary_downloads = $true; diagnostics_written = -not $script:diagnosticUnavailable; message = 'Host prerequisites and local/remote artifacts verified. Temporary downloads and bounded diagnostics may be written; employee configuration, credentials and host registration are unchanged.' }
+        Emit-Result @{ event = 'dry_run'; status = 'verified'; installed = $false; connected = $null; identity_verified = $false; trusted = if (@($selectedTargets | Where-Object { $_ -ne 'cli' }).Count -eq 0) { 'not_required' } else { 'unknown' }; needs_user_action = $true; selected_targets = $selectedTargets; login_requested = [bool]$Login; employee_configuration_changed = $false; temporary_downloads = $true; diagnostics_written = -not $script:diagnosticUnavailable; connection_mode = if ('cli' -in $selectedTargets) { 'cli' } else { 'mcp' }; mcp_registration_required = @($selectedTargets | Where-Object { $_ -ne 'cli' }).Count -gt 0; business_cli_available = $false; tool_capability = 'not_checked'; message = 'Host prerequisites and local/remote artifacts verified. Temporary downloads and bounded diagnostics may be written; employee configuration, credentials and host registration are unchanged.' }
         exit 0
     }
     $script:installationPhase = 'stage'
@@ -743,7 +734,7 @@ try {
     $script:installationPhase = 'register'
     $successfulTargets = 0
     foreach ($selectedTarget in $selectedTargets) {
-        $result = @{ target = $selectedTarget; status = 'error'; installed = $false; connected = $null; identity_verified = $false; trusted = 'unknown'; needs_user_action = $true }
+        $result = @{ target = $selectedTarget; status = 'error'; installed = $false; connected = $null; identity_verified = $false; trusted = if ($selectedTarget -eq 'cli') { 'not_required' } else { 'unknown' }; needs_user_action = $true; connection_mode = if ($selectedTarget -eq 'cli') { 'cli' } else { 'mcp' }; mcp_registration_required = $selectedTarget -ne 'cli'; business_cli_available = $false; tool_capability = 'not_checked' }
         $script:targetResults.Add($result)
         try {
             $installArguments = @('install', '--target', $selectedTarget, '--issuer', $ServiceIssuer, '--attempt-id', $script:attemptId, '--output', 'jsonl')
@@ -770,28 +761,34 @@ try {
                 }
             }
             if ($installation.ExitCode -ne 0 -or -not $installation.Payload.installed -or $installation.Payload.event -ne 'installed') {
+                if ($installation.ExitCode -ne 0) { $script:failureExitCode = $installation.ExitCode }
                 if ($installation.Payload.code) { $result.code = $installation.Payload.code }
                 $result.next_action = if ($hasRegistrationEvidence -or $hasMutationEvidence) { 'Review the reported registration state. Do not retry or manually edit configuration until the service owner confirms recovery.' } else { 'Stop and send the attempt ID, safe result and diagnostic export to the service owner. Do not manually stage files or try alternate installation commands.' }
                 Write-InstallationDiagnostic 'client_registration_result' 'register' 'failed' 'registration_failed' $installation.ExitCode
                 throw (Get-SafeClientFailure $installation.Payload $selectedTarget 'installation' $installation.ExitCode)
             }
             $result.installed = $true
+            if ($installation.Payload.business_cli_available -is [bool]) {
+                $result.business_cli_available = $installation.Payload.business_cli_available
+                $script:businessCliAvailable = $script:businessCliAvailable -or $result.business_cli_available
+            }
             # Registration may already reference this executable. A later
             # diagnostic or authentication failure must not remove it.
             $script:retainInstall = $true
-            Write-InstallationDiagnostic 'client_registration_result' 'register' 'succeeded' '' $installation.ExitCode
+            Write-InstallationDiagnostic 'client_registration_result' 'register' $(if ($selectedTarget -in @('cli', 'manual')) { 'not_attempted' } else { 'succeeded' }) '' $installation.ExitCode
             $doctorArguments = @('doctor', '--target', $selectedTarget, '--attempt-id', $script:attemptId, '--output', 'jsonl')
             if ($selectedTarget -eq 'codex' -and $script:resolvedCodexPath) { $doctorArguments += @('--codex-path', $script:resolvedCodexPath) }
             $diagnostic = Invoke-EmployeeCli $installedExe $doctorArguments
             $result.doctor_exit_code = $diagnostic.ExitCode
             if ($diagnostic.ExitCode -notin @(0, 3) -or $diagnostic.Payload.event -ne 'doctor' -or -not $diagnostic.Payload.installed) {
+                if ($diagnostic.ExitCode -ne 0) { $script:failureExitCode = $diagnostic.ExitCode }
                 if ($diagnostic.Payload.code) { $result.code = $diagnostic.Payload.code }
                 throw (Get-SafeClientFailure $diagnostic.Payload $selectedTarget 'diagnostic' $diagnostic.ExitCode)
             }
             $result.status = if ($diagnostic.ExitCode -eq 3) { 'needs_user_action' } else { 'installed' }
-            $result.trusted = $diagnostic.Payload.trusted
+            $result.trusted = if ($selectedTarget -eq 'cli') { 'not_required' } elseif ($diagnostic.Payload.trusted -is [bool]) { $diagnostic.Payload.trusted } else { 'unknown' }
             $result.clients = Get-SafeClientSummary $diagnostic.Payload
-            if ($installation.Payload.manual_mcp_registration) { $script:manualRegistration = $installation.Payload.manual_mcp_registration }
+            if ($selectedTarget -eq 'manual' -and $installation.Payload.manual_mcp_registration) { $script:manualRegistration = $installation.Payload.manual_mcp_registration }
             if ($installation.Payload.skill_path) { $script:skillPath = $installation.Payload.skill_path }
             $successfulTargets++
         } catch {
@@ -814,6 +811,7 @@ try {
         $authentication = Invoke-EmployeeCli $installedExe @('login', '--browser', $OpenBrowser, '--attempt-id', $script:attemptId, '--output', 'jsonl')
         $script:connected = $false
         if ($authentication.ExitCode -ne 0 -or $authentication.Payload.event -ne 'logged_in' -or $authentication.Payload.connected -ne $true) {
+            if ($authentication.ExitCode -ne 0) { $script:failureExitCode = $authentication.ExitCode }
             $script:authenticationErrorCode = $authentication.Payload.code
             throw "FargoWork login failed (exit $($authentication.ExitCode)); installed files and personal state were retained."
         }
@@ -829,13 +827,14 @@ try {
             $result.identity_verified = $verification.Payload.identity_verified -eq $true
             $result.connected = $verification.Payload.connected -eq $true -and $result.identity_verified
             if ($verification.ExitCode -notin @(0, 3) -or -not $result.connected) {
+                if ($verification.ExitCode -ne 0) { $script:failureExitCode = $verification.ExitCode }
                 $result.status = 'identity_verification_failed'
                 $result.needs_user_action = $true
                 continue
             }
             $verifiedTargets++
             $result.needs_user_action = [bool]$verification.Payload.needs_user_action
-            $result.trusted = $verification.Payload.trusted
+            $result.trusted = if ($result.target -eq 'cli') { 'not_required' } elseif ($verification.Payload.trusted -is [bool]) { $verification.Payload.trusted } else { 'unknown' }
             $result.clients = Get-SafeClientSummary $verification.Payload
             if ($verification.Payload.profile) { $result.profile = $verification.Payload.profile; $script:profileResult = $verification.Payload.profile }
             if ($verification.Payload.profile_pending_reset -eq $true) { $result.profile_pending_reset = $true; $script:profilePendingReset = $true }
@@ -854,7 +853,9 @@ try {
         $script:recoveryPath = $script:stage
         $script:recoveryError = "The update succeeded, but old recovery material could not be cleaned: $($_.Exception.Message)"
     }
-    $payload = @{ event = 'installed'; status = if ($needsAction) { 'needs_user_action' } else { 'ready' }; installed = $true; connected = $script:connected; identity_verified = $script:identityVerified; trusted = if (@($script:targetResults | Where-Object { $_.trusted -ne $true }).Count -eq 0) { $true } else { 'unknown' }; needs_user_action = $needsAction; plugin_dir = $script:pluginDest; targets = $script:targetResults.ToArray(); manual_mcp_registration = $script:manualRegistration; skill_path = $script:skillPath; login_command = "& '$($installedExe.Replace("'", "''"))' login --browser always"; message = $message }
+    $payload = @{ event = 'installed'; status = if ($needsAction) { 'needs_user_action' } else { 'ready' }; installed = $true; connected = $script:connected; identity_verified = $script:identityVerified; trusted = if (@($selectedTargets | Where-Object { $_ -ne 'cli' }).Count -eq 0) { 'not_required' } elseif (@($script:targetResults | Where-Object { $_.trusted -ne $true }).Count -eq 0) { $true } else { 'unknown' }; needs_user_action = $needsAction; plugin_dir = $script:pluginDest; targets = $script:targetResults.ToArray(); skill_path = $script:skillPath; login_command = "& '$($installedExe.Replace("'", "''"))' login --browser always"; message = $message; connection_mode = if ('cli' -in $selectedTargets) { 'cli' } else { 'mcp' }; mcp_registration_required = @($selectedTargets | Where-Object { $_ -ne 'cli' }).Count -gt 0; business_cli_available = $script:businessCliAvailable; tool_capability = 'not_checked' }
+    if ($script:manualRegistration) { $payload.manual_mcp_registration = $script:manualRegistration }
+    $payload.cli_path = $installedExe
     if ($script:profileResult) { $payload.profile = $script:profileResult }
     $payload.profile_pending_reset = $script:profilePendingReset
     if ($cleanupPending) { $payload.recovery_path = $script:recoveryPath; $payload.message = $script:recoveryError }
@@ -864,7 +865,7 @@ try {
 } catch {
     $mainError = $_.Exception.Message
     $failureCode = Get-InstallationErrorCode $mainError
-    Write-InstallationDiagnostic 'installation_finished' $script:installationPhase 'failed' $failureCode 4
+    Write-InstallationDiagnostic 'installation_finished' $script:installationPhase 'failed' $failureCode $script:failureExitCode
     if ($script:stage -and (Test-Path -LiteralPath $script:stage) -and -not $script:recoveryPath) {
         try {
             if (-not $script:retainInstall -and ($script:oldBinMoved -or $script:oldPluginMoved -or $script:newBinInstalled -or $script:newPluginInstalled -or $script:ambiguousTransition)) {
@@ -881,9 +882,12 @@ try {
     } elseif ($script:recoveryPath) {
         foreach ($result in $script:targetResults) { $result.rollback_status = 'recovery_required' }
     }
-    $payload = @{ event = 'error'; status = if ($script:retainInstall) { 'installed_with_errors' } else { 'error' }; installed = $script:retainInstall; connected = $script:connected; identity_verified = $script:identityVerified; trusted = 'unknown'; needs_user_action = $true; targets = $script:targetResults.ToArray(); manual_mcp_registration = $script:manualRegistration; skill_path = $script:skillPath; code = if ($script:recoveryPath) { 'install_failed_recovery_required' } elseif ($script:retainInstall) { 'post_install_failed' } else { 'install_failed' }; message = $mainError }
+    $payload = @{ event = 'error'; status = if ($script:retainInstall) { 'installed_with_errors' } else { 'error' }; installed = $script:retainInstall; connected = $script:connected; identity_verified = $script:identityVerified; trusted = if ($selectedTargets.Count -gt 0 -and @($selectedTargets | Where-Object { $_ -ne 'cli' }).Count -eq 0) { 'not_required' } else { 'unknown' }; needs_user_action = $true; targets = $script:targetResults.ToArray(); skill_path = $script:skillPath; code = if ($script:recoveryPath) { 'install_failed_recovery_required' } elseif ($script:retainInstall) { 'post_install_failed' } else { 'install_failed' }; message = $mainError; business_cli_available = $script:businessCliAvailable; tool_capability = 'not_checked' }
+    if ($script:manualRegistration) { $payload.manual_mcp_registration = $script:manualRegistration }
+    if ($script:retainInstall -and $installedExe) { $payload.cli_path = $installedExe }
     $payload.phase = $script:installationPhase
     $payload.error_code = $failureCode
+    $payload.exit_code = $script:failureExitCode
     $payload.next_action = 'Stop and provide this attempt ID and safe diagnostic export to the service owner. Do not guess paths, manually stage files, modify other products or repeat installation.'
     if ($script:authenticationErrorCode) { $payload.authentication_error_code = $script:authenticationErrorCode }
     if ($script:recoveryPath) {
@@ -891,7 +895,7 @@ try {
         $payload.recovery_error = $script:recoveryError
     }
     Emit-Result $payload
-    exit 4
+    exit $script:failureExitCode
 } finally {
     if ($script:tempDir -and (Test-Path -LiteralPath $script:tempDir)) {
         Remove-Item -LiteralPath $script:tempDir -Recurse -Force -ErrorAction SilentlyContinue

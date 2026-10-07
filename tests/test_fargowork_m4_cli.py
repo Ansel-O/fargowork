@@ -477,7 +477,9 @@ class FargoWorkM4CLITests(unittest.TestCase):
                     while not events and time.time() < deadline:
                         time.sleep(0.01)
                     self.assertTrue(events)
-                    query = parse_qs(urlsplit(events[0]["url"]).query)
+                    self.assertEqual(events[0]["event"], "login_browser_opened")
+                    self.assertNotIn("url", events[0])
+                    query = parse_qs(urlsplit(browser_open.call_args.args[0]).query)
                     self.assertEqual(query["code_challenge_method"], ["S256"])
                     self.assertTrue(query["code_challenge"][0])
                     callback = f"{config.redirect_uri}?code=fixture-code&state={query['state'][0]}&iss={config.issuer}"
@@ -987,10 +989,10 @@ print(cli.TokenSession(config, vault=SharedFixtureVault(home)).refresh(), flush=
             self.assertFalse(result["registered"])
             self.assertEqual(json.loads(path.read_text())["command"], "keep-me")
 
-    def test_employee_parser_defaults_to_manual_and_accepts_each_host(self):
+    def test_employee_parser_defaults_to_cli_and_accepts_each_host(self):
         parser = self.cli._build_parser()
         for command in ("install", "repair", "doctor", "status", "uninstall"):
-            self.assertEqual(parser.parse_args([command]).target, "manual")
+            self.assertEqual(parser.parse_args([command]).target, "cli")
             for target in ("manual", "auto", "all", "codex", "cursor", "workbuddy", "claude-code"):
                 self.assertEqual(parser.parse_args([command, "--target", target]).target, target)
 
@@ -1061,7 +1063,7 @@ print(cli.TokenSession(config, vault=SharedFixtureVault(home)).refresh(), flush=
                 for command, expected_exit in (("install", 0), ("doctor", 3), ("repair", 0), ("status", 3), ("uninstall", 0)):
                     out = io.StringIO()
                     with patch("sys.stdout", out):
-                        result = self.cli.main([command, "--output", "jsonl"])
+                        result = self.cli.main([command, "--target", "manual", "--output", "jsonl"])
                     self.assertEqual(result, expected_exit, out.getvalue())
                     payload = json.loads(out.getvalue().splitlines()[-1])
                     if command == "uninstall":

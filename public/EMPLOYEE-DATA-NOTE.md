@@ -1,13 +1,11 @@
-# FargoWork employee data note
+# FargoWork 员工数据说明
 
-Employee text inputs, public candidates returned by FargoWork, and workflow previews may enter the context of the AI model configured in the employee's client. Use only the client/model choices permitted by company policy. FargoWork's Server enforces the authenticated identity, tool permissions, and its public workflow data contract; client instructions alone do not grant access.
+申请输入、候选和预览会进入你选择的 AI 客户端及模型上下文。请使用公司允许的客户端和模型。FargoWork 服务端控制公司身份、工具权限和业务规则；个人偏好或 AI 指令不能改变权限。
 
-This package does not select a company model account or define a company-wide data policy. The production log access list and retention policy have not been established or verified by this local candidate. Ask the service owner for the current approved client/model, support contact, and data-handling instructions before using sensitive business information.
+个人偏好按已验证的企业与员工账号分别存储。首次创建模板，更新默认保留；升级后 AI 只问一次是否清空当前账号。清空不影响登录凭据、草稿或其他账号。共用一个 Windows 账号不能保证人员之间的资料保密；换员工账号后应新开 AI 会话。
 
-Personal preferences are stored separately for each verified enterprise/employee account. They are user-editable local data, preserved during updates, and cannot change Server permissions or approval rules. An upgrade prompts once to keep or reset the current account's preferences; keeping is the default. A shared Windows account is not a strong privacy boundary between people, and switching accounts does not erase an existing AI chat.
+本地诊断最多保留 7 天、总量 20 MiB，只记录固定阶段、随机操作编号、耗时和错误码，不记录凭据、完整登录链接、身份、画像或业务正文。排障时可由你主动提供受控导出，不自动上传；导出副本需自行保管。操作说明见排障文档。
 
-Local diagnostic events record safe installation/login stages, random attempt/request identifiers, timestamps, duration and fixed error codes. Logs keep at most seven days within a 20 MiB directory budget at `%APPDATA%\FargoWork\diagnostics`. They do not record credentials, full OAuth links, identities, personal preference contents, chat, or workflow bodies. Export uses a field allowlist and requires the user's action; nothing is uploaded automatically. Exported copies have their own storage/lifecycle outside the managed log budget.
+官方 CLI 将声明的业务参数发送给 FargoWork 服务端，不把申请正文写入诊断日志。完整预览后的一次明确确认只授权该份申请；修改或过期需重新预览确认。结果未知时不会自动重发。
 
-FargoWork is separate from Fargo AI/Fargo Pass. This installer does not modify that product's configuration, credentials or logs.
-
-The employee package contains no Server source, form/field mappings, approval rules, credentials, employee allowlist, or runtime data. Its checksum verifies package integrity against the supplied checksum file; it does not establish who published the file.
+FargoWork 与 Fargo AI/Fargo Pass 独立，不处理另一产品的配置、凭据或日志。员工交付不含服务端源码、审批规则、密钥或运行数据。

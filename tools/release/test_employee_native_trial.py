@@ -52,7 +52,7 @@ def main() -> int:
             source.extractall(package)
         if args.prototype_installer:
             shutil.copy2(args.prototype_installer.resolve(strict=True), package / "install.ps1")
-        selected = ["manual", "cursor"]
+        selected = ["cli", "manual", "cursor"]
         if shutil.which("codex"):
             selected.append("codex")
         else:
@@ -76,7 +76,7 @@ def main() -> int:
                                               "private_preference": "keep"}), encoding="utf-8")
             preference = profile / "personal-preferences.md"
             preference.write_text("personal preference sentinel", encoding="utf-8")
-            command = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+            command = ["powershell.exe", "-NoProfile",
                        "-File", str(package / "install.ps1"), "-Version", version,
                        "-Target", target, "-ServiceIssuer", args.issuer,
                        "-LocalArtifactDir", str(package), "-OutputJsonl"]
@@ -87,9 +87,15 @@ def main() -> int:
                   and installed.get("identity_verified") is False, "installer claimed unauthenticated connectivity")
             check(installed["targets"][0]["target"] == target, "installer target contract differs")
             employee = Path(env["APPDATA"]) / "FargoWork" / "employee"
-            check(installed["manual_mcp_registration"]["command"] ==
-                  str(employee / "plugin" / "fargowork-employee" / "bin" / "fargowork.exe"),
-                  "installer corrupted the Unicode manual command path")
+            if target == "manual":
+                check(installed["manual_mcp_registration"]["command"] ==
+                      str(employee / "plugin" / "fargowork-employee" / "bin" / "fargowork.exe"),
+                      "installer corrupted the Unicode manual command path")
+            elif target == "cli":
+                check(installed.get("business_cli_available") is True
+                      and installed.get("mcp_registration_required") is False
+                      and "manual_mcp_registration" not in installed,
+                      "CLI installation still requires host MCP registration")
             exe = employee / "bin" / "fargowork.exe"
             native, _ = run([str(exe), "--version"], env)
             check(native.returncode == 0 and native.stdout.strip() == version, "native version differs")
@@ -137,7 +143,7 @@ def main() -> int:
             summary["checks"].append({"target": target, "native_install_doctor_status": "PASS",
                                       "anonymous_bridge_rejected": "PASS",
                                       "foreign_configuration_preserved": "PASS",
-                                      "owned_uninstall": "NOT_RUN" if target == "manual" else "PASS"})
+                                      "owned_uninstall": "NOT_RUN" if target in {"cli", "manual"} else "PASS"})
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
 

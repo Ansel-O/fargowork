@@ -1,7 +1,7 @@
 #requires -Version 5.1
 [CmdletBinding()]
 param(
-    [string[]]$Target = @('manual'),
+    [string[]]$Target = @('cli'),
     [string]$ServiceIssuer = 'https://fargowork.fargowealthapp.com',
     [switch]$Login,
     [ValidateSet('auto', 'always', 'never')]
@@ -15,7 +15,7 @@ param(
 $ErrorActionPreference = 'Stop'
 # Pin the built-in module to this runtime when launched by another AI shell.
 Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -Force
-$version = '1.2.0'
+$version = '1.3.0'
 $tag = 'v' + $version
 $bundleName = "fargowork-employee-v$version-windows-x64.zip"
 $repository = 'Ansel-O/fargowork'
@@ -28,6 +28,7 @@ $script:attemptId = $null
 $script:diagnosticDirectory = $null
 $script:resolvedCodexPath = $null
 $script:installationPhase = 'preflight'
+$script:bootstrapPayload = $null
 
 
 # This fixed event writer shares one directory, namespace and byte lock with the
@@ -248,36 +249,30 @@ function Download-ReleaseFile([string]$Uri, [string]$Destination) {
 }
 
 function Invoke-InstallerLauncher([string[]]$Arguments) {
-    # Stream only the official installer's structured UI events, not arbitrary
-    # native stderr. In particular, do not buffer interactive login in Out-String.
+    # Keep one final result and only the functional browser=never authorization
+    # link. Native stderr and diagnostic progress never become installer output.
     $script:launcherStructuredResult = $false
+    $capture = @{ payload = $null }
     $previousErrorPreference = $ErrorActionPreference
+    if ($Login -and $OpenBrowser -ne 'never') { Write-Host 'Complete DingTalk authorization in the opened browser.' }
     try {
         $ErrorActionPreference = 'Continue'
         & powershell.exe @Arguments 2>&1 | ForEach-Object {
         try {
+            if ($_ -is [System.Management.Automation.ErrorRecord]) { return }
             $event = [string]$_ | ConvertFrom-Json -ErrorAction Stop
-            if ($event.event -in @('installed', 'error', 'dry_run', 'login_authorization_url', 'login_started',
-                                   'listener_ready', 'browser_open_result', 'authorization_waiting',
-                                   'callback_rejected', 'callback_accepted', 'token_request_result', 'identity_result')) {
-                if ($event.event -in @('installed', 'error', 'dry_run')) { $script:launcherStructuredResult = $true }
-                if ($OutputJsonl) { Write-Host ($event | ConvertTo-Json -Compress -Depth 10) }
-                elseif ($event.event -eq 'login_authorization_url') { Write-Host ("Open this login URL: {0}" -f $event.url) }
-                else {
-                    $detail = if ($event.message) { $event.message } else { $event.outcome }
-                    Write-Host ("{0}: {1}" -f $event.event, $detail)
-                    if ($event.manual_mcp_registration) {
-                        Write-Host 'Standard stdio MCP configuration:'
-                        Write-Host ($event.manual_mcp_registration.config | ConvertTo-Json -Depth 8)
-                    }
-                    if ($event.skill_path) { Write-Host ("Skill: {0}" -f $event.skill_path) }
-                    if ($event.diagnostic_log_dir) { Write-Host ("Diagnostic attempt: {0}; directory: {1}" -f $event.attempt_id, $event.diagnostic_log_dir) }
-                }
+            if ($event.event -in @('installed', 'error', 'dry_run')) {
+                $script:launcherStructuredResult = $true
+                $capture.payload = $event
+            } elseif ($event.event -eq 'login_authorization_url' -and $OpenBrowser -eq 'never') {
+                Write-Host (@{ event = 'login_authorization_url'; url = [string]$event.url; attempt_id = $script:attemptId } | ConvertTo-Json -Compress -Depth 3)
             }
         } catch { }
         }
     } finally { $ErrorActionPreference = $previousErrorPreference }
-    return $LASTEXITCODE
+    $nativeExit = $LASTEXITCODE
+    if ($capture.payload) { $script:bootstrapPayload = $capture.payload }
+    return $nativeExit
 }
 
 try {
@@ -289,7 +284,7 @@ try {
     }
     $selectedTargets = @()
     foreach ($name in ($Target -join ',').Split(',')) {
-        if ($name.Trim().ToLowerInvariant() -notin @('manual', 'codex', 'cursor', 'workbuddy', 'claude-code')) {
+        if ($name.Trim().ToLowerInvariant() -notin @('cli', 'manual', 'codex', 'cursor', 'workbuddy', 'claude-code')) {
             throw "Unsupported installation target: $name"
         }
         $selectedTargets += $name.Trim().ToLowerInvariant()
@@ -321,7 +316,7 @@ try {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [IO.Compression.ZipFile]::OpenRead($archivePath)
     try {
-        $expected = @('README.md', 'DATA-AND-SUPPORT.md', 'install.ps1', 'release-manifest.json', 'SHA256SUMS', 'candidate-manifest.json',
+        $expected = @('README.md', 'DATA-AND-SUPPORT.md', 'DEBUG.md', 'install.ps1', 'release-manifest.json', 'SHA256SUMS', 'candidate-manifest.json',
             "fargowork-cli-v$version-windows-x64.zip", "fargowork-bridge-v$version-windows-x64.zip", "fargowork-agent-plugin-v$version-windows-x64.zip")
         $seen = @{}
         foreach ($entry in $archive.Entries) {
@@ -348,21 +343,19 @@ try {
     $exitCode = Invoke-InstallerLauncher $arguments
     Write-InstallationDiagnostic 'launcher_finished' 'finish' $(if ($exitCode -eq 0) { 'succeeded' } else { 'failed' }) '' $exitCode
     if (-not $script:launcherStructuredResult) {
-        @{ event = 'bootstrap_error'; installed = $false; connected = $false; attempt_id = $script:attemptId;
+        if ($exitCode -eq 0) { $exitCode = 4 }
+        $script:bootstrapPayload = @{ event = 'bootstrap_error'; installed = $false; connected = $false; attempt_id = $script:attemptId;
            diagnostic_log_dir = $script:diagnosticDirectory; error_code = 'launcher_failed'; exit_code = $exitCode;
            message = 'The official installer did not return a structured result. Its script may have been blocked or could not start; no alternate execution method was attempted.';
-           next_action = 'Stop and report this attempt to the service owner. Follow company policy; do not repeat installation or bypass the restriction.' } | ConvertTo-Json -Compress
-        if ($exitCode -eq 0) { $exitCode = 4 }
+           next_action = 'Stop and report this attempt to the service owner. Follow company policy; do not repeat installation or bypass the restriction.' }
     }
 } catch {
     $failureCode = Get-InstallationErrorCode $_.Exception.Message
     Write-InstallationDiagnostic 'installation_finished' $script:installationPhase 'failed' $failureCode 4
-    if ($OutputJsonl) {
-        @{ event = 'bootstrap_error'; installed = $false; connected = $false; message = $_.Exception.Message; error_code = $failureCode;
+    $script:bootstrapPayload = @{ event = 'bootstrap_error'; installed = $false; connected = $false; message = $_.Exception.Message; error_code = $failureCode;
            phase = $script:installationPhase; attempt_id = $script:attemptId; diagnostic_log_dir = $script:diagnosticDirectory;
            diagnostic_available = -not $script:diagnosticUnavailable;
-           next_action = 'Stop and provide the attempt ID and safe diagnostic export to the service owner. Do not guess paths, bypass company policy, manually stage files or repeat installation.' } | ConvertTo-Json -Compress
-    } else { Write-Error -ErrorAction Continue $_.Exception.Message }
+           next_action = 'Stop and provide the attempt ID and safe diagnostic export to the service owner. Do not guess paths, bypass company policy, manually stage files or repeat installation.' }
     $exitCode = 4
 } finally {
     if ($temporary -and (Test-Path -LiteralPath $temporary)) {
@@ -385,7 +378,20 @@ try {
                 throw 'Bootstrap cleanup ownership could not be verified.'
             }
             Remove-Item -LiteralPath $resolved -Recurse -Force
-        } catch { Write-Warning 'Bootstrap staging was retained because cleanup could not be verified.' }
+        } catch {
+            # Keep recovery explicit in the single final result. A warning after
+            # that result would obscure the machine-readable completion contract.
+            if ($script:bootstrapPayload) {
+                if ($script:bootstrapPayload -is [System.Collections.IDictionary]) {
+                    $script:bootstrapPayload.recovery_staging_retained = $true
+                    $script:bootstrapPayload.recovery_path = $temporary
+                } else {
+                    $script:bootstrapPayload | Add-Member -NotePropertyName 'recovery_staging_retained' -NotePropertyValue $true -Force
+                    $script:bootstrapPayload | Add-Member -NotePropertyName 'recovery_path' -NotePropertyValue $temporary -Force
+                }
+            }
+        }
     }
 }
+if ($script:bootstrapPayload) { $script:bootstrapPayload | ConvertTo-Json -Compress -Depth 10 }
 exit $exitCode
