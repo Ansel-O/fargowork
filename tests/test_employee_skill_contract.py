@@ -29,8 +29,8 @@ def contract(path):
 def test_homepage_has_one_short_install_request_without_distribution_faq():
     readme = text(repository_document("README.md"))
     quote_lines = [line[2:].strip() for line in readme.splitlines() if line.startswith("> ")]
-    assert quote_lines == ["请帮我安装 FargoWork，按仓库说明完成登录。"]
-    assert len(quote_lines[0]) <= 40
+    assert quote_lines == ["请从 https://github.com/Ansel-O/fargowork 安装 FargoWork，并帮我完成登录。"]
+    assert len(quote_lines[0]) <= 100
     assert not re.search(r"\bzip\b|\.zip|内部平台|下载 ZIP|手工编辑", readme, flags=re.I)
     assert "v1.3.0/public/bootstrap.ps1" in readme
     assert "-Target cli -Login" in readme

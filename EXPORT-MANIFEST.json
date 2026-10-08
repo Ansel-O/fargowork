@@ -27,8 +27,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "9a7d2e44c798bd8b775e8b4f279c8062548ff1146c62ab3d6e5a5cbbd38f2c94",
-      "size": 1538
+      "sha256": "726c0f6dd9c2238437c6da7c3a0d914e24982b059b9ab7d985542f0ee04f4072",
+      "size": 1564
     },
     {
       "path": "SECURITY.md",
@@ -42,8 +42,8 @@
     },
     {
       "path": "public/EMPLOYEE-README.md",
-      "sha256": "3ebec0f37666ef0df527b0f3d7f9cd1ecb809e4513683581f6d15b568a06ca45",
-      "size": 1421
+      "sha256": "8b1e1921003435dac6dfa4d06941eb500d941cd28567d7e3d43a7d752fc11e97",
+      "size": 1451
     },
     {
       "path": "public/agent-plugin/fargowork/LICENSE",
@@ -152,8 +152,8 @@
     },
     {
       "path": "tests/test_employee_skill_contract.py",
-      "sha256": "3f1979549c1ea507e1eff1cabb3d8d2eed5db0e9ae27d99f1c8df3c1bb317b14",
-      "size": 5743
+      "sha256": "b2687a4f0e4a1421570ed7cfa3e176928c47180bbb85431fd71d5a27e2e81afe",
+      "size": 5773
     },
     {
       "path": "tests/test_employee_tools_cli.py",
@@ -210,6 +210,6 @@
   "license": "Apache-2.0",
   "private_components_included": false,
   "repository": "Ansel-O/fargowork",
-  "source_revision": "6d259bc67ead7d981a5e5510f829a1fcd8343766",
+  "source_revision": "137c8c29b334bb32913ef5dfab57d45f93701982",
   "visibility": "public"
 }

@@ -1,8 +1,8 @@
 # FargoWork Windows 员工试用版
 
-把 FargoWork 交给能运行本地命令的 AI，并说：
+复制下面这句话，发给能运行本地命令的 AI：
 
-> 请帮我安装 FargoWork，按仓库说明完成登录。
+> 请从 https://github.com/Ansel-O/fargowork 安装 FargoWork，并帮我完成登录。
 
 你完成钉钉授权后，直接提出出差、年假、采购或付款申请。AI 会补问必要信息、展示完整业务预览，确认一次后提交。当前是 Windows x64 测试版，测试提交需要公司的 `MCP_allow` 角色；Mac 后续支持。
 
