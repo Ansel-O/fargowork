@@ -29,7 +29,7 @@ class PublicPluginReleaseTests(unittest.TestCase):
     def setUpClass(cls):
         cls.builder = load_builder()
 
-    def test_standard_manifest_mcp_and_skill_contract(self):
+    def test_cli_only_manifest_and_skill_contract(self):
         spec = self.builder._load_export_spec(REPO_ROOT, EXPORT_SPEC)
         payloads = self.builder.validate_export_source(spec)
         plugin = self.builder.validate_plugin_contract(payloads)
@@ -38,13 +38,8 @@ class PublicPluginReleaseTests(unittest.TestCase):
         self.assertEqual(plugin["name"], "fargowork-employee")
         self.assertEqual(plugin["version"], json.loads(VERSION_FILE.read_text(encoding="utf-8"))["version"])
         self.assertEqual(plugin["license"], "Apache-2.0")
-        mcp = json.loads((SOURCE_ROOT / "mcp.json").read_text(encoding="utf-8"))
-        self.assertEqual(mcp["$schema"], self.builder.MCP_SCHEMA)
-        server = mcp["mcpServers"]["fargowork-employee"]
-        self.assertEqual(server["type"], "stdio")
-        self.assertEqual(server["command"], "./bin/fargowork.cmd")
-        self.assertEqual(server["args"], ["bridge"])
-        self.assertEqual(server["cwd"], "${PLUGIN_ROOT}")
+        self.assertFalse((SOURCE_ROOT / "mcp.json").exists())
+        self.assertFalse((SOURCE_ROOT / "bin/fargowork.cmd").exists())
 
     def test_build_injects_version_and_verifies_checksum(self):
         with tempfile.TemporaryDirectory() as temp_dir:

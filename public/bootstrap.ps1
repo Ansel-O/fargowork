@@ -15,7 +15,7 @@ param(
 $ErrorActionPreference = 'Stop'
 # Pin the built-in module to this runtime when launched by another AI shell.
 Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -Force
-$version = '1.3.0'
+$version = '1.4.0'
 $tag = 'v' + $version
 $bundleName = "fargowork-employee-v$version-windows-x64.zip"
 $repository = 'Ansel-O/fargowork'
@@ -183,44 +183,7 @@ function Write-InstallationDiagnostic([string]$Event, [string]$Phase, [string]$O
 }
 
 function Invoke-HostPreflight([string[]]$Targets) {
-    if ($CodexPath -and 'codex' -notin $Targets) { throw '[codex_path_invalid] CodexPath requires the codex target.' }
-    if ('codex' -notin $Targets) { return }
-    $candidate = $CodexPath
-    if (-not $candidate) {
-        $command = Get-Command -Name 'codex.exe' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($command) { $candidate = $command.Source }
-    }
-    if (-not $candidate) {
-        throw '[client_not_detected] Codex was not found on PATH. For an embedded host, provide its verified absolute native executable with -CodexPath; no package was downloaded or installed.'
-    }
-    if (-not [IO.Path]::IsPathRooted($candidate) -or [IO.Path]::GetExtension($candidate) -ine '.exe' -or
-        -not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
-        throw '[codex_path_invalid] CodexPath must name an existing absolute native .exe file.'
-    }
-    Assert-DiagnosticPath $candidate
-    $probe = [Diagnostics.Process]::new()
-    try {
-        $probe.StartInfo = [Diagnostics.ProcessStartInfo]::new()
-        $probe.StartInfo.FileName = [IO.Path]::GetFullPath($candidate)
-        $probe.StartInfo.Arguments = '--version'
-        $probe.StartInfo.UseShellExecute = $false
-        $probe.StartInfo.CreateNoWindow = $true
-        $probe.StartInfo.RedirectStandardOutput = $true
-        $probe.StartInfo.RedirectStandardError = $true
-        $probe.Start() | Out-Null
-        $standardOutput = $probe.StandardOutput.ReadToEndAsync()
-        $standardError = $probe.StandardError.ReadToEndAsync()
-        if (-not $probe.WaitForExit(5000)) {
-            $probe.Kill()
-            throw '[client_probe_failed] Codex version check timed out; installation stopped.'
-        }
-        $probe.WaitForExit()
-        if ($probe.ExitCode -ne 0 -or $standardOutput.Result.Length -gt 1024 -or
-            $standardOutput.Result -notmatch '^codex-cli [0-9]+\.[0-9]+\.[0-9]+') {
-            throw '[client_probe_failed] The supplied executable did not report a supported native Codex CLI; installation stopped.'
-        }
-        $script:resolvedCodexPath = [IO.Path]::GetFullPath($candidate)
-    } finally { $probe.Dispose() }
+    if ($CodexPath) { throw '[invalid_target] CodexPath is no longer supported; install the official CLI.' }
 }
 
 function Get-InstallationErrorCode([string]$Message, [string]$Fallback = 'installation_failed') {
@@ -284,7 +247,7 @@ try {
     }
     $selectedTargets = @()
     foreach ($name in ($Target -join ',').Split(',')) {
-        if ($name.Trim().ToLowerInvariant() -notin @('cli', 'manual', 'codex', 'cursor', 'workbuddy', 'claude-code')) {
+        if ($name.Trim().ToLowerInvariant() -notin @('cli')) {
             throw "Unsupported installation target: $name"
         }
         $selectedTargets += $name.Trim().ToLowerInvariant()
@@ -317,7 +280,7 @@ try {
     $archive = [IO.Compression.ZipFile]::OpenRead($archivePath)
     try {
         $expected = @('README.md', 'DATA-AND-SUPPORT.md', 'DEBUG.md', 'install.ps1', 'release-manifest.json', 'SHA256SUMS', 'candidate-manifest.json',
-            "fargowork-cli-v$version-windows-x64.zip", "fargowork-bridge-v$version-windows-x64.zip", "fargowork-agent-plugin-v$version-windows-x64.zip")
+            "fargowork-cli-v$version-windows-x64.zip", "fargowork-agent-plugin-v$version-windows-x64.zip")
         $seen = @{}
         foreach ($entry in $archive.Entries) {
             if ($entry.FullName -cnotin $expected -or $seen.ContainsKey($entry.FullName) -or

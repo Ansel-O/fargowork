@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
-target=all
-version=1.0.0
+target=cli
+version=1.4.0
 service_issuer=
 local_dir=
 release_base=${FARGOWORK_RELEASE_BASE_URL:-}
@@ -22,7 +22,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-case "$target" in all|workbuddy|codex|cursor) ;; *) echo "invalid target" >&2; exit 2 ;; esac
+case "$target" in cli) ;; *) echo "invalid target" >&2; exit 2 ;; esac
 case "$service_issuer" in https://* ) ;; *) echo "pass --service-issuer with the HTTPS address supplied by the service administrator" >&2; exit 2 ;; esac
 if [ -z "$local_dir" ] && [ -z "$release_base" ]; then
   echo "pass --local-artifact-dir for a local candidate or --release-base-url for an explicitly published release" >&2
@@ -90,13 +90,10 @@ EOF
 }
 
 cli_name="fargowork-cli-v${version}-${platform_name}-${arch_name}.zip"
-bridge_name="fargowork-bridge-v${version}-${platform_name}-${arch_name}.zip"
 plugin_name="fargowork-agent-plugin-v${version}-${platform_name}-${arch_name}.zip"
 cli_zip=$(fetch "$cli_name")
-bridge_zip=$(fetch "$bridge_name")
 plugin_zip=$(fetch "$plugin_name")
 verify "$cli_name" "$cli_zip"
-verify "$bridge_name" "$bridge_zip"
 verify "$plugin_name" "$plugin_zip"
 if [ "$dry_run" -eq 1 ]; then
   if [ "$jsonl" -eq 1 ]; then printf '%s\n' '{"event":"dry_run","status":"verified","installed":false,"connected":false,"trusted":"unknown","needs_user_action":true}'; else echo 'artifacts verified; no files changed'; fi
@@ -106,7 +103,6 @@ fi
 command -v unzip >/dev/null 2>&1 || { echo "unzip is required for local artifact installation" >&2; exit 4; }
 mkdir -p "$tmp_dir/cli" "$tmp_dir/plugin"
 assert_safe_zip "$cli_zip"
-assert_safe_zip "$bridge_zip"
 assert_safe_zip "$plugin_zip"
 unzip -q -o "$cli_zip" -d "$tmp_dir/cli"
 unzip -q -o "$plugin_zip" -d "$tmp_dir/plugin"
@@ -122,13 +118,10 @@ stage=$tmp_dir/stage
 mkdir -p "$stage/bin" "$stage/plugin"
 cp "$cli_bin" "$stage/bin/fargowork"
 cp -R "$plugin_source" "$stage/plugin/fargowork-employee"
-cp "$cli_bin" "$stage/plugin/fargowork-employee/bin/fargowork"
 printf 'fargowork-owned-v1\n' > "$stage/plugin/fargowork-employee/.fargowork-owner"
 # The portable package uses the Windows launcher token for the cross-platform
 # Agent Plugin source. Linux installs finalize the same plugin-owned config to
 # the native extensionless executable before the plugin becomes usable.
-sed -i.bak 's#\./bin/fargowork\.cmd#./bin/fargowork#g' "$stage/plugin/fargowork-employee/mcp.json"
-rm -f "$stage/plugin/fargowork-employee/mcp.json.bak"
 mkdir -p "$install_root/plugin"
 backup=$tmp_dir/backup
 mkdir -p "$backup"
@@ -147,5 +140,5 @@ if [ "$doctor_exit" -ne 0 ] && [ "$doctor_exit" -ne 3 ]; then rollback; echo "Fa
 if [ "$doctor_exit" -eq 0 ]; then
   if [ "$jsonl" -eq 1 ]; then printf '%s\n' '{"event":"installed","status":"ready","installed":true,"connected":true,"trusted":true,"needs_user_action":false}'; else echo "FargoWork installed and ready for $target"; fi
 else
-  if [ "$jsonl" -eq 1 ]; then printf '%s\n' '{"event":"installed","status":"needs_user_action","installed":true,"connected":false,"trusted":"unknown","needs_user_action":true}'; else echo 'FargoWork installed; complete login and WorkBuddy UI trust/enable if used'; fi
+  if [ "$jsonl" -eq 1 ]; then printf '%s\n' '{"event":"installed","status":"needs_user_action","installed":true,"connected":false,"trusted":"unknown","needs_user_action":true}'; else echo 'FargoWork installed; complete employee login'; fi
 fi

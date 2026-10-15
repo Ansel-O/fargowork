@@ -1,10 +1,5 @@
-"""Exercise the frozen Windows bundle in an isolated employee/client profile.
-
-No OAuth login, browser, business request, or live user configuration is used.
-Cursor is configuration-only; Codex registration uses its actual local CLI.
-"""
+"""Exercise a CLI-only local Windows bundle using isolated, synthetic profiles."""
 from __future__ import annotations
-
 import argparse
 import hashlib
 import json
@@ -15,138 +10,112 @@ import subprocess
 import tempfile
 import zipfile
 
+def run(command, env):
+    result = subprocess.run(command, env=env, capture_output=True, text=True, encoding='utf-8', timeout=90)
+    return result, [json.loads(line) for line in result.stdout.splitlines() if line.strip().startswith('{')]
 
-def run(command: list[str], env: dict[str, str], *, input_text: str | None = None):
-    result = subprocess.run(command, env=env, input=input_text, text=True,
-                            capture_output=True, encoding="utf-8", timeout=90)
-    return result, [json.loads(line) for line in result.stdout.splitlines()
-                    if line.strip().startswith("{")]
-
-
-def check(condition: bool, message: str):
+def check(condition, message):
     if not condition:
         raise RuntimeError(message)
 
-
-def main() -> int:
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("archive", type=Path)
-    parser.add_argument("--issuer", default="https://fargowork.fargowealthapp.com")
-    parser.add_argument("--prototype-installer", type=Path,
-                        help="diagnostic only: replace the installer before testing; cannot accept the frozen archive")
+    parser.add_argument('archive', type=Path)
+    parser.add_argument('--issuer', default='https://fargowork.fargowealthapp.com')
+    parser.add_argument('--prototype-installer', type=Path)
     args = parser.parse_args()
     archive = args.archive.resolve(strict=True)
-    version = archive.name.removeprefix("fargowork-employee-v").removesuffix("-windows-x64.zip")
-    check(os.name == "nt", "native acceptance requires Windows")
-    summary = {"archive": archive.name, "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
-               "version": version, "checks": [], "real_oauth": "NOT_RUN", "host_ui": "NOT_RUN"}
+    version = archive.name.removeprefix('fargowork-employee-v').removesuffix('-windows-x64.zip')
+    check(os.name == 'nt', 'native acceptance requires Windows')
+    summary = dict(archive=archive.name, sha256=hashlib.sha256(archive.read_bytes()).hexdigest(), version=version,
+                   checks=[], real_oauth='NOT_RUN', host_ui='NOT_RUN', legacy_layout='synthetic-old-contract')
     if args.prototype_installer:
-        summary["frozen_archive_acceptance"] = False
-        summary["prototype_installer"] = True
-    with tempfile.TemporaryDirectory(prefix="fargowork-native-trial-") as temporary:
+        summary['frozen_archive_acceptance'] = False
+    with tempfile.TemporaryDirectory(prefix='fargowork-native-trial-') as temporary:
         root = Path(temporary)
-        package = root / "package"
+        package = root / 'package'
         with zipfile.ZipFile(archive) as source:
-            check(all("/" not in entry.filename and "\\" not in entry.filename
-                      for entry in source.infolist()), "unexpected outer archive path")
+            check(all('/' not in item.filename and '\\' not in item.filename for item in source.infolist()), 'unexpected outer archive path')
+            check(not any('bridge' in name.lower() for name in source.namelist()), 'candidate still ships a Bridge archive')
             source.extractall(package)
         if args.prototype_installer:
-            shutil.copy2(args.prototype_installer.resolve(strict=True), package / "install.ps1")
-        selected = ["cli", "manual", "cursor"]
-        if shutil.which("codex"):
-            selected.append("codex")
-        else:
-            summary["codex_native_registration"] = "NOT_RUN: CLI unavailable"
-        for target in selected:
-            profile = root / ("隔离 用户 " + target)
+            shutil.copy2(args.prototype_installer.resolve(strict=True), package / 'install.ps1')
+        for case in ('fresh', 'owned-legacy', 'modified-legacy', 'foreign-legacy'):
+            profile = root / ('隔离 用户 ' + case)
             profile.mkdir()
-            env = dict(os.environ)
-            for name in list(env):
-                if name.startswith("FARGOWORK_"):
-                    del env[name]
-            env.update(USERPROFILE=str(profile), HOME=str(profile),
-                       APPDATA=str(profile / "AppData" / "Roaming"),
-                       LOCALAPPDATA=str(profile / "AppData" / "Local"),
-                       CODEX_HOME=str(profile / ".codex"), CLAUDE_CONFIG_DIR="",
-                       PYTHONIOENCODING="utf-8")
-            cursor_path = profile / ".cursor" / "mcp.json"
-            cursor_path.parent.mkdir()
-            foreign = {"command": "foreign-sentinel", "args": ["keep"]}
-            cursor_path.write_text(json.dumps({"mcpServers": {"foreign": foreign},
-                                              "private_preference": "keep"}), encoding="utf-8")
-            preference = profile / "personal-preferences.md"
-            preference.write_text("personal preference sentinel", encoding="utf-8")
-            command = ["powershell.exe", "-NoProfile",
-                       "-File", str(package / "install.ps1"), "-Version", version,
-                       "-Target", target, "-ServiceIssuer", args.issuer,
-                       "-LocalArtifactDir", str(package), "-OutputJsonl"]
-            result, events = run(command, env)
-            check(result.returncode == 0 and events, f"native {target} installer failed: {result.stdout[-1500:]}")
+            env = {key: value for key, value in os.environ.items() if not key.startswith('FARGOWORK_')}
+            env.update(USERPROFILE=str(profile), HOME=str(profile), APPDATA=str(profile / 'AppData/Roaming'),
+                       LOCALAPPDATA=str(profile / 'AppData/Local'), CODEX_HOME=str(profile / '.codex'), CLAUDE_CONFIG_DIR='', PYTHONIOENCODING='utf-8')
+            cursor = profile / '.cursor/mcp.json'
+            cursor.parent.mkdir()
+            foreign = dict(command='foreign-sentinel', args=['keep'])
+            cursor.write_text(json.dumps(dict(mcpServers=dict(foreign=foreign), preference='keep')))
+            cursor_before = cursor.read_bytes()
+            command = ['powershell.exe', '-NoProfile', '-File', str(package / 'install.ps1'), '-Version', version,
+                       '-Target', 'cli', '-ServiceIssuer', args.issuer, '-LocalArtifactDir', str(package), '-OutputJsonl']
+            first, events = run(command, env)
+            check(first.returncode == 0 and len(events) == 1, 'native CLI installer failed or emitted phase reports')
             installed = events[-1]
-            check(installed.get("installed") is True and installed.get("connected") is None
-                  and installed.get("identity_verified") is False, "installer claimed unauthenticated connectivity")
-            check(installed["targets"][0]["target"] == target, "installer target contract differs")
-            employee = Path(env["APPDATA"]) / "FargoWork" / "employee"
-            if target == "manual":
-                check(installed["manual_mcp_registration"]["command"] ==
-                      str(employee / "plugin" / "fargowork-employee" / "bin" / "fargowork.exe"),
-                      "installer corrupted the Unicode manual command path")
-            elif target == "cli":
-                check(installed.get("business_cli_available") is True
-                      and installed.get("mcp_registration_required") is False
-                      and "manual_mcp_registration" not in installed,
-                      "CLI installation still requires host MCP registration")
-            exe = employee / "bin" / "fargowork.exe"
-            native, _ = run([str(exe), "--version"], env)
-            check(native.returncode == 0 and native.stdout.strip() == version, "native version differs")
-            canonical = employee / "skills" / "fargowork-employee" / "SKILL.md"
-            check(canonical.is_file(), "canonical employee Skill missing")
-            doctor, events = run([str(exe), "doctor", "--target", target, "--output", "jsonl"], env)
-            check(doctor.returncode == 3 and events[-1]["connected"] is None
-                  and events[-1]["identity_verified"] is False, "doctor claimed a live identity")
-            status, events = run([str(exe), "status", "--target", target, "--output", "jsonl"], env)
-            check(status.returncode == 3 and events[-1]["connected"] is False
-                  and events[-1]["identity_verified"] is False, "status accepted missing credentials")
-            bridge_input = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize",
-                                       "params": {"protocolVersion": "2025-11-25", "capabilities": {},
-                                                  "clientInfo": {"name": "isolated-native-fixture", "version": "1"}}}) + "\n"
-            _, events = run([str(exe), "bridge"], env, input_text=bridge_input)
-            check(events and "error" in events[-1], "unauthenticated bridge did not reject the request")
-            if target == "manual":
-                changed_skill = canonical.read_bytes() + b"\nLocal preference sentinel.\n"
-                canonical.write_bytes(changed_skill)
-                repair, events = run([str(exe), "repair", "--target", "manual", "--output", "jsonl"], env)
-                check(repair.returncode == 3 and events[-1].get("event") == "error"
-                      and events[-1].get("needs_user_action") is True
-                      and canonical.read_bytes() == changed_skill,
-                      f"native modified-Skill refusal differs (exit={repair.returncode}, "
-                      f"code={events[-1].get('code') if events else None}, "
-                      f"preserved={canonical.read_bytes() == changed_skill})")
-            configured = json.loads(cursor_path.read_text(encoding="utf-8"))
-            check(configured["mcpServers"]["foreign"] == foreign
-                  and configured["private_preference"] == "keep", "foreign Cursor config changed")
-            if target == "cursor":
-                entry = configured["mcpServers"]["fargowork-employee"]
-                check(entry["args"] == ["bridge"] and Path(entry["command"]).is_file(), "Cursor bridge config invalid")
-                check((profile / ".cursor" / "skills" / "fargowork-employee" / "SKILL.md").is_file(), "Cursor Skill missing")
-                uninstall, events = run([str(exe), "uninstall", "--target", target, "--output", "jsonl"], env)
-                check(uninstall.returncode == 0 and events[-1]["clients"]["cursor"]["uninstalled"], "Cursor owned removal failed")
-                configured = json.loads(cursor_path.read_text(encoding="utf-8"))
-                check("fargowork-employee" not in configured["mcpServers"]
-                      and configured["mcpServers"]["foreign"] == foreign, "Cursor removal affected foreign entry")
-            elif target == "codex":
-                codex_config = profile / ".codex" / "config.toml"
-                check(codex_config.is_file() and "fargowork-employee" in codex_config.read_text(encoding="utf-8"), "Codex official registration missing")
-                uninstall, events = run([str(exe), "uninstall", "--target", target, "--output", "jsonl"], env)
-                check(uninstall.returncode == 0 and events[-1]["clients"]["codex"]["uninstalled"], "Codex owned removal failed")
-            check(preference.read_text(encoding="utf-8") == "personal preference sentinel", "personal preference changed")
-            summary["checks"].append({"target": target, "native_install_doctor_status": "PASS",
-                                      "anonymous_bridge_rejected": "PASS",
-                                      "foreign_configuration_preserved": "PASS",
-                                      "owned_uninstall": "NOT_RUN" if target in {"cli", "manual"} else "PASS"})
+            check(installed.get('installed') is True and installed.get('connected') is None and installed.get('identity_verified') is False, 'installer claimed an unauthenticated identity')
+            check(installed.get('business_cli_available') is True and installed.get('mcp_registration_required') is False and 'manual_mcp_registration' not in installed, 'CLI installation still requires host registration')
+            employee = Path(env['APPDATA']) / 'FargoWork/employee'
+            plugin = employee / 'plugin/fargowork-employee'
+            exe = employee / 'bin/fargowork.exe'
+            check((employee / 'skills/fargowork-employee/SKILL.md').is_file() and not (plugin / 'mcp.json').exists() and not (plugin / 'bin').exists(), 'new install retained Bridge metadata/launcher or lost Skill')
+            native, _ = run([str(exe), '--version'], env)
+            check(native.returncode == 0 and native.stdout.strip() == version, 'native CLI version differs')
+            rejected, _ = run([str(exe), 'bridge'], env)
+            check(rejected.returncode == 2, 'retired bridge command is still accepted')
+            check(cursor.read_bytes() == cursor_before, 'fresh install changed unrelated host config')
+            for action in ('doctor', 'status'):
+                result, events = run([str(exe), action, '--output', 'jsonl'], env)
+                check(result.returncode == 3 and events[-1]['identity_verified'] is False, 'unauthenticated status/doctor claimed identity')
+            if case != 'fresh':
+                legacy = {'mcp.json': b'{"mcpServers":{}}', 'bin/fargowork.cmd': b'fixture legacy launcher', 'bin/fargowork.exe': b'fixture legacy executable'}
+                manifest = dict(files=[])
+                for relative, data in legacy.items():
+                    subject = plugin / relative
+                    subject.parent.mkdir(parents=True, exist_ok=True)
+                    subject.write_bytes(data)
+                    manifest['files'].append(dict(path=relative, size=len(data), sha256=hashlib.sha256(data).hexdigest()))
+                (plugin / 'PACKAGE-MANIFEST.json').write_text(json.dumps(manifest))
+                entry = dict(type='stdio', command=str(plugin / 'bin/fargowork.exe'), args=['bridge'])
+                data = dict(mcpServers={'foreign': foreign, 'fargowork-employee': dict(entry)}, preference='keep')
+                if case == 'foreign-legacy':
+                    data['mcpServers']['fargowork-employee']['args'] = ['user-modified']
+                cursor.write_text(json.dumps(data))
+                old_cursor = cursor.read_bytes()
+                sidecar = employee / 'adapters/cursor.json'
+                sidecar.parent.mkdir(exist_ok=True)
+                sidecar.write_text(json.dumps(dict(owner='fargowork-owned-v1', registration='official-cursor-user-json', entry=entry)))
+                state = employee / 'state'
+                state.mkdir(exist_ok=True)
+                credential = state / 'vault.fixture'
+                credential.write_bytes(b'fixture-private-vault')
+                preferences = employee / 'profiles/preferences.fixture'
+                preferences.parent.mkdir(exist_ok=True)
+                preferences.write_bytes(b'fixture employee preference')
+                if case == 'modified-legacy':
+                    (plugin / 'bin/fargowork.cmd').write_bytes(b'user modified launcher')
+                updated, events = run(command, env)
+                check(updated.returncode == 0 and len(events) == 1, 'native legacy upgrade failed or emitted phase reports')
+                result = events[-1]
+                current = json.loads(cursor.read_text())
+                if case == 'foreign-legacy':
+                    check(cursor.read_bytes() == old_cursor and result.get('legacy_connection_review_required') is True, 'foreign legacy entry deleted or warning missing')
+                else:
+                    check('fargowork-employee' not in current['mcpServers'] and not sidecar.exists(), 'exact old registration not removed')
+                check(current['mcpServers']['foreign'] == foreign and current['preference'] == 'keep', 'upgrade changed unrelated host values')
+                if case == 'modified-legacy':
+                    recovery = Path(result.get('recovery_path', ''))
+                    check(result.get('legacy_bridge_files_preserved') is True and (recovery / 'backup/plugin/bin/fargowork.cmd').read_bytes() == b'user modified launcher', 'modified Bridge bytes not preserved')
+                else:
+                    check(result.get('legacy_bridge_files_preserved') is False, 'unchanged Bridge bytes incorrectly retained')
+                check(credential.read_bytes() == b'fixture-private-vault' and preferences.read_bytes() == b'fixture employee preference', 'upgrade changed private state')
+                check(not (plugin / 'mcp.json').exists() and not (plugin / 'bin').exists(), 'active upgraded package still contains Bridge files')
+            summary['checks'].append(dict(case=case, install_and_native_entry='PASS', legacy_migration='PASS' if case != 'fresh' else 'NOT_RUN', private_state_preserved='PASS'))
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     raise SystemExit(main())

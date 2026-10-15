@@ -32,10 +32,10 @@ def test_homepage_has_one_short_install_request_without_distribution_faq():
     assert quote_lines == ["请从 https://github.com/Ansel-O/fargowork 安装 FargoWork，并帮我完成登录。"]
     assert len(quote_lines[0]) <= 100
     assert not re.search(r"\bzip\b|\.zip|内部平台|下载 ZIP|手工编辑", readme, flags=re.I)
-    assert "v1.3.0/public/bootstrap.ps1" in readme
+    assert "v1.4.0/public/bootstrap.ps1" in readme
     assert "-Target cli -Login" in readme
-    assert "原生 MCP 是可选" in readme
-    assert "不作为 CLI 安装完成条件" in readme
+    assert "不提供客户端 Bridge 或 MCP 注册入口" in readme
+    assert "只提供官方 CLI 和员工 Skill" in readme
 
 
 def test_employee_completion_does_not_depend_on_host_mcp_or_long_report():
@@ -46,7 +46,7 @@ def test_employee_completion_does_not_depend_on_host_mcp_or_long_report():
         assert "FullAccess" in doc
         assert "不" in doc
     package = text(PUBLIC / "EMPLOYEE-README.md")
-    assert "注册、信任与启用不是 CLI 路径的完成条件" in package
+    assert "只提供 CLI 和员工 Skill" in package
     assert "不要输出内部配置或验收长报告" in package
 
 
@@ -58,8 +58,8 @@ def test_skill_permits_official_cli_but_rejects_ad_hoc_clients():
     assert "--input-file PATH" in skill
     assert "official CLI for workflow tools" in skill
     assert "temporary Node/Python MCP client" in skill
-    assert "native FargoWork MCP connection is an optional" in skill
-    assert "Do not require registration, trust or enable" in skill
+    assert "provides only the official CLI and Skill" in skill
+    assert "Do not register a stdio Bridge or create host MCP configuration" in skill
     assert "If a client has no separately configured" not in skill
     assert "Do not open a shell" not in skill
 
@@ -121,7 +121,7 @@ def test_debug_is_the_only_diagnostic_guide_and_contains_no_install_success_clai
     assert "diagnostics export --days 1" in debug
     assert "当前不按单个操作编号筛选" in debug
     assert "不自动上传" in debug
-    assert "MCP 注册、信任或 UI 连接" in debug
+    assert "已移除 stdio Bridge、宿主 MCP 注册和启动器" in debug
     assert "不从已有成功推断 FullAccess" in debug
     assert "未知提交结果不自动重发" in debug
     for name in ("README.md", "EMPLOYEE-README.md"):

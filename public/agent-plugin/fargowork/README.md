@@ -7,9 +7,8 @@ and access to the administrator-configured service.
 
 Load the employee Skill and complete employee login. The employee can then
 request a workflow without editing MCP JSON, installing a temporary Node
-client or changing the host to FullAccess. An optional plugin-relative stdio
-MCP bridge remains available for compatible clients; native MCP registration
-is not a prerequisite for the CLI path.
+client or changing the host to FullAccess. This release ships no stdio Bridge, host MCP registration or launcher.
+The CLI retains OAuth and its service-side MCP HTTP protocol.
 
 The Server Manifest controls workflows, inputs and permissions. The Skill
 shows a complete business preview and obtains one natural-language confirmation

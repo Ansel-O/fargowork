@@ -246,14 +246,15 @@ def validate_plugin_contract(payloads: list[tuple[PurePosixPath, bytes]]) -> dic
     by_path = {path: data for path, data in payloads}
     plugin_path = PurePosixPath("plugin.json")
     mcp_path = PurePosixPath("mcp.json")
-    if plugin_path not in by_path or mcp_path not in by_path:
-        raise ReleaseGuardError("public plugin must include plugin.json and mcp.json")
+    if plugin_path not in by_path:
+        raise ReleaseGuardError("public package must include plugin.json")
+    if mcp_path in by_path or any(path.parts[0] == "bin" for path in by_path):
+        raise ReleaseGuardError("CLI-only Skill package cannot include MCP registration or launchers")
     try:
         plugin = json.loads(by_path[plugin_path].decode("utf-8"))
-        mcp = json.loads(by_path[mcp_path].decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ReleaseGuardError("plugin.json and mcp.json must be valid UTF-8 JSON") from exc
-    if not isinstance(plugin, dict) or not isinstance(mcp, dict):
+    if not isinstance(plugin, dict):
         raise ReleaseGuardError("plugin.json and mcp.json must be JSON objects")
 
     allowed_plugin_fields = {
@@ -291,67 +292,6 @@ def validate_plugin_contract(payloads: list[tuple[PurePosixPath, bytes]]) -> dic
         raise ReleaseGuardError("plugin author must contain only string metadata")
     if "extensions" in plugin and not isinstance(plugin["extensions"], dict):
         raise ReleaseGuardError("plugin extensions must be an object")
-
-    if set(mcp) != {"$schema", "mcpServers"} or mcp.get("$schema") != MCP_SCHEMA:
-        raise ReleaseGuardError("mcp.json must use the closed Agent Plugins v1 schema")
-    servers = mcp.get("mcpServers")
-    if not isinstance(servers, dict):
-        raise ReleaseGuardError("mcpServers must be an object")
-    for server_name, server in servers.items():
-        if not isinstance(server_name, str) or not isinstance(server, dict):
-            raise ReleaseGuardError("MCP server names and entries must be objects")
-        server_type = server.get("type")
-        if server_type == "streamable-http":
-            if set(server) - {"type", "url", "headers"} or not isinstance(server.get("url"), str):
-                raise ReleaseGuardError(f"invalid streamable-http server entry: {server_name}")
-            parsed = urlsplit(server["url"])
-            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-                raise ReleaseGuardError(f"MCP URL must be absolute: {server_name}")
-            if parsed.username or parsed.password or parsed.fragment:
-                raise ReleaseGuardError(f"MCP URL has userinfo or fragment: {server_name}")
-            if parsed.hostname.lower() not in {"localhost", "127.0.0.1", "::1"} and parsed.scheme != "https":
-                raise ReleaseGuardError(f"non-loopback MCP URL must use HTTPS: {server_name}")
-            if "headers" in server:
-                headers = server["headers"]
-                if not isinstance(headers, dict) or not all(
-                    isinstance(key, str) and isinstance(value, str)
-                    for key, value in headers.items()
-                ):
-                    raise ReleaseGuardError(f"MCP headers must be literal strings: {server_name}")
-                if any(key.lower() in {"authorization", "cookie", "proxy-authorization"} for key in headers):
-                    raise ReleaseGuardError(f"MCP headers cannot carry credentials: {server_name}")
-        elif server_type == "stdio":
-            if set(server) - {"type", "command", "args", "env", "cwd"}:
-                raise ReleaseGuardError(f"invalid stdio server entry: {server_name}")
-            command = server.get("command")
-            if not isinstance(command, str) or not command or any(char.isspace() for char in command):
-                raise ReleaseGuardError(f"stdio command must be one executable token: {server_name}")
-            if not (not command.startswith(".") or command.startswith("./")):
-                raise ReleaseGuardError(f"stdio command path must be plugin-relative: {server_name}")
-            for key in ("args", "env"):
-                if key in server and (
-                    not isinstance(server[key], (list, dict))
-                    or (key == "args" and not all(isinstance(item, str) for item in server[key]))
-                    or (key == "env" and not all(
-                        isinstance(name, str) and isinstance(value, str)
-                        for name, value in server[key].items()
-                    ))
-                ):
-                    raise ReleaseGuardError(f"invalid stdio {key}: {server_name}")
-            if "cwd" in server:
-                cwd = server["cwd"]
-                if not isinstance(cwd, str) or not (
-                    cwd == "${PLUGIN_ROOT}"
-                    or cwd == "${PLUGIN_DATA}"
-                    or cwd.startswith("./")
-                    or cwd.startswith("${PLUGIN_ROOT}/")
-                    or cwd.startswith("${PLUGIN_DATA}/")
-                ):
-                    raise ReleaseGuardError(f"stdio cwd must remain plugin/data-relative: {server_name}")
-            if isinstance(server.get("env"), dict) and set(server["env"]) & {"PLUGIN_ROOT", "PLUGIN_DATA"}:
-                raise ReleaseGuardError(f"stdio may not override reserved environment: {server_name}")
-        else:
-            raise ReleaseGuardError(f"unsupported MCP server type: {server_name}")
 
     skill_dirs = sorted(
         {
@@ -628,7 +568,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     print(f"Built public release: {args.output_dir.resolve()}")
     print(f"Version: {manifest['version']}")
     print(f"Artifact: {manifest['plugin']['artifact']}")
-    print("M4 CLI/bridge artifacts: emitted by build_local_release.py")
+    print("CLI and Skill artifacts: emitted by build_local_release.py")
     return 0
 
 

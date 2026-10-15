@@ -31,6 +31,7 @@ SOURCE_ALLOWLIST = (
     "public/cli/fargowork_cli.py",
     "public/cli/client_diagnostics.py",
     "public/cli/employee_profile.py",
+    "public/cli/employee_attachments.py",
     "public/install.ps1",
     "public/EMPLOYEE-README.md",
     "public/EMPLOYEE-DATA-NOTE.md",
@@ -126,7 +127,6 @@ def _verify_native_artifacts(native_dir: Path, version: str) -> tuple[list[Path]
     manifest = _read_json(native_dir / "release-manifest.json")
     expected_names = {
         f"fargowork-cli-v{version}-windows-x64.zip",
-        f"fargowork-bridge-v{version}-windows-x64.zip",
         f"fargowork-agent-plugin-v{version}-windows-x64.zip",
     }
     actual_archives = {path.name for path in native_dir.glob("*.zip")}
@@ -138,18 +138,14 @@ def _verify_native_artifacts(native_dir: Path, version: str) -> tuple[list[Path]
     with zipfile.ZipFile(plugin_archive) as archive:
         names = set(archive.namelist())
         plugin_data = json.loads(archive.read("fargowork/plugin.json").decode("utf-8"))
-        mcp_data = json.loads(archive.read("fargowork/mcp.json").decode("utf-8"))
         package_data = json.loads(archive.read("fargowork/PACKAGE-MANIFEST.json").decode("utf-8"))
         if plugin_data.get("name") != "fargowork-employee" or plugin_data.get("version") != version:
             raise RuntimeError("native plugin identity or version is not the employee candidate")
-        if set(mcp_data.get("mcpServers", {})) != {"fargowork-employee"}:
-            raise RuntimeError("native plugin MCP registration is not isolated to employee")
         if package_data.get("mcp_protocol_versions") != ["2026-07-28"]:
             raise RuntimeError("employee package does not declare the required Server MCP contract")
         export_spec = _read_json(EXPORT_FILE)
         expected_members = {
             "fargowork/PACKAGE-MANIFEST.json",
-            "fargowork/bin/fargowork.exe",
             *(
                 (PurePosixPath("fargowork") / PurePosixPath(item)).as_posix()
                 for item in export_spec["files"]
@@ -263,8 +259,8 @@ def build(*, platform_name: str, arch: str, output_dir: Path) -> dict[str, Any]:
             "server_version": server_version,
             "candidate_scope": {
                 "platform": "windows-x64",
-                "client": "stdio-mcp",
-                "installation_targets": ["manual", "codex", "cursor", "workbuddy", "claude-code"],
+                "client": "official-cli",
+                "installation_targets": ["cli"],
                 "environment": "employee",
                 "plugin_name": "fargowork-employee",
             },
@@ -273,7 +269,6 @@ def build(*, platform_name: str, arch: str, output_dir: Path) -> dict[str, Any]:
                 "public_plugin_export_file_count": source["plugin_export_count"],
             },
             "protocol": {
-                "employee_bridge": "2025-11-25",
                 "server_mcp": "2026-07-28",
                 "oauth_client_id": "fargowork-cli",
                 "issuer": "operator-supplied-at-install",
@@ -335,7 +330,7 @@ def main() -> int:
         output_dir=args.output_dir.resolve(),
     )
     print(f"Built local employee candidate: {args.output_dir.resolve()}")
-    print(f"Version: {manifest['version']}; scope: Windows x64 business CLI + optional stdio MCP")
+    print(f"Version: {manifest['version']}; scope: Windows x64 official business CLI + employee Skill")
     print(f"SHA-256: {manifest['candidate_archive']['sha256']}")
     return 0
 

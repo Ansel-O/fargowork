@@ -1,25 +1,24 @@
 {
   "acceptance": {
-    "client_ui": "not-yet-accepted",
-    "native_package": "automated-isolated-profile",
-    "ordinary_employee_oauth": "not-yet-accepted",
-    "business_cli": "automated-loopback-fixture"
+    "client_ui": "not-rerun-for-this-release",
+    "native_package": "passed-isolated-native-install-and-legacy-migration-fixtures",
+    "native_oauth": "passed-loopback-pkce-dpapi-refresh-logout-fixture",
+    "ordinary_employee_oauth": "prior-candidate-owner-accepted-not-rerun-for-this-release",
+    "business_cli": "passed-loopback-fixture-without-host-mcp",
+    "attachments_native": "passed-loopback-sdk-envelope-text-envelope-independent-issuer-fixtures",
+    "attachments_previous_candidate": "owner-accepted-local-business-cloud-three-file-process-binding",
+    "real_business_submission_for_this_release": "not-run"
   },
   "archive": {
-    "name": "fargowork-employee-v1.3.0-windows-x64.zip",
-    "sha256": "89fca3b212d367eed9eb2ab023c19467dd9601bb4aca42945de8e1b9bf74751f",
-    "size": 30854565
+    "name": "fargowork-employee-v1.4.0-windows-x64.zip",
+    "sha256": "98dc79e627489a49131b6615b51b0ff8207c541cb2ab1b50b59ccda460bbd917",
+    "size": 10332300
   },
   "business_submission": "dingtalk_role_test_only",
   "ci_provenance": "not-claimed",
   "format": "fargowork-windows-trial/v1",
   "installation_targets": [
-    "cli",
-    "manual",
-    "cursor",
-    "codex",
-    "workbuddy",
-    "claude-code"
+    "cli"
   ],
   "macos": "deferred",
   "platform": "windows-x64",
@@ -27,9 +26,15 @@
   "service_issuer": "https://fargowork.fargowealthapp.com",
   "signing": "not-configured",
   "stage": "employee-trial",
-  "tag": "v1.3.0",
-  "version": "1.3.0",
+  "tag": "v1.4.0",
+  "version": "1.4.0",
   "default_installation_target": "cli",
   "business_interface": "official-cli",
-  "host_mcp_registration_required": false
+  "host_mcp_registration_required": false,
+  "attachments": {
+    "service": "https://attachments.fargowealthapp.com",
+    "oauth_client_id": "fargowork-attachments-native",
+    "business_identity_match_required": true,
+    "first_use_single_scan_sso": false
+  }
 }

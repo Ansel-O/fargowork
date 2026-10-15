@@ -1,14 +1,4 @@
-"""FargoWork native CLI and stdio bridge.
-
-This module deliberately has no third-party runtime dependencies.  The
-published executable is built from it with PyInstaller; the same executable
-implements the interactive CLI and the MCP stdio bridge.
-
-The bridge accepts the normal stdio JSON-RPC handshake used by agent hosts and
-translates the local initialize request to FargoWork's modern
-``server/discover`` request.  The upstream HTTP side is strictly the
-2026-07-28 header contract and never falls back to legacy sessions.
-"""
+"""FargoWork employee business CLI with managed OAuth and MCP HTTP upstream."""
 
 from __future__ import annotations
 
@@ -53,12 +43,11 @@ if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 from client_diagnostics import DiagnosticError, DiagnosticLog, EVENTS, PHASES, OUTCOMES, diagnostic_id, safe_error_code
 from employee_profile import ProfileError, ProfileStore
+import employee_attachments
 
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 MCP_PROTOCOL_VERSION = "2026-07-28"
-BRIDGE_PROTOCOL_VERSION = "2025-11-25"
-BRIDGE_SUPPORTED_PROTOCOL_VERSIONS = (BRIDGE_PROTOCOL_VERSION,)
 AGENT_PLUGINS_SPEC_VERSION = "1.0.0"
 ACTION_RESULT_CONTRACT_VERSION = 1
 MCP_SCOPE = "fargowork:mcp"
@@ -115,8 +104,8 @@ def _diagnostic_record(log: DiagnosticLog | None, event: str, phase: str, **fiel
         log.write_failed = True
     if not written and not log._warned:
         log._warned = True
-        # stderr is safe for the stdio Bridge.  Never write a diagnostic line
-        # to protocol stdout or make a successful business action fail.
+        # Keep diagnostics out of structured business output and never make
+        # a successful business action fail because logging is unavailable.
         try:
             print("FargoWork: diagnostic_write_failed", file=sys.stderr, flush=True)
         except (OSError, ValueError):
@@ -316,6 +305,36 @@ def _validate_issuer(value: str) -> str:
     return issuer
 
 
+def _validate_attachments_issuer(value: str | None) -> str:
+    """Validate the optional, operator-configured attachment authorization origin."""
+    if value is None or value == "":
+        return ""
+    message = "attachments_issuer must be an HTTPS origin or a loopback HTTP origin without credentials, query or fragment"
+    if (not isinstance(value, str) or len(value) > 2048
+            or any(character.isspace() or ord(character) < 32 or ord(character) == 127 for character in value)
+            or any(character in value for character in ("\\", "?", "#"))):
+        raise FargoWorkError(message, code="invalid_config", exit_code=EXIT_USAGE)
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+        if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+                or parsed.username is not None or parsed.password is not None
+                or parsed.path not in {"", "/"} or parsed.query or parsed.fragment
+                or parsed.netloc.endswith(":") or port is not None and port < 1
+                or "%" in parsed.hostname):
+            raise ValueError
+        if parsed.scheme == "http":
+            try:
+                loopback = ipaddress.ip_address(parsed.hostname).is_loopback
+            except ValueError:
+                loopback = parsed.hostname.lower() == "localhost"
+            if not loopback:
+                raise ValueError
+    except ValueError as exc:
+        raise FargoWorkError(message, code="invalid_config", exit_code=EXIT_USAGE) from exc
+    return value.rstrip("/")
+
+
 def _validate_redirect(value: str) -> str:
     parsed = urlsplit(value)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
@@ -343,6 +362,15 @@ class Config:
     version: str = VERSION
     environment: str = CLIENT_ENVIRONMENT
     codex_path: str = ""
+    attachments_url: str = employee_attachments.DEFAULT_SERVICE
+    attachments_issuer: str = ""
+
+    def __post_init__(self) -> None:
+        self.attachments_issuer = _validate_attachments_issuer(self.attachments_issuer)
+
+    @property
+    def effective_attachments_issuer(self) -> str:
+        return _validate_attachments_issuer(self.attachments_issuer) or self.issuer
 
     @property
     def credential_fingerprint(self) -> str:
@@ -417,12 +445,15 @@ class Config:
             version=str(values.get("version", VERSION)),
             environment=CLIENT_ENVIRONMENT,
             codex_path=str(values.get("codex_path") or ""),
+            attachments_url=str(values.get("attachments_url") or employee_attachments.DEFAULT_SERVICE),
+            attachments_issuer=_validate_attachments_issuer(values.get("attachments_issuer", "")),
         )
         if not config.client_id or any(char.isspace() for char in config.client_id):
             raise FargoWorkError("client_id is invalid", code="invalid_config", exit_code=EXIT_USAGE)
         return config
 
     def save(self) -> None:
+        attachments_issuer = _validate_attachments_issuer(self.attachments_issuer)
         self.home.mkdir(parents=True, exist_ok=True)
         payload = {
             "schema_version": 1,
@@ -436,6 +467,8 @@ class Config:
             "version": self.version,
             "environment": self.environment,
             "codex_path": self.codex_path,
+            "attachments_url": self.attachments_url,
+            "attachments_issuer": attachments_issuer,
         }
         _atomic_write(self.home / "config.json", _json_bytes(payload))
 
@@ -900,9 +933,9 @@ class _CallbackHandler(BaseHTTPRequestHandler):
 
 
 class _ExclusiveCallbackServer(ThreadingHTTPServer):
-    # SO_REUSEADDR on Windows can allow two active listeners on one callback
-    # port.  This loopback listener must have exactly one owner.
-    allow_reuse_address = False
+    # Windows needs exclusive binding; POSIX can safely reuse a closed socket
+    # in TIME_WAIT while still rejecting a second active TCP listener.
+    allow_reuse_address = os.name != "nt"
     allow_reuse_port = False
 
     def server_bind(self) -> None:
@@ -976,10 +1009,10 @@ class MCPHTTPClient:
 
     def request(self, message: Mapping[str, Any], *, method: str | None = None, retry_401: bool = True) -> dict[str, Any] | None:
         if not isinstance(message, Mapping):
-            raise FargoWorkError("bridge input must be a JSON object", code="invalid_jsonrpc", exit_code=EXIT_PROTOCOL)
+            raise FargoWorkError("MCP request must be a JSON object", code="invalid_jsonrpc", exit_code=EXIT_PROTOCOL)
         wire_method = method or str(message.get("method") or "")
         if not wire_method:
-            raise FargoWorkError("bridge JSON-RPC method is required", code="invalid_jsonrpc", exit_code=EXIT_PROTOCOL)
+            raise FargoWorkError("MCP JSON-RPC method is required", code="invalid_jsonrpc", exit_code=EXIT_PROTOCOL)
         access = self.session.access()
         result = self._post(message, wire_method, access)
         if result.status == 401 and retry_401:
@@ -1033,10 +1066,10 @@ class MCPHTTPClient:
                 self.last_server_trace_id = diagnostic_id(response_headers.get("x-trace-id")) if response_headers.get("x-trace-id") else None
             except ValueError:
                 pass
-            _diagnostic_record(self.session.diagnostics, "http_request_result", "bridge", request_id=request_id, server_trace_id=response_headers.get("x-trace-id", ""), http_status=response.status, duration_ms=int((time.monotonic() - started) * 1000), outcome="succeeded" if response.status < 400 else "failed")
+            _diagnostic_record(self.session.diagnostics, "http_request_result", "http", request_id=request_id, server_trace_id=response_headers.get("x-trace-id", ""), http_status=response.status, duration_ms=int((time.monotonic() - started) * 1000), outcome="succeeded" if response.status < 400 else "failed")
             return HTTPResult(response.status, response_headers, raw)
         except (OSError, http.client.HTTPException) as exc:
-            _diagnostic_record(self.session.diagnostics, "http_request_result", "bridge", request_id=request_id, outcome="unavailable", error_code="endpoint_unavailable", duration_ms=int((time.monotonic() - started) * 1000))
+            _diagnostic_record(self.session.diagnostics, "http_request_result", "http", request_id=request_id, outcome="unavailable", error_code="endpoint_unavailable", duration_ms=int((time.monotonic() - started) * 1000))
             raise FargoWorkError(f"MCP endpoint is unavailable: {parsed.netloc}", code="mcp_unavailable", exit_code=EXIT_UNAVAILABLE) from exc
         finally:
             try:
@@ -1068,16 +1101,16 @@ class MCPHTTPClient:
 def _modern_meta(message: Mapping[str, Any]) -> dict[str, Any]:
     params_value = message.get("params")
     if params_value is not None and not isinstance(params_value, Mapping):
-        raise FargoWorkError("bridge JSON-RPC params must be an object", code="invalid_params", exit_code=EXIT_PROTOCOL)
+        raise FargoWorkError("MCP JSON-RPC params must be an object", code="invalid_params", exit_code=EXIT_PROTOCOL)
     params = dict(params_value or {})
     meta_value = params.get("_meta")
     if meta_value is not None and not isinstance(meta_value, Mapping):
-        raise FargoWorkError("bridge JSON-RPC params._meta must be an object", code="invalid_params", exit_code=EXIT_PROTOCOL)
+        raise FargoWorkError("MCP JSON-RPC params._meta must be an object", code="invalid_params", exit_code=EXIT_PROTOCOL)
     meta = dict(meta_value or {})
     meta["io.modelcontextprotocol/protocolVersion"] = MCP_PROTOCOL_VERSION
     client_info = params.get("clientInfo")
     client_capabilities = params.get("capabilities")
-    meta.setdefault("io.modelcontextprotocol/clientInfo", {"name": "fargowork-stdio-client", "version": VERSION})
+    meta.setdefault("io.modelcontextprotocol/clientInfo", {"name": "fargowork-cli", "version": VERSION})
     meta.setdefault(
         "io.modelcontextprotocol/clientCapabilities",
         dict(client_capabilities) if isinstance(client_capabilities, Mapping) else {},
@@ -1354,118 +1387,6 @@ def _business_error_payload(error: FargoWorkError, config: "Config | None" = Non
     return payload
 
 
-def _translate_initialize(message: Mapping[str, Any]) -> dict[str, Any]:
-    _initialize_protocol_version(message)
-    meta = _modern_meta(message)
-    return {"jsonrpc": "2.0", "id": message.get("id"), "method": "server/discover", "params": {"_meta": meta}}
-
-
-def _translate_capabilities(message: Mapping[str, Any]) -> dict[str, Any]:
-    translated = _translate_initialize(message)
-    translated["id"] = message.get("id")
-    return translated
-
-
-def _initialize_protocol_version(message: Mapping[str, Any]) -> str:
-    params = message.get("params")
-    if not isinstance(params, Mapping):
-        raise FargoWorkError("initialize params must be an object", code="invalid_params", exit_code=EXIT_PROTOCOL)
-    version = params.get("protocolVersion")
-    if not isinstance(version, str) or not version.strip():
-        raise FargoWorkError("initialize params.protocolVersion must be a non-empty string", code="invalid_params", exit_code=EXIT_PROTOCOL)
-    capabilities = params.get("capabilities")
-    if not isinstance(capabilities, Mapping):
-        raise FargoWorkError("initialize params.capabilities must be an object", code="invalid_params", exit_code=EXIT_PROTOCOL)
-    client_info = params.get("clientInfo")
-    if (
-        not isinstance(client_info, Mapping)
-        or not isinstance(client_info.get("name"), str)
-        or not client_info.get("name", "").strip()
-        or not isinstance(client_info.get("version"), str)
-        or not client_info.get("version", "").strip()
-    ):
-        raise FargoWorkError("initialize params.clientInfo must contain string name and version", code="invalid_params", exit_code=EXIT_PROTOCOL)
-    return version
-
-
-def _negotiate_client_protocol_version(proposed: str) -> str:
-    if proposed in BRIDGE_SUPPORTED_PROTOCOL_VERSIONS:
-        return proposed
-    return BRIDGE_PROTOCOL_VERSION
-
-
-def _validate_client_request_params(message: Mapping[str, Any], method: str) -> None:
-    params = message.get("params")
-    if method == "initialize":
-        _initialize_protocol_version(message)
-        return
-    if method == "tools/list":
-        if params is not None and not isinstance(params, Mapping):
-            raise FargoWorkError("tools/list params must be an object", code="invalid_params", exit_code=EXIT_PROTOCOL)
-        if isinstance(params, Mapping) and params.get("cursor") is not None and not isinstance(params.get("cursor"), str):
-            raise FargoWorkError("tools/list params.cursor must be a string", code="invalid_params", exit_code=EXIT_PROTOCOL)
-    elif method == "tools/call":
-        if not isinstance(params, Mapping):
-            raise FargoWorkError("tools/call params must be an object", code="invalid_params", exit_code=EXIT_PROTOCOL)
-        name = params.get("name")
-        if not isinstance(name, str) or not name.strip():
-            raise FargoWorkError("tools/call params.name must be a non-empty string", code="invalid_params", exit_code=EXIT_PROTOCOL)
-        arguments = params.get("arguments")
-        if arguments is not None and not isinstance(arguments, Mapping):
-            raise FargoWorkError("tools/call params.arguments must be an object", code="invalid_params", exit_code=EXIT_PROTOCOL)
-
-
-def _translate_discover_response(
-    response: Mapping[str, Any], *, protocol_version: str = BRIDGE_PROTOCOL_VERSION
-) -> dict[str, Any]:
-    if "error" in response:
-        return dict(response)
-    result_value = response.get("result")
-    if not isinstance(result_value, Mapping):
-        raise FargoWorkError("FargoWork discovery response is invalid", code="invalid_response", exit_code=EXIT_PROTOCOL)
-    result = dict(result_value)
-    upstream_capabilities = result.get("capabilities") or result.get("serverCapabilities") or {}
-    capabilities = {"tools": {"listChanged": False}} if isinstance(upstream_capabilities, Mapping) and isinstance(upstream_capabilities.get("tools"), Mapping) else {}
-    server_info = result.get("serverInfo")
-    if (
-        not isinstance(server_info, Mapping)
-        or not isinstance(server_info.get("name"), str)
-        or not server_info.get("name", "").strip()
-        or not isinstance(server_info.get("version"), str)
-        or not server_info.get("version", "").strip()
-    ):
-        server_info = {"name": "fargowork", "version": VERSION}
-    else:
-        server_info = {"name": server_info["name"], "version": server_info["version"]}
-    return {
-        "jsonrpc": "2.0",
-        "id": response.get("id"),
-        "result": {
-            "protocolVersion": protocol_version,
-            "capabilities": capabilities,
-            "serverInfo": dict(server_info),
-        },
-    }
-
-
-def _bridge_error(message: Mapping[str, Any] | None, error: FargoWorkError) -> dict[str, Any]:
-    if error.code == "invalid_params":
-        error_code = -32602
-    elif error.code == "invalid_jsonrpc":
-        error_code = -32600
-    else:
-        error_code = -32001 if error.code in {"auth_required", "secure_storage_unavailable"} else -32002
-    return {
-        "jsonrpc": "2.0",
-        "id": message.get("id") if isinstance(message, Mapping) else None,
-        "error": {
-            "code": error_code,
-            "message": str(error),
-            "data": {"code": error.code},
-        },
-    }
-
-
 def _configure_utf8_stream(stream: Any) -> None:
     reconfigure = getattr(stream, "reconfigure", None)
     if not callable(reconfigure):
@@ -1476,95 +1397,6 @@ def _configure_utf8_stream(stream: Any) -> None:
         # In-memory and already-consumed streams may reject reconfiguration.
         # Their caller remains responsible for supplying a Unicode-safe stream.
         return
-
-
-def run_bridge(
-    session: TokenSession,
-    *,
-    input_stream: Any = None,
-    output_stream: Any = None,
-    diagnostic_stream: Any = None,
-) -> int:
-    input_stream = input_stream or sys.stdin
-    output_stream = output_stream or sys.stdout
-    diagnostic_stream = diagnostic_stream or sys.stderr
-    _configure_utf8_stream(input_stream)
-    _configure_utf8_stream(output_stream)
-    client = MCPHTTPClient(session)
-    pending_negotiation: tuple[str, str] | None = None
-    for line in input_stream:
-        if not line.strip():
-            continue
-        message: dict[str, Any] | None = None
-        try:
-            loaded = json.loads(line)
-            if not isinstance(loaded, dict):
-                raise FargoWorkError("bridge JSON-RPC input must be an object", code="invalid_jsonrpc", exit_code=EXIT_PROTOCOL)
-            message = loaded
-            method = str(message.get("method") or "")
-            if method in {"notifications/initialized", "notifications/cancelled", "$/cancelRequest"}:
-                # The upstream server is stateless.  Local lifecycle and
-                # cancellation notifications are consumed without inventing a
-                # session or writing a protocol response.
-                pending_negotiation = None
-                continue
-            if pending_negotiation is not None and method != "initialize":
-                # A follow-up request confirms that the client accepted the
-                # protocol version returned by the bridge.
-                pending_negotiation = None
-            _validate_client_request_params(message, method)
-            proposed_version: str | None = None
-            selected_version: str | None = None
-            if method == "initialize":
-                proposed_version = _initialize_protocol_version(message)
-                selected_version = _negotiate_client_protocol_version(proposed_version)
-                upstream = _translate_initialize(message)
-            else:
-                upstream = _translate_capabilities(message) if method == "capabilities" else _with_modern_meta(message)
-            response = client.request(upstream, method=str(upstream.get("method") or method))
-            if method == "initialize" and response is None:
-                raise FargoWorkError("FargoWork discovery did not return an initialize response", code="invalid_response", exit_code=EXIT_PROTOCOL)
-            if response is None or "id" not in message:
-                continue
-            if method == "initialize" and response is not None:
-                response = _translate_discover_response(response, protocol_version=selected_version or BRIDGE_PROTOCOL_VERSION)
-                response["id"] = message.get("id")
-                if "error" not in response:
-                    pending_negotiation = (proposed_version or "", selected_version or BRIDGE_PROTOCOL_VERSION)
-            elif method == "capabilities" and response is not None:
-                translated = _translate_discover_response(response)
-                response = {"jsonrpc": "2.0", "id": message.get("id"), "result": translated.get("result", {}).get("capabilities", {})}
-            elif response is not None:
-                response["id"] = message.get("id")
-            if response is not None:
-                output_stream.write(json.dumps(response, ensure_ascii=False, separators=(",", ":")) + "\n")
-                output_stream.flush()
-        except (json.JSONDecodeError, binascii.Error) as exc:
-            error = FargoWorkError("bridge input is not valid JSON", code="invalid_jsonrpc", exit_code=EXIT_PROTOCOL)
-            output_stream.write(json.dumps(_bridge_error(message, error), separators=(",", ":")) + "\n")
-            output_stream.flush()
-            return error.exit_code
-        except FargoWorkError as exc:
-            if message is not None and "id" in message:
-                output_stream.write(json.dumps(_bridge_error(message, exc), separators=(",", ":")) + "\n")
-                output_stream.flush()
-            return exc.exit_code
-        except Exception:
-            error = FargoWorkError("bridge failed without exposing internal details", code="bridge_failed", exit_code=EXIT_PROTOCOL)
-            if message is not None and "id" in message:
-                output_stream.write(json.dumps(_bridge_error(message, error), separators=(",", ":")) + "\n")
-                output_stream.flush()
-            return error.exit_code
-    if pending_negotiation is not None:
-        proposed, selected = pending_negotiation
-        diagnostic_stream.write(
-            "FargoWork Bridge: the client closed before confirming the initialize negotiation "
-            f"(proposed {proposed!r}, bridge selected {selected!r}); check that the client accepts "
-            f"protocol {selected}.\n"
-        )
-        diagnostic_stream.flush()
-        return EXIT_PROTOCOL
-    return EXIT_OK
 
 
 def _emit_event(payload: Mapping[str, Any], *, force_json: bool = False, output: str = "human") -> None:
@@ -1579,19 +1411,6 @@ def _emit_event(payload: Mapping[str, Any], *, force_json: bool = False, output:
     event = payload.get("event") or payload.get("status") or "result"
     details = payload.get("message") or payload.get("reason") or ""
     print(f"{event}: {details}".rstrip(": "), flush=True)
-    manual = payload.get("manual_mcp_registration")
-    if isinstance(manual, Mapping):
-        print(
-            "manual_mcp_registration: open your client's custom MCP/connector "
-            "settings, choose stdio, and use this configuration:",
-            flush=True,
-        )
-        print(
-            json.dumps(manual.get("config") or {}, ensure_ascii=False, indent=2),
-            flush=True,
-        )
-        if manual.get("skill_path"):
-            print(f"employee_skill: {manual['skill_path']}", flush=True)
 
 
 def _compatibility_contract() -> dict[str, Any]:
@@ -1599,30 +1418,6 @@ def _compatibility_contract() -> dict[str, Any]:
         "mcp_protocol_versions": [MCP_PROTOCOL_VERSION],
         "agent_plugins_spec": AGENT_PLUGINS_SPEC_VERSION,
         "action_result_contract": ACTION_RESULT_CONTRACT_VERSION,
-    }
-
-
-def _manual_mcp_registration(config: Config) -> dict[str, Any]:
-    executable = config.plugin_dir / "bin" / (
-        "fargowork.exe" if platform.system() == "Windows" else "fargowork"
-    )
-    server = {
-        "type": "stdio",
-        "command": str(executable),
-        "args": ["bridge"],
-    }
-    return {
-        "name": PLUGIN_NAME,
-        "transport": "stdio",
-        "command": server["command"],
-        "args": list(server["args"]),
-        "config": {"mcpServers": {PLUGIN_NAME: server}},
-        "protocol_versions": list(BRIDGE_SUPPORTED_PROTOCOL_VERSIONS),
-        "skill_path": str(_canonical_skill_path(config) / "SKILL.md"),
-        "instructions": (
-            "Open the client's custom MCP/connector settings, choose stdio, "
-            "and paste or map the provided command and args."
-        ),
     }
 
 
@@ -1671,11 +1466,11 @@ def _status_payload(
     config: Config,
     *,
     clients: dict[str, Any],
-    target: str = "all",
+    target: str = "cli",
     connected: bool | None = None,
     identity: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    plugin_ready = (config.plugin_dir / "plugin.json").is_file() and (config.plugin_dir / "mcp.json").is_file()
+    plugin_ready = (config.plugin_dir / "plugin.json").is_file()
     if target == "cli":
         executable = config.home / "bin" / ("fargowork.exe" if platform.system() == "Windows" else "fargowork")
         plugin_ready = executable.is_file() and (_canonical_skill_path(config) / "SKILL.md").is_file()
@@ -1713,8 +1508,6 @@ def _status_payload(
     if target == "cli":
         payload.update(connection_mode="cli", mcp_registration_required=False,
                        business_cli_available=plugin_ready, tool_capability="not_checked")
-    else:
-        payload["manual_mcp_registration"] = _manual_mcp_registration(config)
     if identity:
         payload["identity"] = identity
     return payload
@@ -1884,31 +1677,18 @@ def _adopt_identical_tree(source: Path, target: Path) -> bool:
     return True
 
 
-class ClientAdapters:
-    def __init__(self, config: Config, registration_mode: str | None = None):
+class LegacyBridgeMigration:
+    """Remove only proven old registrations; never create a host connection."""
+
+    def __init__(self, config: Config):
         self.config = config
-        if config.environment == "employee":
-            # The employee client must not inherit development-only registration settings.
-            requested_mode = registration_mode or "official"
-        else:
-            requested_mode = registration_mode or os.environ.get("FARGOWORK_CLIENT_REGISTRATION_MODE") or "fixture"
-        if config.environment == "employee" and requested_mode == "fixture":
-            raise FargoWorkError(
-                "fixture client registration is unavailable in the employee release",
-                code="invalid_registration_mode",
-                exit_code=EXIT_USAGE,
-            )
-        allowed_modes = {"auto", "official"} if config.environment == "employee" else {"auto", "official", "fixture"}
-        self.registration_mode = requested_mode
-        if self.registration_mode not in allowed_modes:
-            allowed_text = "auto or official" if config.environment == "employee" else "auto, official, or fixture"
-            raise FargoWorkError(f"client registration mode must be {allowed_text}", code="invalid_registration_mode", exit_code=EXIT_USAGE)
 
     def _bridge_command(self) -> str:
+        # Historical receipt comparison only; this launcher is no longer shipped.
         return str(self.config.plugin_dir / "bin" / ("fargowork.cmd" if platform.system() == "Windows" else "fargowork"))
 
     def _native_bridge_command(self) -> str:
-        return _manual_mcp_registration(self.config)["command"]
+        return str(self.config.plugin_dir / "bin" / ("fargowork.exe" if platform.system() == "Windows" else "fargowork"))
 
     def _detect_codex(self) -> dict[str, Any]:
         if self.config.codex_path:
@@ -1919,63 +1699,6 @@ class ClientAdapters:
                 return {"detected": False, "executable": None, "detection": "explicit-path-unavailable", "reason": "Configured Codex executable is unavailable; use --codex-path with the current path. No alternate executable was guessed."}
         return _detect_command("codex")
 
-    def manual(self) -> dict[str, Any]:
-        return {
-            "detected": None,
-            "registered": "unknown",
-            "trusted": "unknown",
-            "needs_user_action": True,
-            "registration": "manual-unverified",
-            "reason": "Import the stdio MCP entry and the employee Skill in your client; client registration and trust were not inspected.",
-            "skill_path": str(_canonical_skill_path(self.config) / "SKILL.md"),
-        }
-
-    def cli(self) -> dict[str, Any]:
-        return {"detected": True, "registered": False, "registration": "cli-no-mcp",
-                "trusted": "not_required", "needs_user_action": False,
-                "skill_path": str(_canonical_skill_path(self.config) / "SKILL.md"),
-                "reason": "Use the official FargoWork tools CLI; host MCP registration is not required."}
-
-    def _host_skill_path(self, target: str) -> Path:
-        if target == "codex":
-            return self._codex_skill_path()
-        if target == "cursor":
-            # Cursor also discovers these compatible locations. Reuse a proven
-            # FargoWork copy when available rather than adding a duplicate.
-            for candidate in (_codex_home() / "skills" / PLUGIN_NAME, Path.home() / ".claude" / "skills" / PLUGIN_NAME):
-                if candidate.joinpath("SKILL.md").is_file() and _owned_path(candidate):
-                    if _tree_hashes(candidate) == _tree_hashes(self.config.plugin_dir / "skills" / PLUGIN_NAME):
-                        return candidate
-            return Path.home() / ".cursor" / "skills" / PLUGIN_NAME
-        if target == "claude-code":
-            return Path(os.environ.get("CLAUDE_CONFIG_DIR") or str(Path.home() / ".claude")) / "skills" / PLUGIN_NAME
-        raise FargoWorkError("unknown Skill host", code="usage", exit_code=EXIT_USAGE)
-
-    def _host_skill_status(self, target: str) -> dict[str, Any]:
-        path = self._host_skill_path(target)
-        present = path.joinpath("SKILL.md").is_file()
-        managed = present and _owned_path(path)
-        return {"installed": present, "managed": managed, "path": str(path), "status": "ready" if managed else ("unmanaged" if present else "missing")}
-
-    def _install_host_skill(self, target: str) -> dict[str, Any]:
-        source = self.config.plugin_dir / "skills" / PLUGIN_NAME
-        path = self._host_skill_path(target)
-        if not source.joinpath("SKILL.md").is_file():
-            raise FargoWorkError("the employee plugin does not contain its core Skill", code="skill_missing", exit_code=EXIT_UNAVAILABLE)
-        _assert_host_location(path)
-        if path.exists() and not _owned_path(path):
-            raise FargoWorkError(f"refusing to overwrite an unowned {target} Skill", code="ownership_conflict", exit_code=EXIT_NEEDS_ACTION)
-        _copy_managed_skill(source, path)
-        return self._host_skill_status(target)
-
-    def _remove_host_skill(self, target: str) -> None:
-        path = self._host_skill_path(target)
-        # A shared compatible Skill may be used by another adapter. Cursor
-        # removes only its dedicated copy, leaving common copies in place.
-        if target == "cursor" and path != Path.home() / ".cursor" / "skills" / PLUGIN_NAME:
-            return
-        if path.exists() or path.is_symlink():
-            _remove_owned_tree(path.parent, path, label=f"{target} Skill")
 
     @staticmethod
     def _host_json(path: Path) -> tuple[dict[str, Any], bytes | None]:
@@ -2000,6 +1723,7 @@ class ClientAdapters:
             raise FargoWorkError("client MCP configuration has an unsupported shape; it was preserved", code="invalid_client_config", exit_code=EXIT_NEEDS_ACTION)
         return payload, original
 
+
     @staticmethod
     def _write_host_json(path: Path, payload: dict[str, Any], original: bytes | None) -> None:
         current = path.read_bytes() if path.exists() else None
@@ -2007,8 +1731,6 @@ class ClientAdapters:
             raise FargoWorkError("client configuration changed during registration; retry after reviewing it", code="client_config_changed", exit_code=EXIT_NEEDS_ACTION)
         _atomic_write(path, _json_bytes(payload))
 
-    def _stdio_entry(self) -> dict[str, Any]:
-        return {"type": "stdio", "command": self._native_bridge_command(), "args": ["bridge"]}
 
     def _host_entry_matches(self, entry: Any) -> bool:
         return (
@@ -2020,218 +1742,6 @@ class ClientAdapters:
             and not (set(entry) - {"type", "command", "args", "env"})
         )
 
-    def _codex_skill_source(self) -> Path:
-        return self.config.plugin_dir / "skills" / PLUGIN_NAME
-
-    def _codex_skill_path(self) -> Path:
-        return _codex_home() / "skills" / PLUGIN_NAME
-
-    def _install_codex_skill(self) -> dict[str, Any]:
-        source = self._codex_skill_source()
-        target = self._codex_skill_path()
-        _assert_path_within(self.config.plugin_dir, source, label="Codex Skill source")
-        _assert_path_within(_codex_home(), target, label="Codex Skill destination")
-        if not source.joinpath("SKILL.md").is_file():
-            raise FargoWorkError(
-                "the FargoWork Agent Plugin does not contain its core Skill",
-                code="skill_missing",
-                exit_code=EXIT_UNAVAILABLE,
-            )
-        if target.exists() and not _owned_path(target) and not _adopt_identical_tree(source, target):
-            raise FargoWorkError(
-                f"refusing to overwrite an existing non-FargoWork Codex Skill: {target}",
-                code="ownership_conflict",
-                exit_code=EXIT_NEEDS_ACTION,
-            )
-        _copy_managed_skill(source, target)
-        return {"installed": True, "managed": True, "path": str(target)}
-
-    def _codex_skill_status(self) -> dict[str, Any]:
-        target = self._codex_skill_path()
-        installed = target.joinpath("SKILL.md").is_file()
-        managed = installed and _owned_path(target)
-        return {
-            "installed": installed,
-            "managed": managed,
-            "path": str(target),
-            "status": "ready" if managed else ("unmanaged" if installed else "missing"),
-        }
-
-    def _codebuddy_probe(self, executable: str) -> dict[str, Any]:
-        result = subprocess.run([executable, "mcp", "get", PLUGIN_NAME], capture_output=True, text=True, encoding="utf-8", check=False)
-        text = f"{result.stdout}\n{result.stderr}".lower()
-        if "not found in any scope" in text:
-            return {"status": "absent", "returncode": result.returncode, "text": text}
-        if result.returncode != 0:
-            return {"status": "error", "returncode": result.returncode, "text": text}
-        return {"status": "present", "returncode": result.returncode, "text": text}
-
-    def _codebuddy_command(self, executable: str) -> list[str]:
-        return [executable, "mcp", "add", PLUGIN_NAME, "-s", "user", "-t", "stdio", "--", self._bridge_command(), "bridge"]
-
-    def _codebuddy_matches(self, probe: Mapping[str, Any]) -> bool:
-        command = self._bridge_command().replace("\\", "/").lower()
-        text = str(probe.get("text") or "").replace("\\", "/").lower()
-        return probe.get("status") == "present" and command in text and "bridge" in text
-
-    def workbuddy(self) -> dict[str, Any]:
-        detected = _detect_command("codebuddy")
-        path = self.config.home / "adapters" / "workbuddy.json"
-        base = {
-            **detected,
-            "registered": False,
-            "trusted": "unknown",
-            "needs_user_action": bool(detected["detected"]),
-            "registration": "not_detected" if not detected["detected"] else "not_registered",
-            "trust_path": "WorkBuddy UI: Settings -> Connectors -> Custom Connector (or Settings -> MCP), trust and enable the FargoWork user-scope MCP entry.",
-            "plugin_dir": str(self.config.plugin_dir),
-            "config_path": str(path),
-            "official_cli_registration": bool(detected["detected"]),
-            "official_command": self._codebuddy_command(detected["executable"]) if detected["detected"] else None,
-        }
-        _foreign, owned = self._foreign_or_owned_entry(path)
-        if self.registration_mode == "fixture" and owned and owned.get("registration") == "fargowork-owned-fixture":
-            return {**base, "registered": True, "trusted": "unknown", "needs_user_action": True, "registration": "fargowork-owned-fixture", "reason": "fixture registration is installed; real CodeBuddy registration is disabled in fixture mode"}
-        if not detected["detected"]:
-            base["reason"] = "CodeBuddy is not installed; skipped."
-            return base
-        loaded = owned or {}
-        probe = self._codebuddy_probe(detected["executable"])
-        if probe["status"] == "error":
-            return {**base, "registration": "official-cli-error", "reason": "CodeBuddy MCP status could not be read; retry doctor."}
-        if probe["status"] == "present":
-            if loaded.get("registration") in {"official-codebuddy-user", "fargowork-owned-fixture"} and self._codebuddy_matches(probe):
-                return {**base, "registered": True, "needs_user_action": True, "registration": loaded.get("registration"), "reason": "MCP is registered; WorkBuddy UI trust/enable is still required."}
-            return {**base, "registration": "conflict", "reason": "CodeBuddy already has a FargoWork-named MCP entry not owned by this installation; it was preserved."}
-        if loaded.get("registration") == "official-codebuddy-user":
-            return {**base, "registration": "registration_missing", "reason": "The owned CodeBuddy user-scope entry is missing; run fargowork repair."}
-        return {**base, "registration": "not_registered", "reason": "CodeBuddy is installed but the FargoWork user-scope MCP entry is not registered."}
-
-    def _register_workbuddy_official(self, path: Path) -> dict[str, Any]:
-        detected = _detect_command("codebuddy")
-        if not detected["detected"]:
-            return self.workbuddy()
-        foreign, owned = self._foreign_or_owned_entry(path)
-        probe = self._codebuddy_probe(detected["executable"])
-        if probe["status"] == "error":
-            return {**self.workbuddy(), "registration": "official-cli-error", "reason": "CodeBuddy MCP status could not be read; no registration was attempted."}
-        if probe["status"] == "present":
-            if foreign is not None:
-                return {**self.workbuddy(), "registration": "conflict", "reason": "CodeBuddy already has a FargoWork-named MCP entry not owned by this installation; it was preserved."}
-            if owned and owned.get("registration") == "official-codebuddy-user" and self._codebuddy_matches(probe):
-                return self.workbuddy()
-            return {**self.workbuddy(), "registration": "conflict", "reason": "CodeBuddy already has a FargoWork-named MCP entry not owned by this installation; it was preserved."}
-        command = self._codebuddy_command(detected["executable"])
-        try:
-            result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", check=False)
-        except (OSError, subprocess.TimeoutExpired):
-            return {**self.workbuddy(), "registered": False, "needs_user_action": True, "registration": "registration_unverified", "mutation_may_have_happened": True}
-        if result.returncode != 0:
-            return {**self.workbuddy(), "registration": "official-cli-failed", "mutation_may_have_happened": True, "reason": "CodeBuddy user-scope MCP registration failed; retry repair."}
-        verify = self._codebuddy_probe(detected["executable"])
-        if not self._codebuddy_matches(verify):
-            return {**self.workbuddy(), "registration": "registration_unverified", "mutation_may_have_happened": True, "reason": "CodeBuddy did not report the expected user-scope FargoWork command after registration; ownership was not recorded."}
-        try:
-            _atomic_write(path, _json_bytes({**self._fixture_payload(), "registration": "official-codebuddy-user", "scope": "user", "official_command": command}))
-        except OSError:
-            try:
-                probe = self._codebuddy_probe(detected["executable"])
-                if self._codebuddy_matches(probe):
-                    subprocess.run([detected["executable"], "mcp", "remove", "-s", "user", PLUGIN_NAME], capture_output=True, text=True, encoding="utf-8", check=False, timeout=15)
-                rolled_back = self._codebuddy_probe(detected["executable"])["status"] == "absent"
-            except (OSError, subprocess.TimeoutExpired):
-                rolled_back = False
-            if not rolled_back:
-                raise FargoWorkError("CodeBuddy registration rollback needs manual review", code="registration_rollback_required", exit_code=EXIT_NEEDS_ACTION)
-            raise
-        return self.workbuddy()
-
-    def codex(self) -> dict[str, Any]:
-        detected = self._detect_codex()
-        path = self.config.home / "adapters" / "codex.json"
-        foreign, owned = self._foreign_or_owned_entry(path)
-        skill = self._codex_skill_status()
-        base = {
-            **detected,
-            "registered": False,
-            "trusted": False,
-            "needs_user_action": bool(detected["detected"]),
-            "config_path": str(path),
-            "registration": "not_detected" if not detected["detected"] else "not_registered",
-            "skill": skill,
-            "official_command": [detected["executable"], "mcp", "add", PLUGIN_NAME, "--", self._bridge_command(), "bridge"] if detected["detected"] else None,
-        }
-        if (
-            self.config.environment == "development"
-            and self.registration_mode == "fixture"
-            and owned
-            and owned.get("registration") == "fargowork-owned-fixture"
-        ):
-            return {**base, "registered": True, "trusted": "unknown", "needs_user_action": True, "registration": "fargowork-owned-fixture", "reason": "development fixture registration is not a real Codex connection"}
-        if not detected["detected"]:
-            return {**base, "needs_user_action": False}
-        if foreign is not None:
-            return {**base, "registration": "conflict", "reason": "Codex has a same-name entry without a FargoWork-owned sidecar; it was preserved."}
-        native = self._codex_mcp_state(detected["executable"])
-        if native["status"] == "error":
-            return {**base, "registration": "official-cli-error", "reason": "Codex MCP configuration could not be verified; no registration ownership was assumed."}
-        if native["status"] == "absent":
-            registration = "registration_missing" if owned and owned.get("registration") == "official-codex-cli" else "not_registered"
-            return {**base, "registration": registration, "reason": "Codex has no FargoWork MCP entry."}
-        if not owned or not self._codex_sidecar_matches(owned, native["entry"]):
-            registration = "conflict" if owned else "conflict"
-            return {**base, "registration": registration, "reason": "Codex has a same-name MCP entry that does not match FargoWork's owned command, arguments, and environment; it was preserved."}
-        ready = skill["managed"]
-        return {
-            **base,
-            "registered": True,
-            "trusted": True if ready else "unknown",
-            "needs_user_action": not ready,
-            "registration": "official-codex-cli",
-            "skill": skill,
-        }
-
-    def cursor(self) -> dict[str, Any]:
-        detected = _detect_command("cursor")
-        config_path = Path.home() / ".cursor" / "mcp.json"
-        sidecar = self.config.home / "adapters" / "cursor.json"
-        base = {
-            **detected,
-            "registered": False,
-            "trusted": "unknown",
-            "needs_user_action": bool(detected["detected"]),
-            "config_path": str(config_path),
-            "registration": "not_registered" if detected["detected"] else "not_detected",
-            "skill": self._host_skill_status("cursor"),
-            "trust_path": "Cursor Settings -> Tools & MCP: enable FargoWork and review the available tools.",
-        }
-        if not detected["detected"]:
-            return base
-        try:
-            payload, _raw = self._host_json(config_path)
-            foreign, owned = self._foreign_or_owned_entry(sidecar)
-        except FargoWorkError as exc:
-            return {**base, "registration": "config_unreadable", "needs_user_action": True, "reason": str(exc)}
-        entry = payload.get("mcpServers", {}).get(PLUGIN_NAME)
-        if entry is None:
-            return base
-        if foreign is not None or not owned or owned.get("registration") != "official-cursor-user-json" or owned.get("entry") != entry or not self._host_entry_matches(entry):
-            return {**base, "registration": "conflict", "needs_user_action": True, "reason": "Cursor has a same-name MCP entry without matching FargoWork ownership; it was preserved."}
-        return {**base, "registered": True, "registration": "official-cursor-user-json", "needs_user_action": True, "reason": "MCP configuration is verified; Cursor runtime connection and UI trust were not checked."}
-
-    def all(self) -> dict[str, Any]:
-        return {"workbuddy": self.workbuddy(), "codex": self.codex(), "cursor": self.cursor(), "claude-code": self.claude_code()}
-
-    def selected(self, target: str) -> dict[str, Any]:
-        if target in {"all", "auto"}:
-            return self.all()
-        if target == "manual":
-            return {"manual": self.manual()}
-        if target == "cli":
-            return {"cli": self.cli()}
-        if target == "claude-code":
-            return {target: self.claude_code()}
-        return {target: getattr(self, target)()}
 
     def _foreign_or_owned_entry(self, path: Path) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
         _assert_path_within(self.config.home, path, label="client adapter state")
@@ -2249,16 +1759,6 @@ class ClientAdapters:
             return current, None
         return None, current
 
-    def _fixture_payload(self) -> dict[str, Any]:
-        return {
-            "owner": MARKER,
-            "name": PLUGIN_NAME,
-            "command": self._bridge_command(),
-            "args": ["bridge"],
-            "resource": self.config.resource,
-            "managed_by": "fargowork install --registration-mode fixture",
-            "registration": "fargowork-owned-fixture",
-        }
 
     @staticmethod
     def _codex_inventory_entries(payload: Any) -> dict[str, dict[str, Any]]:
@@ -2289,6 +1789,7 @@ class ClientAdapters:
                 entries[name] = item
             return entries
         raise ValueError("Codex MCP inventory has an unsupported shape")
+
 
     @staticmethod
     def _codex_get_entry(payload: Any, expected_name: str) -> dict[str, Any]:
@@ -2342,6 +1843,7 @@ class ClientAdapters:
             raise ValueError("Codex remote transport URL is invalid")
         return value
 
+
     def _codex_mcp_state(self, executable: str) -> dict[str, Any]:
         try:
             inventory_result = subprocess.run(
@@ -2381,11 +1883,13 @@ class ClientAdapters:
             return {"status": "error"}
         return {"status": "present", "entry": entry}
 
+
     @staticmethod
     def _normalized_codex_command(value: Any) -> str:
         if not isinstance(value, str) or not value:
             return ""
         return os.path.normcase(os.path.normpath(value.strip()))
+
 
     def _codex_native_entry_matches(self, entry: Mapping[str, Any]) -> bool:
         expected_command = self._normalized_codex_command(self._bridge_command())
@@ -2415,6 +1919,7 @@ class ClientAdapters:
             and enabled is True
         )
 
+
     def _codex_sidecar_matches(self, sidecar: Mapping[str, Any], entry: Mapping[str, Any]) -> bool:
         if sidecar.get("registration") != "official-codex-cli":
             return False
@@ -2438,400 +1943,111 @@ class ClientAdapters:
             return False
         return self._codex_native_entry_matches(entry)
 
-    def _register_codex_official(self, path: Path) -> dict[str, Any]:
-        detected = self._detect_codex()
-        if not detected["detected"]:
-            return {**self.codex(), "registration": "not_detected", "needs_user_action": False, "reason": "Codex is not installed; skipped."}
-        self._install_codex_skill()
-        foreign, owned = self._foreign_or_owned_entry(path)
-        if foreign is not None:
-            return {**self.codex(), "registered": False, "trusted": False, "needs_user_action": True, "reason": "existing non-FargoWork entry preserved"}
-        native = self._codex_mcp_state(detected["executable"])
-        if native["status"] == "error":
-            return {**self.codex(), "registered": False, "trusted": False, "needs_user_action": True, "registration": "official-cli-error", "reason": "Codex MCP configuration could not be verified; no registration was attempted."}
-        if native["status"] == "present":
-            if owned and self._codex_sidecar_matches(owned, native["entry"]):
-                return self.codex()
-            return {**self.codex(), "registered": False, "trusted": False, "needs_user_action": True, "registration": "conflict", "reason": "Codex already has a same-name MCP entry that is not an exact FargoWork-owned registration; it was preserved."}
-        command = [detected["executable"], "mcp", "add", PLUGIN_NAME, "--", self._bridge_command(), "bridge"]
-        try:
-            result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", check=False, timeout=15)
-        except (OSError, subprocess.TimeoutExpired):
-            return {**self.codex(), "registered": False, "trusted": False, "needs_user_action": True, "registration": "official-cli-error", "mutation_may_have_happened": True, "reason": "Codex official registration could not be confirmed; no ownership was recorded."}
-        if result.returncode != 0:
-            return {**self.codex(), "registered": False, "trusted": False, "needs_user_action": True, "mutation_may_have_happened": True, "reason": "Codex official registration command failed; inspect Codex configuration and retry."}
-        verified = self._codex_mcp_state(detected["executable"])
-        if verified["status"] != "present" or not self._codex_native_entry_matches(verified.get("entry", {})):
-            return {**self.codex(), "registered": False, "trusted": False, "needs_user_action": True, "registration": "registration_unverified", "mutation_may_have_happened": True, "reason": "Codex did not report the exact FargoWork command, arguments, and environment after registration; ownership was not recorded."}
-        try:
-            _atomic_write(path, _json_bytes({
-                **self._fixture_payload(),
-                "env": {},
-                "cwd": verified["entry"]["transport"].get("cwd"),
-                "managed_by": "Codex MCP CLI",
-                "registration": "official-codex-cli",
-                "official_command": command,
-            }))
-        except OSError:
-            try:
-                current = self._codex_mcp_state(detected["executable"])
-                if current["status"] == "present" and self._codex_native_entry_matches(current.get("entry", {})):
-                    subprocess.run([detected["executable"], "mcp", "remove", PLUGIN_NAME], capture_output=True, text=True, encoding="utf-8", check=False, timeout=15)
-                rolled_back = self._codex_mcp_state(detected["executable"])["status"] == "absent"
-            except (OSError, subprocess.TimeoutExpired):
-                rolled_back = False
-            if not rolled_back:
-                raise FargoWorkError("Codex registration rollback needs manual review", code="registration_rollback_required", exit_code=EXIT_NEEDS_ACTION)
-            raise
-        skill = self._codex_skill_status()
-        return {
-            **detected,
-            "registered": True,
-            "trusted": True if skill["managed"] else "unknown",
-            "needs_user_action": not skill["managed"],
-            "config_path": str(path),
-            "registration": "official-codex-cli",
-            "skill": skill,
-            "official_command": command,
-        }
 
-    def _uninstall_codex(self, path: Path) -> dict[str, Any]:
-        foreign, owned = self._foreign_or_owned_entry(path)
-        if foreign is not None:
-            return {"uninstalled": False, "needs_user_action": True, "reason": "Codex same-name entry has no FargoWork-owned sidecar; it was preserved."}
-        skill_path = self._codex_skill_path()
-        if owned is None:
-            if skill_path.exists() or skill_path.is_symlink():
-                _remove_owned_tree(_codex_home(), skill_path, label="Codex Skill")
-                return {"uninstalled": True, "needs_user_action": False, "reason": "FargoWork-owned Codex Skill removed; no owned MCP entry existed"}
-            return {"uninstalled": False, "needs_user_action": False, "reason": "no FargoWork-owned entry"}
-
-        registration = owned.get("registration")
-        if registration == "fargowork-owned-fixture":
-            if self.config.environment != "development":
-                detected = self._detect_codex()
-                if not detected["detected"]:
-                    return {"uninstalled": False, "needs_user_action": True, "reason": "fixture sidecar is not ownership proof for the employee release; Codex could not be verified, so it was preserved."}
-                native = self._codex_mcp_state(detected["executable"])
-                if native["status"] == "error" or native["status"] == "present":
-                    return {"uninstalled": False, "needs_user_action": True, "reason": "fixture sidecar is not ownership proof for the employee release; Codex state was preserved."}
-            path.unlink()
-            if skill_path.exists() or skill_path.is_symlink():
-                _remove_owned_tree(_codex_home(), skill_path, label="Codex Skill")
-            return {"uninstalled": True, "needs_user_action": False, "reason": "fixture sidecar removed; no Codex MCP entry was touched"}
-        if registration != "official-codex-cli":
-            return {"uninstalled": False, "needs_user_action": True, "reason": "Codex sidecar does not identify an owned official registration; it was preserved."}
-
-        detected = self._detect_codex()
-        if not detected["detected"]:
-            return {"uninstalled": False, "needs_user_action": True, "reason": "Codex is unavailable; the owned registration and Skill were preserved."}
-        native = self._codex_mcp_state(detected["executable"])
-        if native["status"] == "error":
-            return {"uninstalled": False, "needs_user_action": True, "reason": "Codex MCP configuration could not be verified; the owned registration was preserved."}
-        if native["status"] == "present":
-            if not self._codex_sidecar_matches(owned, native["entry"]):
-                return {"uninstalled": False, "needs_user_action": True, "reason": "Codex same-name entry no longer matches the owned command, arguments, and environment; it was preserved."}
-            try:
-                result = subprocess.run(
-                    [detected["executable"], "mcp", "remove", PLUGIN_NAME],
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    check=False,
-                    timeout=15,
-                )
-            except (OSError, subprocess.TimeoutExpired):
-                return {"uninstalled": False, "needs_user_action": True, "reason": "Codex official removal could not be confirmed; the owned registration was preserved."}
-            if result.returncode != 0:
-                return {"uninstalled": False, "needs_user_action": True, "reason": "Codex official removal failed; the owned registration was preserved."}
-            after = self._codex_mcp_state(detected["executable"])
-            if after["status"] != "absent":
-                return {"uninstalled": False, "needs_user_action": True, "reason": "Codex removal did not verify as absent; the owned registration and Skill record were preserved."}
-        path.unlink()
-        if skill_path.exists() or skill_path.is_symlink():
-            _remove_owned_tree(_codex_home(), skill_path, label="Codex Skill")
-        return {"uninstalled": True, "needs_user_action": False}
-
-    def _register_cursor_official(self, path: Path) -> dict[str, Any]:
-        detected = _detect_command("cursor")
-        if not detected["detected"]:
-            return {**self.cursor(), "registration": "not_detected", "needs_user_action": False, "reason": "Cursor is not installed; skipped."}
-        foreign, owned = self._foreign_or_owned_entry(path)
-        if foreign is not None:
-            return {**self.cursor(), "registered": False, "trusted": False, "needs_user_action": True, "reason": "existing non-FargoWork entry preserved"}
-        config_path = Path.home() / ".cursor" / "mcp.json"
+    def _json_registration(self, name: str, config_path: Path, registration: str) -> dict[str, Any]:
+        sidecar_path = self.config.home / "adapters" / f"{name}.json"
+        foreign, owned = self._foreign_or_owned_entry(sidecar_path)
         payload, original = self._host_json(config_path)
         current = payload.get("mcpServers", {}).get(PLUGIN_NAME)
-        if current is not None:
-            if not owned or owned.get("registration") != "official-cursor-user-json" or owned.get("entry") != current or not self._host_entry_matches(current):
-                return {**self.cursor(), "registration": "conflict", "needs_user_action": True}
-            self._install_host_skill("cursor")
-            return self.cursor()
-        self._install_host_skill("cursor")
-        entry = self._stdio_entry()
-        payload.setdefault("mcpServers", {})[PLUGIN_NAME] = entry
+        if current is None:
+            if owned and owned.get("registration") == registration:
+                sidecar_path.unlink()
+            return {"status": "absent", "needs_user_action": False}
+        if (foreign is not None or not owned or owned.get("registration") != registration
+                or owned.get("entry") != current or not self._host_entry_matches(current)):
+            return {"status": "preserved", "needs_user_action": True,
+                    "reason": "Old same-name connection is foreign or modified; it was preserved."}
+        del payload["mcpServers"][PLUGIN_NAME]
         self._write_host_json(config_path, payload, original)
-        try:
-            _atomic_write(path, _json_bytes({**self._fixture_payload(), "entry": entry, "config_path": str(config_path), "registration": "official-cursor-user-json"}))
-        except OSError:
-            try:
-                latest, latest_raw = self._host_json(config_path)
-                if latest.get("mcpServers", {}).get(PLUGIN_NAME) == entry:
-                    del latest["mcpServers"][PLUGIN_NAME]
-                    self._write_host_json(config_path, latest, latest_raw)
-                remaining = self._host_json(config_path)[0].get("mcpServers", {}).get(PLUGIN_NAME) is not None
-            except (FargoWorkError, OSError):
-                remaining = True
-            if remaining:
-                raise FargoWorkError("Cursor registration rollback needs manual review", code="registration_rollback_required", exit_code=EXIT_NEEDS_ACTION)
-            raise
-        return self.cursor()
+        sidecar_path.unlink()
+        return {"status": "removed", "needs_user_action": False}
 
-    def _uninstall_cursor(self, path: Path) -> dict[str, Any]:
+    def _codex_registration(self) -> dict[str, Any]:
+        path = self.config.home / "adapters" / "codex.json"
         foreign, owned = self._foreign_or_owned_entry(path)
-        if foreign is not None or not owned or owned.get("registration") != "official-cursor-user-json":
-            return {"uninstalled": False, "needs_user_action": True, "reason": "No proven FargoWork-owned Cursor registration; it was preserved."}
-        config_path = Path.home() / ".cursor" / "mcp.json"
-        payload, original = self._host_json(config_path)
-        current = payload.get("mcpServers", {}).get(PLUGIN_NAME)
-        if current is not None:
-            if owned.get("entry") != current or not self._host_entry_matches(current):
-                return {"uninstalled": False, "needs_user_action": True, "reason": "Cursor entry changed; it was preserved."}
-            del payload["mcpServers"][PLUGIN_NAME]
-            self._write_host_json(config_path, payload, original)
-        path.unlink()
-        self._remove_host_skill("cursor")
-        return {"uninstalled": True, "needs_user_action": False}
-
-    def _claude_user_config_path(self) -> Path:
-        if os.environ.get("CLAUDE_CONFIG_DIR"):
-            raise FargoWorkError("A custom Claude configuration directory requires manual MCP registration", code="manual_registration_required", exit_code=EXIT_NEEDS_ACTION)
-        return Path.home() / ".claude.json"
-
-    def _claude_user_entry(self) -> Any:
-        payload, _raw = self._host_json(self._claude_user_config_path())
-        return payload.get("mcpServers", {}).get(PLUGIN_NAME)
-
-    def _claude_probe(self, executable: str) -> dict[str, Any]:
-        try:
-            result = subprocess.run([executable, "mcp", "get", PLUGIN_NAME], capture_output=True, text=True, encoding="utf-8", check=False, timeout=15)
-        except (OSError, subprocess.TimeoutExpired):
-            return {"status": "error"}
-        if result.returncode == 0:
-            return {"status": "present"}
-        text = (result.stdout + "\n" + result.stderr).lower()
-        if "not found" in text or "no mcp server found" in text:
-            return {"status": "absent"}
-        return {"status": "error"}
-
-    def claude_code(self) -> dict[str, Any]:
-        detected = _detect_command("claude")
-        base = {**detected, "registered": False, "trusted": "unknown", "needs_user_action": bool(detected["detected"]), "registration": "not_registered" if detected["detected"] else "not_detected"}
+        if foreign is not None or not owned or owned.get("registration") != "official-codex-cli":
+            # No receipt means no authority to invoke host mutations.
+            config_path = _codex_home() / "config.toml"
+            present = path.exists()
+            if config_path.is_file():
+                _assert_host_location(config_path)
+                import tomllib
+                data = tomllib.loads(config_path.read_text(encoding="utf-8-sig"))
+                present = present or PLUGIN_NAME in data.get("mcp_servers", {})
+            return {"status": "preserved" if present else "absent", "needs_user_action": present,
+                    "reason": "An unproven old Codex connection was preserved." if present else "No old owned connection."}
+        detected = self._detect_codex()
         if not detected["detected"]:
-            return base
-        try:
-            entry = self._claude_user_entry()
-            foreign, owned = self._foreign_or_owned_entry(self.config.home / "adapters" / "claude-code.json")
-            base["skill"] = self._host_skill_status("claude-code")
-        except FargoWorkError as exc:
-            return {**base, "registration": "config_unreadable", "needs_user_action": True, "reason": str(exc)}
-        if entry is None:
-            return base
-        if foreign is not None or not owned or owned.get("registration") != "official-claude-code-user" or owned.get("entry") != entry or not self._host_entry_matches(entry):
-            return {**base, "registration": "conflict", "needs_user_action": True, "reason": "Claude Code has a same-name entry without matching FargoWork ownership; it was preserved."}
-        if self._claude_probe(detected["executable"])["status"] != "present":
-            return {**base, "registration": "registration_unverified", "needs_user_action": True}
-        return {**base, "registered": True, "registration": "official-claude-code-user", "needs_user_action": True, "reason": "User-scope MCP configuration is verified; Claude Code runtime connection and approvals were not checked."}
-
-    def _register_claude_code(self, path: Path) -> dict[str, Any]:
-        detected = _detect_command("claude")
-        if not detected["detected"]:
-            return self.claude_code()
-        entry = self._claude_user_entry()
-        foreign, owned = self._foreign_or_owned_entry(path)
-        if foreign is not None:
-            return {**self.claude_code(), "registration": "conflict", "needs_user_action": True}
-        probe = self._claude_probe(detected["executable"])
-        if entry is not None:
-            if not owned or owned.get("registration") != "official-claude-code-user" or owned.get("entry") != entry or not self._host_entry_matches(entry):
-                return {**self.claude_code(), "registration": "conflict", "needs_user_action": True}
-            self._install_host_skill("claude-code")
-            return self.claude_code()
-        if probe["status"] != "absent":
-            return {**self.claude_code(), "registration": "conflict" if probe["status"] == "present" else "official-cli-error", "needs_user_action": True}
-        self._install_host_skill("claude-code")
-        command = [detected["executable"], "mcp", "add", "--transport", "stdio", "--scope", "user", PLUGIN_NAME, "--", self._native_bridge_command(), "bridge"]
-        try:
-            result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", check=False, timeout=15)
-            after = self._claude_user_entry()
-            if result.returncode != 0 or not self._host_entry_matches(after):
-                if self._host_entry_matches(after):
-                    self._rollback_claude_registration(detected["executable"])
-                return {**self.claude_code(), "registration": "registration_unverified", "needs_user_action": True, "mutation_may_have_happened": self._claude_user_entry() is not None}
-            _atomic_write(path, _json_bytes({**self._fixture_payload(), "registration": "official-claude-code-user", "scope": "user", "entry": after}))
-        except (OSError, subprocess.TimeoutExpired):
-            try:
-                if self._host_entry_matches(self._claude_user_entry()):
-                    self._rollback_claude_registration(detected["executable"])
-                remaining = self._claude_user_entry() is not None
-            except (FargoWorkError, OSError, subprocess.TimeoutExpired):
-                remaining = True
-            if remaining:
-                raise FargoWorkError("Claude Code registration rollback needs manual review", code="registration_rollback_required", exit_code=EXIT_NEEDS_ACTION)
-            raise
-        except FargoWorkError as exc:
-            exc.mutation_may_have_happened = True
-            raise
-        return self.claude_code()
-
-    def _rollback_claude_registration(self, executable: str) -> None:
-        # Invoked only after this operation observed absence and then wrote an
-        # exact matching user-scope entry. Never remove a changed/foreign entry.
-        if not self._host_entry_matches(self._claude_user_entry()):
-            raise FargoWorkError("Claude Code registration changed during rollback; it was preserved", code="registration_rollback_required", exit_code=EXIT_NEEDS_ACTION)
-        try:
-            result = subprocess.run([executable, "mcp", "remove", "--scope", "user", PLUGIN_NAME], capture_output=True, text=True, encoding="utf-8", check=False, timeout=15)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise FargoWorkError("Claude Code registration rollback needs manual review", code="registration_rollback_required", exit_code=EXIT_NEEDS_ACTION) from exc
-        if result.returncode != 0 or self._claude_user_entry() is not None:
-            raise FargoWorkError("Claude Code registration rollback needs manual review", code="registration_rollback_required", exit_code=EXIT_NEEDS_ACTION)
-
-    def _uninstall_claude_code(self, path: Path) -> dict[str, Any]:
-        foreign, owned = self._foreign_or_owned_entry(path)
-        if foreign is not None or not owned or owned.get("registration") != "official-claude-code-user":
-            return {"uninstalled": False, "needs_user_action": True, "reason": "No proven FargoWork-owned Claude Code entry; it was preserved."}
-        entry = self._claude_user_entry()
-        if entry is not None:
-            if owned.get("entry") != entry or not self._host_entry_matches(entry):
-                return {"uninstalled": False, "needs_user_action": True, "reason": "Claude Code entry changed; it was preserved."}
-            executable = _detect_command("claude")["executable"]
-            if not executable:
-                return {"uninstalled": False, "needs_user_action": True, "reason": "Claude Code CLI is unavailable; its configuration was preserved."}
-            result = subprocess.run([executable, "mcp", "remove", "--scope", "user", PLUGIN_NAME], capture_output=True, text=True, encoding="utf-8", check=False, timeout=15)
-            if result.returncode != 0 or self._claude_user_entry() is not None:
-                return {"uninstalled": False, "needs_user_action": True, "reason": "Claude Code removal could not be verified."}
+            return {"status": "preserved", "needs_user_action": True,
+                    "reason": "Codex is unavailable; the old connection could not be verified."}
+        state = self._codex_mcp_state(detected["executable"])
+        if state["status"] == "error" or (state["status"] == "present" and not self._codex_sidecar_matches(owned, state["entry"])):
+            return {"status": "preserved", "needs_user_action": True,
+                    "reason": "The old Codex connection is unreadable or changed; it was preserved."}
+        if state["status"] == "present":
+            result = subprocess.run([detected["executable"], "mcp", "remove", PLUGIN_NAME], capture_output=True,
+                                    text=True, encoding="utf-8", check=False, timeout=15)
+            if result.returncode != 0 or self._codex_mcp_state(detected["executable"])["status"] != "absent":
+                return {"status": "unverified", "needs_user_action": True,
+                        "mutation_may_have_happened": True, "reason": "Old Codex connection removal was not verified."}
         path.unlink()
-        self._remove_host_skill("claude-code")
-        return {"uninstalled": True, "needs_user_action": False}
+        return {"status": "removed", "needs_user_action": False}
 
-    def register(self, target: str) -> dict[str, Any]:
-        if target in {"manual", "cli"}:
-            return self.selected(target)
-        self.config.home.joinpath("adapters").mkdir(parents=True, exist_ok=True)
+    def migrate(self) -> dict[str, Any]:
         results = {}
-        targets = ["workbuddy", "codex", "cursor", "claude-code"] if target in {"all", "auto"} else [target]
-        for name in targets:
-            if name == "claude-code":
-                results[name] = self._register_claude_code(self.config.home / "adapters" / "claude-code.json")
-                continue
-            if name == "workbuddy":
-                path = self.config.home / "adapters" / "workbuddy.json"
-                if self.registration_mode in {"auto", "official"}:
-                    results[name] = self._register_workbuddy_official(path)
-                    continue
-                foreign, _owned = self._foreign_or_owned_entry(path)
-                if foreign is not None:
-                    results[name] = {**self.workbuddy(), "registered": False, "needs_user_action": True, "registration": "conflict", "reason": "existing non-FargoWork entry preserved"}
-                    continue
-                _atomic_write(path, _json_bytes(self._fixture_payload()))
-                results[name] = {**self.workbuddy(), "registered": True, "trusted": "unknown", "needs_user_action": True, "registration": "fargowork-owned-fixture", "reason": "fixture registration prepared; real CodeBuddy registration is disabled in fixture mode"}
-                continue
-            path = self.config.home / "adapters" / f"{name}.json"
-            if self.registration_mode in {"auto", "official"}:
-                results[name] = self._register_codex_official(path) if name == "codex" else self._register_cursor_official(path)
-                continue
-            if name == "codex":
-                self._install_codex_skill()
-            foreign, _owned = self._foreign_or_owned_entry(path)
-            if foreign is not None:
-                results[name] = {**getattr(self, name)(), "registered": False, "needs_user_action": True, "reason": "existing non-FargoWork entry preserved"}
-                continue
-            _atomic_write(path, _json_bytes(self._fixture_payload()))
-            results[name] = {**getattr(self, name)(), "registered": True, "trusted": "unknown", "needs_user_action": True}
+        operations = {
+            "cursor": lambda: self._json_registration("cursor", Path.home() / ".cursor" / "mcp.json", "official-cursor-user-json"),
+            "claude-code": lambda: self._json_registration("claude-code", Path(os.environ.get("CLAUDE_CONFIG_DIR") or str(Path.home())) / ".claude.json", "official-claude-code-user"),
+            "codex": self._codex_registration,
+        }
+        for name, operation in operations.items():
+            try:
+                if name == "claude-code" and os.environ.get("CLAUDE_CONFIG_DIR"):
+                    # The old installer never registered custom Claude locations.
+                    sidecar = self.config.home / "adapters" / "claude-code.json"
+                    if sidecar.exists():
+                        results[name] = {"status": "preserved", "needs_user_action": True,
+                                         "reason": "Custom Claude location cannot prove the old user-scope connection."}
+                        continue
+                results[name] = operation()
+            except (OSError, ValueError, FargoWorkError, subprocess.TimeoutExpired):
+                results[name] = {"status": "preserved", "needs_user_action": True,
+                                 "reason": "Old client configuration could not be safely verified; it was preserved."}
+        # Old CodeBuddy receipts recorded a human-readable substring probe,
+        # not a complete exact entry. That is insufficient proof for deletion.
+        workbuddy = self.config.home / "adapters" / "workbuddy.json"
+        present = workbuddy.exists() or workbuddy.is_symlink()
+        results["workbuddy"] = {"status": "preserved" if present else "absent", "needs_user_action": present,
+                                "reason": "Old WorkBuddy connection lacks exact ownership evidence; review it in the client." if present else "No old receipt."}
         return results
 
-    def uninstall(self, target: str) -> dict[str, Any]:
-        if target == "cli":
-            return {"cli": {"uninstalled": False, "needs_user_action": False,
-                            "reason": "CLI mode has no host MCP registration; employee files and credentials were preserved."}}
-        if target == "manual":
-            return {"manual": {"uninstalled": False, "needs_user_action": True, "reason": "Remove the MCP entry and Skill from your client manually; client files, shared employee files and credentials were preserved."}}
-        targets = ["workbuddy", "codex", "cursor", "claude-code"] if target in {"all", "auto"} else [target]
-        results = {}
-        for name in targets:
-            if name == "cursor":
-                results[name] = self._uninstall_cursor(self.config.home / "adapters" / "cursor.json")
-                continue
-            if name == "claude-code":
-                results[name] = self._uninstall_claude_code(self.config.home / "adapters" / "claude-code.json")
-                continue
-            if name == "workbuddy":
-                path = self.config.home / "adapters" / "workbuddy.json"
-                foreign, owned = self._foreign_or_owned_entry(path)
-                if foreign is not None:
-                    results[name] = {**self.workbuddy(), "uninstalled": False, "needs_user_action": True, "reason": "existing non-FargoWork CodeBuddy ownership was preserved"}
-                    continue
-                if owned is None:
-                    results[name] = {**self.workbuddy(), "uninstalled": False, "needs_user_action": True, "reason": "no FargoWork-owned WorkBuddy registration; trust/enable state remains UI-owned"}
-                    continue
-                if owned.get("registration") == "official-codebuddy-user":
-                    executable = _detect_command("codebuddy")["executable"]
-                    if not executable:
-                        results[name] = {**self.workbuddy(), "uninstalled": False, "needs_user_action": True, "reason": "CodeBuddy is unavailable; remove the FargoWork user-scope entry with CodeBuddy and retry."}
-                        continue
-                    probe = self._codebuddy_probe(executable)
-                    if probe["status"] == "error":
-                        results[name] = {**self.workbuddy(), "uninstalled": False, "needs_user_action": True, "reason": "CodeBuddy MCP status could not be read; the owned registration was preserved."}
-                        continue
-                    if probe["status"] == "present" and not self._codebuddy_matches(probe):
-                        results[name] = {**self.workbuddy(), "uninstalled": False, "needs_user_action": True, "reason": "CodeBuddy FargoWork entry no longer matches the owned launcher; it was preserved."}
-                        continue
-                    if probe["status"] == "present":
-                        result = subprocess.run([executable, "mcp", "remove", "-s", "user", PLUGIN_NAME], capture_output=True, text=True, encoding="utf-8", check=False)
-                        if result.returncode != 0:
-                            results[name] = {**self.workbuddy(), "uninstalled": False, "needs_user_action": True, "reason": "CodeBuddy user-scope removal failed; remove FargoWork in CodeBuddy and retry."}
-                            continue
-                path.unlink()
-                results[name] = {**self.workbuddy(), "uninstalled": True, "needs_user_action": True, "reason": "FargoWork registration removed; WorkBuddy UI trust/enable state may still need manual cleanup."}
-                continue
-            path = self.config.home / "adapters" / f"{name}.json"
-            if name == "codex":
-                results[name] = self._uninstall_codex(path)
-                continue
-            if path.exists() and _owned_path(path):
-                entry = {}
-                try:
-                    loaded = json.loads(path.read_text(encoding="utf-8"))
-                    if isinstance(loaded, dict):
-                        entry = loaded
-                except (OSError, ValueError, json.JSONDecodeError):
-                    pass
-                if entry.get("registration") == "official-codex-cli" and name == "codex":
-                    executable = self._detect_codex()["executable"]
-                    if executable:
-                        result = subprocess.run([executable, "mcp", "remove", PLUGIN_NAME], capture_output=True, text=True, encoding="utf-8", check=False)
-                        if result.returncode != 0:
-                            results[name] = {"uninstalled": False, "needs_user_action": True, "reason": "Codex official removal failed; remove FargoWork from Codex and retry."}
-                            continue
-                path.unlink()
-                if name == "codex":
-                    skill_path = self._codex_skill_path()
-                    if skill_path.exists() or skill_path.is_symlink():
-                        _remove_owned_tree(_codex_home(), skill_path, label="Codex Skill")
-                results[name] = {"uninstalled": True, "needs_user_action": False}
-            else:
-                if name == "codex":
-                    skill_path = self._codex_skill_path()
-                    if skill_path.exists() or skill_path.is_symlink():
-                        _remove_owned_tree(_codex_home(), skill_path, label="Codex Skill")
-                        results[name] = {
-                            "uninstalled": True,
-                            "needs_user_action": False,
-                            "reason": "FargoWork-owned Codex Skill removed; no owned MCP entry existed",
-                        }
-                        continue
-                results[name] = {"uninstalled": False, "needs_user_action": False, "reason": "no FargoWork-owned entry"}
-        return results
+
+class ClientAdapters:
+    """CLI and canonical Skill installation, with bounded legacy cleanup only."""
+
+    def __init__(self, config: Config, registration_mode: str | None = None):
+        self.config = config
+
+    def selected(self, target: str = "cli") -> dict[str, Any]:
+        if target != "cli":
+            raise FargoWorkError("Only the official CLI is supported", code="invalid_target", exit_code=EXIT_USAGE)
+        return {"cli": {"detected": True, "registered": False, "registration": "cli-no-mcp",
+                        "trusted": "not_required", "needs_user_action": False,
+                        "skill_path": str(_canonical_skill_path(self.config) / "SKILL.md")}}
+
+    def register(self, target: str = "cli") -> dict[str, Any]:
+        result = self.selected(target)
+        migration = LegacyBridgeMigration(self.config).migrate()
+        result["cli"]["legacy_migration"] = migration
+        result["cli"]["needs_user_action"] = any(item.get("needs_user_action") for item in migration.values())
+        return result
+
+    def uninstall(self, target: str = "cli") -> dict[str, Any]:
+        self.selected(target)
+        migration = LegacyBridgeMigration(self.config).migrate()
+        return {"cli": {"uninstalled": False, "needs_user_action": any(item.get("needs_user_action") for item in migration.values()),
+                        "reason": "Credentials and employee preferences were preserved; use logout to clear this device login.",
+                        "legacy_migration": migration}}
 
 
 def _prepare_plugin(config: Config, source: Path | None = None) -> None:
@@ -2849,10 +2065,10 @@ def _prepare_plugin(config: Config, source: Path | None = None) -> None:
         marker.write_text(MARKER + "\n", encoding="utf-8")
 
 
-def _doctor(config: Config, *, target: str = "all") -> dict[str, Any]:
+def _doctor(config: Config, *, target: str = "cli") -> dict[str, Any]:
     adapters = ClientAdapters(config)
     clients = adapters.selected(target)
-    plugin_ready = (config.plugin_dir / "plugin.json").is_file() and (config.plugin_dir / "mcp.json").is_file()
+    plugin_ready = (config.plugin_dir / "plugin.json").is_file()
     if target == "cli":
         executable = config.home / "bin" / ("fargowork.exe" if platform.system() == "Windows" else "fargowork")
         plugin_ready = executable.is_file() and (_canonical_skill_path(config) / "SKILL.md").is_file()
@@ -2904,8 +2120,6 @@ def _doctor(config: Config, *, target: str = "all") -> dict[str, Any]:
     if target == "cli":
         payload.update(connection_mode="cli", mcp_registration_required=False,
                        business_cli_available=plugin_ready, tool_capability="not_checked")
-    else:
-        payload["manual_mcp_registration"] = _manual_mcp_registration(config)
     return payload
 
 
@@ -2921,15 +2135,15 @@ class FargoWorkArgumentParser(argparse.ArgumentParser):
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = FargoWorkArgumentParser(prog="fargowork", description="FargoWork employee business CLI and optional MCP bridge")
+    parser = FargoWorkArgumentParser(prog="fargowork", description="FargoWork employee business CLI")
     parser.add_argument("--output", choices=("human", "jsonl"), default="human")
     parser.add_argument("--version", action="version", version=VERSION)
     sub = parser.add_subparsers(dest="command", required=True)
-    client_targets = ("cli", "manual", "auto", "all", "workbuddy", "codex", "cursor", "claude-code")
-    default_target = "cli" if CLIENT_ENVIRONMENT == "employee" else "all"
+    client_targets = ("cli",)
+    default_target = "cli"
     registration_modes = ("auto", "official") if CLIENT_ENVIRONMENT == "employee" else ("auto", "official", "fixture")
 
-    install = sub.add_parser("install", help="prepare the employee plugin; register a client only when explicitly selected")
+    install = sub.add_parser("install", help="prepare the official CLI and employee Skill")
     install.add_argument("--target", choices=client_targets, default=default_target)
     if CLIENT_ENVIRONMENT == "development":
         install.add_argument("--source-plugin", type=Path)
@@ -2937,18 +2151,13 @@ def _build_parser() -> argparse.ArgumentParser:
     install.add_argument("--resource")
     install.add_argument("--resource-metadata-uri")
     install.add_argument("--redirect-uri")
-    install.add_argument("--registration-mode", choices=registration_modes, default="auto")
     install.add_argument("--output", choices=("human", "jsonl"), default="human")
-    install.add_argument("--codex-path")
     install.add_argument("--attempt-id")
 
     for name in ("doctor", "repair", "uninstall", "status", "logout"):
         command = sub.add_parser(name, help=f"{name} FargoWork")
         command.add_argument("--target", choices=client_targets, default=default_target)
-        if name == "repair":
-            command.add_argument("--registration-mode", choices=registration_modes, default="auto")
         command.add_argument("--output", choices=("human", "jsonl"), default="human")
-        command.add_argument("--codex-path")
         command.add_argument("--attempt-id")
 
     login = sub.add_parser("login", help="login with DingTalk-backed FargoWork OAuth")
@@ -2965,10 +2174,6 @@ def _build_parser() -> argparse.ArgumentParser:
     version_command.add_argument("--output", choices=("human", "jsonl"), default="human")
     version_command.add_argument("--attempt-id")
 
-    bridge = sub.add_parser("bridge", help="proxy MCP JSON-RPC over stdio")
-    bridge.add_argument("--output", choices=("human", "jsonl"), default="jsonl")
-    bridge.add_argument("--attempt-id")
-
     profile = sub.add_parser("profile", help="manage only the Server-verified current employee's local preferences")
     profile.add_argument("profile_action", choices=("show", "keep", "reset", "set"))
     profile.add_argument("--language", choices=("zh-CN", "en"))
@@ -2980,7 +2185,7 @@ def _build_parser() -> argparse.ArgumentParser:
     diagnostics.add_argument("diagnostic_action", choices=("record", "export"))
     diagnostics.add_argument("--event", choices=sorted(EVENTS))
     diagnostics.add_argument("--phase", choices=sorted(PHASES))
-    diagnostics.add_argument("--component", choices=("cli", "bridge", "installer", "bootstrap", "launcher"), default="cli")
+    diagnostics.add_argument("--component", choices=("cli", "installer", "bootstrap", "launcher"), default="cli")
     diagnostics.add_argument("--outcome", choices=sorted(OUTCOMES))
     diagnostics.add_argument("--error-code")
     diagnostics.add_argument("--exit-code", type=int)
@@ -3002,6 +2207,7 @@ def _build_parser() -> argparse.ArgumentParser:
             command.description = "Send one JSON arguments object. With no input flag read stdin; empty/interactive stdin means {}. No automatic login, business retry, endpoint override or Bearer parameter. A completed call is not submission success; inspect the public result."
         command.add_argument("--attempt-id", help="optional canonical UUID for payload-free diagnostics")
         command.add_argument("--output", choices=("jsonl", "json"), default="jsonl", help="one final JSON object; no progress on stdout")
+    employee_attachments.add_parser(sub)
     return parser
 
 
@@ -3044,22 +2250,41 @@ def _run_main(args: argparse.Namespace, holder: dict[str, Any]) -> int:
         holder["config"] = config
         attempt = getattr(args, "attempt_id", None)
         try:
-            log = DiagnosticLog.for_home(config.home, version=VERSION, command=args.command, component="bridge" if args.command == "bridge" else getattr(args, "component", "cli"), attempt_id=attempt)
+            log = DiagnosticLog.for_home(config.home, version=VERSION, command=args.command, component=getattr(args, "component", "cli"), attempt_id=attempt)
         except ValueError as exc:
             raise FargoWorkError("--attempt-id must be a canonical lowercase UUID", code="usage", exit_code=EXIT_USAGE) from exc
         holder["log"] = log
         holder["context_token"] = _DIAGNOSTIC_CONTEXT.set(log)
         _diagnostic_record(log, "cli_started", "start", outcome="started")
+        if args.command == "attachments":
+            _require_configured(config)
+            _emit_business_result(employee_attachments.run_command(sys.modules[__name__], config, args))
+            return EXIT_OK
         if args.command == "tools":
             _require_configured(config)
             arguments = _tool_arguments(args) if args.tools_action == "call" else None
-            client = EmployeeToolsClient(TokenSession(config))
+            session = TokenSession(config)
+            client = EmployeeToolsClient(session)
             if args.tools_action == "list":
                 result = {"event": "tools_list", "status": "ready", "tools": client.discover(),
                           "server_info": client.server_info}
             else:
-                result = {"event": "tool_result", "status": "completed", "tool": args.tool_name,
-                          "result": client.call(args.tool_name, arguments or {})}
+                coordinator = None
+                context = None
+                if args.tool_name in {"prepare_process_draft", "submit_process_draft"}:
+                    coordinator = employee_attachments.AttachmentClient(sys.modules[__name__], config, business_session=session)
+                    context = coordinator.before_tool(args.tool_name, arguments or {})
+                try:
+                    called = client.call(args.tool_name, arguments or {})
+                except BaseException:
+                    if coordinator is not None:
+                        coordinator.tool_failed(args.tool_name, context)
+                    raise
+                result = {"event": "tool_result", "status": "completed", "tool": args.tool_name, "result": called}
+                if coordinator is not None:
+                    binding = coordinator.after_tool(args.tool_name, arguments or {}, called, context)
+                    if binding is not None:
+                        result["attachment_binding"] = binding
             result.update(identity_verified=True, identity=client.identity, tool_capability="available",
                           automatic_retry_allowed=False, **client.trace())
             _emit_business_result(result)
@@ -3138,8 +2363,18 @@ def _run_main(args: argparse.Namespace, holder: dict[str, Any]) -> int:
             return EXIT_OK
         if args.command == "logout":
             _require_configured(config)
+            attachment_logout = None
+            attachment_error = None
+            if (config.home / "attachments").is_dir():
+                try:
+                    attachment_logout = employee_attachments.AttachmentClient(sys.modules[__name__], config).native.logout()
+                except (FargoWorkError, employee_attachments.AttachmentError) as error:
+                    attachment_error = error
             logout_status = TokenSession(config).logout()
-            _emit_event({"event": "logged_out", "connected": False, "message": "current device credentials cleared", **logout_status}, output=output)
+            if attachment_error is not None:
+                raise FargoWorkError("Business credentials cleared; attachment logout could not be fully confirmed.", code="logout_remote_unavailable", exit_code=EXIT_UNAVAILABLE) from None
+            _emit_event({"event": "logged_out", "connected": False, "message": "current device credentials cleared",
+                         "attachment_logout": attachment_logout, **logout_status}, output=output)
             return EXIT_OK
         if args.command == "status":
             _require_configured(config)
@@ -3167,9 +2402,6 @@ def _run_main(args: argparse.Namespace, holder: dict[str, Any]) -> int:
             payload = {"event": "update_unavailable", "status": "unavailable", "available": False, "reason": "No public FargoWork Release base URL is configured for this installation."}
             _emit_event(payload, output=output)
             return EXIT_UNAVAILABLE
-        if args.command == "bridge":
-            _require_configured(config)
-            return run_bridge(TokenSession(config))
         if args.command == "profile":
             _require_configured(config)
             if args.profile_action != "set" and (args.language or args.response_style):
@@ -3212,34 +2444,37 @@ def _run_main(args: argparse.Namespace, holder: dict[str, Any]) -> int:
             _emit_event({"event": "diagnostics_exported", "status": "ready", **result}, output=output)
             return EXIT_OK
         raise FargoWorkError("unknown command", code="usage", exit_code=EXIT_USAGE)
+    except employee_attachments.AttachmentError as exc:
+        code = EXIT_NEEDS_ACTION if exc.kind == "auth" else EXIT_UNAVAILABLE if exc.kind in {"transport", "server"} else EXIT_USAGE
+        holder["error_code"] = exc.code
+        payload = {"event": "error", "status": "error", "error_code": exc.code, "error_kind": exc.kind,
+                   "exit_code": code, "message": str(exc), "automatic_retry_allowed": False}
+        if exc.kind == "auth":
+            payload.update(next_action="attachment_login", login_args=["attachments", "login", "--browser", "always"])
+        _emit_business_result(payload)
+        return code
     except FargoWorkError as exc:
         holder["error_code"] = exc.code
-        if args.command == "tools":
+        if args.command in {"tools", "attachments"}:
             _emit_business_result(_business_error_payload(exc, holder.get("config")))
             return exc.exit_code
         payload = {"event": "error", "status": "error", "error_code": safe_error_code(exc.code), "exit_code": exc.exit_code, "message": str(exc), "needs_user_action": exc.exit_code == EXIT_NEEDS_ACTION, "mutation_may_have_happened": exc.code == "registration_rollback_required" or bool(getattr(exc, "mutation_may_have_happened", False))}
-        if args.command == "bridge":
-            print(f"FargoWork Bridge: {safe_error_code(exc.code)}", file=sys.stderr, flush=True)
-        else:
-            _emit_event(payload, output=output)
+        _emit_event(payload, output=output)
         return exc.exit_code
     except (OSError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
         holder["error_code"] = "runtime_error"
-        if args.command == "tools":
+        if args.command in {"tools", "attachments"}:
             _emit_business_result(_business_error_payload(BusinessToolError("tool_transport_failed", kind="transport", exit_code=EXIT_UNAVAILABLE)))
             return EXIT_UNAVAILABLE
         payload = {"event": "error", "status": "error", "error_code": "runtime_error", "exit_code": EXIT_UNAVAILABLE, "message": "FargoWork could not complete the operation", "needs_user_action": False}
-        if args.command == "bridge":
-            print("FargoWork Bridge: runtime_error", file=sys.stderr, flush=True)
-        else:
-            _emit_event(payload, output=output)
+        _emit_event(payload, output=output)
         return EXIT_UNAVAILABLE
 
 
 def main(argv: Iterable[str] | None = None) -> int:
     raw_args = list(argv) if argv is not None else sys.argv[1:]
     parser = _build_parser()
-    parser._business_errors = "tools" in raw_args[:3]
+    parser._business_errors = any(name in raw_args[:3] for name in ("tools", "attachments"))
     args = parser.parse_args(raw_args)
     holder: dict[str, Any] = {}
     code = EXIT_UNAVAILABLE
@@ -3252,8 +2487,6 @@ def main(argv: Iterable[str] | None = None) -> int:
         payload = {"event": "error", "error_code": "login_cancelled", "status": "cancelled", "message": "FargoWork operation cancelled. Check status before starting another login; no cleanup or business retry was performed."}
         if args.command == "tools":
             _emit_business_result(_business_error_payload(BusinessToolError("login_cancelled", kind="transport", exit_code=code)))
-        elif args.command == "bridge":
-            print("FargoWork Bridge: login_cancelled", file=sys.stderr, flush=True)
         else:
             _emit_event(payload, output=getattr(args, "output", "human"))
         return code

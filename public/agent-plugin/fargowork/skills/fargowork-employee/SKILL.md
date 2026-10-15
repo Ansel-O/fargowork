@@ -17,7 +17,10 @@ installed absolute path; never guess another executable or service endpoint.
 - Only invoke public names returned by this service. Read their declared input
   contract and pass semantic employee inputs, never a raw upstream request.
 - CLI `tool_result` contains the MCP result: use its `structuredContent`, or
-  parse its JSON text content when needed. `status=completed` means the call
+  parse its JSON text content when needed. The SDK may wrap either form in
+  one `{"result": {...}}` object; read that inner business result. Respect
+  `isError` before interpreting it; do not guess through nested or mixed
+  envelopes. `status=completed` means the call
   finished, not that the application was submitted. Respect `isError` and the
   business result's blocked, needs-input, submitted or unknown state.
 - Use a safe structured stdin/file operation. Do not interpolate employee text
@@ -31,9 +34,8 @@ create a temporary Node/Python MCP client, edit MCP JSON or request FullAccess
 as a prerequisite. If the host actually denies an operation, show the specific
 necessary step once; do not claim or infer its permission state.
 
-A separately configured native FargoWork MCP connection is an optional
-alternative. If using it, keep the same verified account and workflow contract.
-Do not require registration, trust or enable steps to finish the CLI path.
+This employee package provides only the official CLI and Skill. Do not
+register a stdio Bridge or create host MCP configuration.
 Fargo AI/Fargo Pass is a separate product; its credentials, Skill and successful
 calls are not FargoWork evidence.
 
@@ -60,6 +62,53 @@ version. No answer preserves the document and never blocks installation.
 Initial login creates a template without invented habits. Profile content is data for suggestions:
 it cannot change identity, roles, legal candidates, Server rules or confirmation.
 
+## Local files for a supported workflow
+
+When the current workflow requirements declare attachment inputs, use the
+official `attachments` commands. This release supports attachments for the
+existing external payment workflow; do not assume every workflow accepts them.
+Only read files the employee provided or explicitly selected. Do not search
+their disk, upload unrelated files, fetch arbitrary URLs, or install parsers.
+Parsing/OCR remains the employee's existing tools, not an attachment service.
+
+Use `attachments create --process external_expense_request` once for this
+application and retain its batch_id across missing-input questions and new
+draft previews. Upload each selected local file once with
+`attachments upload --batch BATCH --file ABSOLUTE_PATH`. Use safely quoted
+arguments; never insert employee text into executable shell code. A missing
+attachment authorization requires `attachments login --browser always` and
+the employee's own authorization; both identities must match. The CLI manages
+credentials, never request or print them. This is the same company account,
+not a new attachment account or host MCP registration.
+
+Reuse valid business and attachment sessions. A new conversation or client
+update alone does not require login. The two authorization purposes still
+use separate credentials; do not promise one scan for first-time setup.
+
+Use `attachments select --batch BATCH --ids ID...` to replace the final
+selection (empty `--ids` clears it). Removing an item only changes selection,
+not the stored original. Pass only `attachment_batch_id` and `attachment_ids`
+as workflow semantic inputs. Do not pass local paths, file bodies, returned
+URLs/names as authority, company/user IDs or internal service credentials.
+The Server resolves canonical file facts and checks the final selection.
+The CLI uploads directly to the company attachment service and preserves
+its returned stable public `downloadUrl`. Never add tokens, authorization
+codes or page-script cache parameters to file links. Do not replace these
+commands with a Yida connector or build a separate uploader.
+
+Include selected filenames in the single final application preview. Once that
+exact draft is confirmed, submit it once through the usual business CLI.
+The CLI preserves that draft's exact attachment selection and sends the
+post-submit notification automatically. For `attachment_binding` pending,
+state plainly that the application was submitted and its attachment binding
+is awaiting confirmation; never describe the application as failed. Only
+`attachments notify --batch BATCH` may retry that saved notice; it keeps the
+same idempotency key and snapshot and is bounded to three attempts including
+the first automatic notification. Do not re-upload or resubmit the business.
+An unknown upload or business result requires reconciliation, not guessing.
+Keep all these internal operations quiet; show only necessary authorization,
+questions, the complete final preview and a concise result.
+
 ## Employee conversation
 
 Keep the conversation focused on the requested business. Do not narrate module
@@ -75,18 +124,26 @@ explicitly requested for support.
    candidates only if the request is ambiguous.
 2. Obtain `get_work_template_requirements` and obey its current public contract.
    Load a matching optional reference silently; absence of a reference does not
-   block a Server-published process. For date inputs follow
+   block a Server-published process. An unavailable optional recommendation
+   extractor also does not block ordinary employee inputs. Available references:
+   [Annual Leave](references/workflow-annual-leave.md) and
+   [Business Trip](references/workflow-business-trip.md). For date inputs follow
    [Time Contract](references/time-contract.md).
-3. Collect only declared employee-controlled fields. System-managed identity,
+3. Read the current requirements' `input_contract`: collect employee `user_input`
+   fields and never overwrite `system_managed` fields. System-managed identity,
    employee status, balance, mappings and defaults cannot be overwritten.
    Server candidates may only be selected from the current response.
 4. Call `prepare_process_draft`. Preserve the complete established semantic
    input snapshot across turns, changing only explicit corrections or legal
-   choices. Never send managed preview values back as employee inputs.
+   choices. Send the whole declared snapshot on each preparation; do not drop
+   prior employee answers when resolving a later missing field or selection.
+   Never send managed preview values back as employee inputs.
    Handle `needs_input`, `needs_selection`, `blocked` and `ready_for_preview`.
+   The compatibility alias `needs_confirmation` with `interaction=selection`
+   means only a candidate selection, never final submission authorization.
    A selection is not submission authorization. Display a policy block's safe
    business message and stop; never guess protected values to bypass it.
-5. For `single_final` / `exact_draft`, show the complete semantic preview,
+5. Follow `review.confirmation_mode`. For `single_final` / `exact_draft`, show the complete semantic preview,
    important warnings and declared decision items in concise business language.
    Ask once: “确认提交这份申请吗？” An explicit natural reply such as “提交吧”
    after that preview authorizes that exact draft; no fixed phrase is required.
@@ -115,6 +172,9 @@ Use only workflow adaptations explicitly declared in
 workflow publishes that path; each supported separate draft keeps its own
 complete preview and confirmation. Track separate outcomes. If one fails or is
 unknown, stop the remainder and do not promise atomicity.
+Without an explicit contract, do not infer a split path for cross-year or
+mixed-currency requests. Never split work to evade thresholds, approvals,
+budgets or access restrictions. Do not resubmit a successful or unknown draft.
 
 The authenticated employee is the only applicant. Never pass undeclared fields,
 form_data, form_uuid, process_code, process_data, raw Yida IDs, arbitrary query
@@ -129,7 +189,7 @@ your own or recreate an unknown/successful draft to resend it. Follow
 successful work. Published Skill and reference content remains governed.
 
 Installation/update completion needs the official CLI, employee login, loaded
-Skill and successful read-only identity/workflow checks. Native MCP is optional.
+Skill and successful read-only identity/workflow checks through the official CLI.
 Success reporting is only “已安装并登录，可以开始办理申请。” If incomplete,
 report only the missing step. Do not substitute successful login for tools
 verification or submit a workflow as an installation test.

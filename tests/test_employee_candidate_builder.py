@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -10,6 +11,15 @@ from tools.release import build_employee_candidate as builder
 
 
 class EmployeeCandidateBuilderTests(unittest.TestCase):
+    def test_native_candidate_rejects_retired_bridge_archive(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            (directory / "release-manifest.json").write_text(json.dumps({"version": "1.3.0", "platform": "windows", "arch": "x64"}))
+            for name in ("cli", "agent-plugin", "bridge"):
+                (directory / f"fargowork-{name}-v1.3.0-windows-x64.zip").write_bytes(b"fixture archive")
+            with self.assertRaisesRegex(RuntimeError, "unexpected native artifact set"):
+                builder._verify_native_artifacts(directory, "1.3.0")
+
     def test_server_version_comes_from_server_release(self):
         self.assertEqual(
             builder.SERVER_VERSION_FILE,
@@ -38,7 +48,6 @@ class EmployeeCandidateBuilderTests(unittest.TestCase):
             native_dir.mkdir(parents=True)
             names = [
                 "fargowork-agent-plugin-v1.0.0-windows-x64.zip",
-                "fargowork-bridge-v1.0.0-windows-x64.zip",
                 "fargowork-cli-v1.0.0-windows-x64.zip",
             ]
             for name in names:
@@ -49,7 +58,6 @@ class EmployeeCandidateBuilderTests(unittest.TestCase):
         def fake_verify(native_dir: Path, _version: str):
             names = [
                 "fargowork-agent-plugin-v1.0.0-windows-x64.zip",
-                "fargowork-bridge-v1.0.0-windows-x64.zip",
                 "fargowork-cli-v1.0.0-windows-x64.zip",
             ]
             return [native_dir / name for name in names], native_manifest

@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param()
 
 $ErrorActionPreference = 'Stop'
@@ -21,12 +21,12 @@ function global:Invoke-WebRequest {
     param([string]$Uri, [string]$OutFile, [switch]$UseBasicParsing)
     $fixture = $global:WindowsBootstrapFixture
     $fixture.downloads.Add($OutFile)
-    if ($Uri -ceq 'https://raw.githubusercontent.com/Ansel-O/fargowork/v1.3.0/public/release/windows-trial.json') {
+    if ($Uri -ceq 'https://raw.githubusercontent.com/Ansel-O/fargowork/v1.4.0/public/release/windows-trial.json') {
         Copy-Item -LiteralPath $fixture.metadata -Destination $OutFile
         if ($fixture.mode -eq 'owner-mismatch') {
             [IO.File]::WriteAllText((Join-Path (Split-Path -Parent $OutFile) '.bootstrap-owner'), 'foreign-owner')
         }
-    } elseif ($Uri -ceq 'https://github.com/Ansel-O/fargowork/releases/download/v1.3.0/fargowork-employee-v1.3.0-windows-x64.zip') {
+    } elseif ($Uri -ceq 'https://github.com/Ansel-O/fargowork/releases/download/v1.4.0/fargowork-employee-v1.4.0-windows-x64.zip') {
         Copy-Item -LiteralPath $fixture.archive -Destination $OutFile
     } else { throw "Unexpected fixture network request: $Uri" }
 }
@@ -35,7 +35,7 @@ function New-BootstrapFixture([string]$Name, [string]$Mode = 'success', [int]$Ch
     $caseRoot = Join-Path $testRoot $Name
     $tempRoot = Join-Path $caseRoot 'Temp'
     New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
-    $archivePath = Join-Path $caseRoot 'fargowork-employee-v1.3.0-windows-x64.zip'
+    $archivePath = Join-Path $caseRoot 'fargowork-employee-v1.4.0-windows-x64.zip'
     $stubInstaller = @'
 [CmdletBinding()]
 param([string[]]$Target, [string]$Version, [string]$ServiceIssuer,
@@ -70,9 +70,8 @@ exit $childExit
         'release-manifest.json' = '{}'
         'SHA256SUMS' = 'fixture checksums'
         'candidate-manifest.json' = '{}'
-        'fargowork-cli-v1.3.0-windows-x64.zip' = 'fixture cli'
-        'fargowork-bridge-v1.3.0-windows-x64.zip' = 'fixture bridge'
-        'fargowork-agent-plugin-v1.3.0-windows-x64.zip' = 'fixture plugin'
+        'fargowork-cli-v1.4.0-windows-x64.zip' = 'fixture cli'
+        'fargowork-agent-plugin-v1.4.0-windows-x64.zip' = 'fixture plugin'
     }
     if ($Mode -eq 'extra-entry') { $entries['unexpected.txt'] = 'must reject before executing installer' }
     if ($Mode -eq 'missing-debug') { $entries.Remove('DEBUG.md') }
@@ -92,7 +91,7 @@ exit $childExit
     if ($Mode -eq 'bad-hash') { $hash = '0' * 64 }
     if ($Mode -eq 'bad-size') { $size++ }
     $metadataPath = Join-Path $caseRoot 'windows-trial.json'
-    @{ version = '1.3.0'; tag = 'v1.3.0'; repository = 'Ansel-O/fargowork'; archive = @{ name = 'fargowork-employee-v1.3.0-windows-x64.zip'; sha256 = $hash; size = $size } } |
+    @{ version = '1.4.0'; tag = 'v1.4.0'; repository = 'Ansel-O/fargowork'; archive = @{ name = 'fargowork-employee-v1.4.0-windows-x64.zip'; sha256 = $hash; size = $size } } |
         ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $metadataPath -Encoding UTF8
     return @{ root = $caseRoot; temporary_root = $tempRoot; metadata = $metadataPath; archive = $archivePath; mode = $Mode; child_exit = $ChildExit;
         record = (Join-Path $caseRoot 'child-arguments.json'); downloads = [System.Collections.Generic.List[string]]::new() }
@@ -140,7 +139,7 @@ try {
     $defaultResult = Invoke-BootstrapFixture $default
     Assert-Fixture ($defaultResult.exit_code -eq 0 -and $defaultResult.record.targets[0] -eq 'cli') 'Default bootstrap did not execute the CLI child installer'
     Assert-Fixture (-not $defaultResult.record.login -and -not $defaultResult.record.explicit_browser) 'Default bootstrap passed login-only arguments without Login'
-    Assert-Fixture ($defaultResult.record.version -eq '1.3.0' -and $defaultResult.record.jsonl) 'Pinned version or JSONL option did not reach the child installer'
+    Assert-Fixture ($defaultResult.record.version -eq '1.4.0' -and $defaultResult.record.jsonl) 'Pinned version or JSONL option did not reach the child installer'
     Assert-Fixture ($defaultResult.output.Count -eq 1 -and ([string]$defaultResult.output[0] | ConvertFrom-Json).tool_capability -eq 'not_checked') 'Default bootstrap did not preserve one final CLI capability result'
     Assert-Fixture (($defaultResult.output -join ' ') -notmatch 'secret-fixture|login_started') 'Bootstrap emitted diagnostics or raw native stderr'
     Assert-Fixture ($defaultResult.stages.Count -eq 0 -and $default.downloads.Count -eq 2) 'Successful bootstrap did not clean only its owned temporary download directory'
@@ -152,10 +151,10 @@ try {
     Assert-Fixture ($humanResult.output.Count -eq 1 -and ([string]$humanResult.output[0] | ConvertFrom-Json).event -eq 'installed') 'Default output was not one machine-readable result'
 
     $multiple = New-BootstrapFixture 'multi target login'
-    $multipleResult = Invoke-BootstrapFixture $multiple @('cursor,codex', 'claude-code') -WithLogin
-    Assert-Fixture ($multipleResult.exit_code -eq 0 -and ($multipleResult.record.targets -join ',') -eq 'cursor,codex,claude-code') 'Comma/array multi-target parameters did not reach the child installer'
+    $multipleResult = Invoke-BootstrapFixture $multiple @('cli') -WithLogin
+    Assert-Fixture ($multipleResult.exit_code -eq 0 -and ($multipleResult.record.targets -join ',') -eq 'cli') 'Comma/array multi-target parameters did not reach the child installer'
     Assert-Fixture ($multipleResult.record.login -and $multipleResult.record.explicit_browser -and $multipleResult.record.browser -eq 'always') 'Login/browser arguments did not reach the child installer'
-    Assert-Fixture ($multipleResult.record.codex_path -eq 'C:\fixture\embedded\codex.exe' -and $multipleResult.record.attempt_id -match '^[0-9a-f-]{36}$') 'Verified Codex path or attempt key did not reach the child installer'
+    Assert-Fixture ($multipleResult.record.attempt_id -match '^[0-9a-f-]{36}$') 'Verified Codex path or attempt key did not reach the child installer'
     Assert-Fixture ($multipleResult.stages.Count -eq 0) 'Multi-target bootstrap leaked owned temporary staging'
     Assert-Fixture (($multipleResult.output -join ' ') -notmatch 'private-fixture-state|code_challenge|login_authorization_url|login_started|secret-fixture') 'Default browser mode exposed authorization query or phase diagnostics'
 
@@ -170,7 +169,7 @@ try {
     $missingClient = New-BootstrapFixture 'missing embedded client' 'missing-client'
     $missingClientResult = Invoke-BootstrapFixture $missingClient @('codex')
     Assert-Fixture ($missingClientResult.exit_code -eq 4 -and $missingClient.downloads.Count -eq 0 -and $null -eq $missingClientResult.record) 'Missing client was detected only after download or child installation'
-    Assert-Fixture (($missingClientResult.output -join ' ') -match 'CodexPath') 'Missing embedded client omitted the explicit path option'
+    Assert-Fixture (($missingClientResult.output -join ' ') -match 'Unsupported installation target') 'Missing embedded client omitted the explicit path option'
     $failureDiagnostics = @(Get-ChildItem -LiteralPath (Join-Path $missingClient.root 'Profile\Roaming\FargoWork\diagnostics') -Filter 'diagnostic-*.jsonl' -File)
     Assert-Fixture ($failureDiagnostics.Count -eq 1) 'Early bootstrap failure did not leave a bounded safe diagnostic'
 
@@ -182,7 +181,7 @@ try {
     }
 
     $authFailure = New-BootstrapFixture 'child auth failure' 'success' 43
-    $authFailureResult = Invoke-BootstrapFixture $authFailure @('manual') -WithLogin
+    $authFailureResult = Invoke-BootstrapFixture $authFailure @('cli') -WithLogin
     Assert-Fixture ($authFailureResult.exit_code -eq 43 -and $authFailureResult.record.login) 'Bootstrap did not propagate child authentication failure'
     Assert-Fixture ($authFailureResult.stages.Count -eq 0 -and (Test-Path -LiteralPath (Join-Path $authFailureResult.record.appdata 'FargoWork\employee\installed.fixture'))) 'Authentication failure cleanup removed installed employee state or leaked safe staging'
 
@@ -196,7 +195,7 @@ try {
     Assert-Fixture ($ownerResult.exit_code -eq 0 -and $ownerResult.stages.Count -eq 1) 'Bootstrap removed staging whose exact ownership could not be verified'
     Assert-Fixture ((Get-Content -LiteralPath (Join-Path $ownerResult.stages[0].FullName '.bootstrap-owner') -Raw) -eq 'foreign-owner') 'Unverified staging ownership marker was changed during cleanup'
     Assert-Fixture (([string]$ownerResult.output[-1] | ConvertFrom-Json).recovery_staging_retained) 'Retained bootstrap staging was not recorded in the final result'
-    Write-Output 'Windows bootstrap fixture: PASS (pinned 1.3.0 ten-entry ZIP; quiet default CLI; optional MCP targets; login query suppressed; bad hash/size/entry rejection; true child exit; recovery retained; employee state preserved)'
+    Write-Output 'Windows bootstrap fixture: PASS (pinned 1.4.0 nine-entry CLI-only ZIP; quiet default CLI; retired host targets rejected; login query suppressed; bad hash/size/entry rejection; true child exit; recovery retained; employee state preserved)'
 } finally {
     foreach ($name in $environmentNames) { [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name], 'Process') }
     $global:WindowsBootstrapFixture = $oldFixture

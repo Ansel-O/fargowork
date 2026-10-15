@@ -237,9 +237,8 @@ class ClientDiagnosticBehaviorTests(unittest.TestCase):
         identity = {"corp_id": "fixture-corp", "userid": "fixture-user"}
         self.config.plugin_dir.mkdir()
         (self.config.plugin_dir / "plugin.json").write_text("{}")
-        (self.config.plugin_dir / "mcp.json").write_text("{}")
         with patch.object(cli.Config, "load", return_value=self.config), patch.object(cli.TokenSession, "me", return_value=identity), patch.object(diag.DiagnosticLog, "record", return_value=False), patch("sys.stdout", io.StringIO()) as output, patch("sys.stderr", io.StringIO()) as error:
-            self.assertEqual(cli.main(["status", "--target", "manual", "--output", "jsonl"]), 3)
+            self.assertEqual(cli.main(["status", "--target", "cli", "--output", "jsonl"]), 3)
             result = json.loads(output.getvalue().splitlines()[-1])
         self.assertTrue(result["identity_verified"])
         self.assertTrue(result["connected"])
@@ -252,7 +251,7 @@ class ClientDiagnosticBehaviorTests(unittest.TestCase):
         path.write_bytes(b"fixture")
         config = self.config
         config.codex_path = str(path)
-        adapters = cli.ClientAdapters(config)
+        adapters = cli.LegacyBridgeMigration(config)
         with patch.object(cli, "_detect_command", side_effect=AssertionError("must not guess")):
             self.assertEqual(adapters._detect_codex()["executable"], str(path))
             path.unlink()
@@ -294,12 +293,13 @@ class ClientDiagnosticBehaviorTests(unittest.TestCase):
         self.assertNotIn("sensitive-", raw)
         self.assertNotIn("private-access", raw)
 
-    def test_bridge_configuration_error_stays_on_stderr(self):
-        self.config.issuer = ""
-        with patch.object(cli.Config, "load", return_value=self.config), patch("sys.stdout", io.StringIO()) as output, patch("sys.stderr", io.StringIO()) as error:
-            self.assertEqual(cli.main(["bridge"]), 2)
+    def test_retired_bridge_is_rejected_before_configuration_or_diagnostics(self):
+        with patch.object(cli.Config, "load", side_effect=AssertionError("retired entry must not load state")), patch("sys.stdout", io.StringIO()) as output, patch("sys.stderr", io.StringIO()) as error:
+            with self.assertRaises(SystemExit) as caught:
+                cli.main(["bridge"])
+        self.assertEqual(caught.exception.code, 2)
         self.assertEqual(output.getvalue(), "")
-        self.assertIn("configuration_required", error.getvalue())
+        self.assertIn("invalid choice", error.getvalue())
 
     def test_partial_identity_does_not_report_verified_or_create_profile(self):
         session = cli.TokenSession(self.config, vault=cli.MemoryVault(), access_token="fixture-access", access_expires_at=10**12)

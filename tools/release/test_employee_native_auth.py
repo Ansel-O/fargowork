@@ -32,10 +32,10 @@ import zipfile
 CALLBACK = "http://127.0.0.1:37680/oauth/callback"
 CLIENT_VERSION = ""
 DIAGNOSTIC_EVENTS = frozenset("cli_started cli_finished installation_started preflight_result package_verified files_staged client_detection_result client_registration_result installation_finished launcher_started launcher_finished login_started login_finished listener_ready listener_failed browser_open_result authorization_waiting callback_rejected callback_accepted token_request_started token_request_result identity_result http_request_result profile_result diagnostic_exported".split())
-DIAGNOSTIC_PHASES = frozenset("start preflight download verify stage detect register login listener browser callback token identity profile export finish cleanup bridge".split())
+DIAGNOSTIC_PHASES = frozenset("start preflight download verify stage detect register login listener browser callback token identity profile export finish cleanup http".split())
 DIAGNOSTIC_OUTCOMES = frozenset("started succeeded failed rejected waiting unavailable cancelled skipped pending matched mismatch accepted denied not_attempted".split())
-DIAGNOSTIC_COMPONENTS = frozenset(("cli", "bridge", "installer", "bootstrap", "launcher"))
-DIAGNOSTIC_COMMANDS = frozenset("install repair uninstall login logout status doctor bridge version profile diagnostics tools".split())
+DIAGNOSTIC_COMPONENTS = frozenset(("cli", "installer", "bootstrap", "launcher"))
+DIAGNOSTIC_COMMANDS = frozenset("install repair uninstall login logout status doctor version profile diagnostics tools".split())
 DIAGNOSTIC_ERROR_CODES = frozenset("unknown_error diagnostic_write_failed diagnostic_export_failed usage invalid_config configuration_required runtime_error auth_required endpoint_unavailable endpoint_redirect_rejected invalid_response invalid_token_response invalid_grant invalid_token invalid_client invalid_target invalid_scope temporarily_unavailable server_error refresh_failed token_exchange_failed access_denied oauth_state_mismatch oauth_issuer_mismatch oauth_callback_invalid oauth_callback_timeout callback_port_unavailable invalid_redirect browser_unavailable secure_storage_unavailable logout_remote_failed logout_remote_unavailable invalid_jsonrpc invalid_params mcp_http_error bridge_failed missing_server_info missing_modern_capabilities mcp_protocol_version_unsupported registration_rollback_required ownership_conflict unsafe_path skill_missing invalid_client_config client_config_changed install_failed install_failed_recovery_required post_install_failed preflight_failed package_verification_failed client_not_detected client_registration_failed profile_unavailable profile_invalid profile_unsafe_path profile_write_failed profile_identity_invalid profile_preferences_invalid profile_version_invalid attempt_id_invalid codex_path_invalid client_probe_failed artifact_invalid installation_failed registration_failed login_failed identity_verification_failed permission_denied incomplete_install diagnostic_failed login_cancelled mcp_unavailable invalid_registration_mode profile_path_unsafe profile_storage_unavailable profile_data_invalid profile_incomplete profile_review_limit".split())
 DIAGNOSTIC_FIELDS = frozenset("timestamp component event phase attempt_id request_id server_trace_id pid parent_pid version command outcome duration_ms http_status exit_code error_code matched".split())
 DIAGNOSTIC_ERROR_CODES = DIAGNOSTIC_ERROR_CODES | frozenset("tool_input_invalid tool_not_public tool_transport_failed tool_http_error tool_response_invalid tool_server_error tools_discovery_invalid".split())
@@ -536,7 +536,7 @@ def main():
             check(len(slots) == 1, "expected one isolated DPAPI slot")
             ciphertext = slots[0].read_bytes()
             check(state["refresh"].encode() not in ciphertext and unprotect_fixture(ciphertext) == state["refresh"].encode(), "DPAPI slot is not encrypted fixture refresh data")
-            code, result = native(exe, ["status", "--target", "manual"], env, root, counts)
+            code, result = native(exe, ["status", "--target", "cli"], env, root, counts)
             check(code in (0, 3) and result.get("identity_verified") is True and result.get("connected") is True, "new native process could not refresh and verify identity")
             check(state["refresh_exchange"] == 1 and slots[0].read_bytes() != ciphertext and unprotect_fixture(slots[0].read_bytes()) == state["refresh"].encode(), "refresh did not rotate the DPAPI slot")
             custom_content = "employee-profile-fixture-" + secrets.token_hex(16)
@@ -568,7 +568,7 @@ def main():
                 verify_business(exe, env, root, state)
             code, result = native(exe, ["logout"], env, root, counts)
             check(code == 0 and result.get("remote_revocation") == "confirmed" and result.get("local_credentials_cleared") is True and not slots[0].exists(), "native logout did not revoke fixture and clear slot")
-            code, result = native(exe, ["status", "--target", "manual"], env, root, counts)
+            code, result = native(exe, ["status", "--target", "cli"], env, root, counts)
             check(code == 3 and result.get("connected") is False and result.get("identity_verified") is False, "logged-out native process accepted identity")
             request_counts = {key: state[key] for key in ("code_exchange", "refresh_exchange", "me", "logout", "unexpected")}
             export_path = root / "support-diagnostics.zip"

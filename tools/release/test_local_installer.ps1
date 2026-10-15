@@ -324,32 +324,15 @@ exit 0
     $script:FixtureInstaller = Join-Path $testRoot 'install-fixture.ps1'
     [IO.File]::WriteAllText($script:FixtureInstaller, $scriptText, [Text.UTF8Encoding]::new($false))
 
-    # The real early preflight is tested with an isolated harmless executable,
-    # not the installed Codex or any client configuration.
+    # CLI-only preflight does not discover or launch an AI host.
     . ([scriptblock]::Create($preflightFunctions[0].Extent.Text.Replace('function Invoke-HostPreflight', 'function Invoke-RealFixturePreflight')))
-    . ([scriptblock]::Create(@($installerAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Assert-DiagnosticPath' }, $true))[0].Extent.Text))
-    $env:APPDATA = Join-Path $testRoot 'preflight-profile\Roaming'
-    $env:USERPROFILE = Split-Path -Parent $env:APPDATA
-    $env:HOME = $env:USERPROFILE
-    $env:CODEX_HOME = Join-Path $env:USERPROFILE '.codex'
-    $env:TEMP = Join-Path $testRoot 'preflight-temp'
-    $env:TMP = $env:TEMP
-    New-Item -ItemType Directory -Path $env:TEMP -Force | Out-Null
-    $env:PATH = Join-Path $env:WINDIR 'System32'
     $CodexPath = $null
-    $missingPreflight = $false
-    try { Invoke-RealFixturePreflight @('codex') } catch { $missingPreflight = $_.Exception.Message -match '^\[client_not_detected\]' }
-    Assert-Fixture $missingPreflight 'Preflight did not report missing embedded Codex before installation'
-    $CodexPath = '.\relative-codex.exe'
-    $invalidPreflight = $false
-    try { Invoke-RealFixturePreflight @('codex') } catch { $invalidPreflight = $_.Exception.Message -match '^\[codex_path_invalid\]' }
-    Assert-Fixture $invalidPreflight 'Preflight accepted a guessed relative executable path'
-    $CodexPath = Join-Path $testRoot 'embedded codex fixture.exe'
-    Add-Type -TypeDefinition 'public static class EmbeddedCodexFixture { public static void Main() { System.Console.WriteLine("codex-cli 0.159.2"); } }' -OutputAssembly $CodexPath -OutputType ConsoleApplication
-    Invoke-RealFixturePreflight @('codex')
-    Assert-Fixture ($script:resolvedCodexPath -ceq [IO.Path]::GetFullPath($CodexPath)) 'Explicit native Codex executable was not verified'
+    Invoke-RealFixturePreflight @('cli')
+    $CodexPath = 'C:\foreign-host.exe'
+    $retiredPathRejected = $false
+    try { Invoke-RealFixturePreflight @('cli') } catch { $retiredPathRejected = $_.Exception.Message -match '^\[invalid_target\]' }
+    Assert-Fixture $retiredPathRejected 'Retired host executable option was accepted'
     $CodexPath = $null
-    $env:PATH = $oldPath
 
     # Check checksum rejection without modifying the source candidate.
     $tamperDir = Join-Path $testRoot 'tampered-artifacts'
@@ -439,67 +422,25 @@ exit 0
     Assert-Fixture ([IO.Path]::IsPathRooted($successResult.Payload.skill_path)) 'CLI Skill path is not absolute'
     Assert-Fixture ($successResult.Payload.cli_path -ceq (Join-Path $successFixture.Bin 'fargowork.exe')) 'Installer did not return its verified absolute CLI entry'
 
-    foreach ($knownTarget in @('manual', 'codex', 'cursor', 'workbuddy', 'claude-code')) {
-        $hostFixture = New-UpdateFixture ('target-' + $knownTarget)
+    foreach ($retiredTarget in @('manual', 'codex', 'cursor', 'workbuddy', 'claude-code')) {
+        $hostFixture = New-UpdateFixture ('retired-target-' + $retiredTarget)
         $global:EmployeeFixtureInstallRoot = $hostFixture.EmployeeRoot
-        $hostResult = Invoke-FixtureInstaller $hostFixture.Roaming 'success' '' @($knownTarget)
-        Assert-Fixture ($hostResult.ExitCode -eq 0 -and $hostResult.Payload.targets[0].target -eq $knownTarget) "Target was not passed accurately to the CLI: $knownTarget"
+        $hostResult = Invoke-FixtureInstaller $hostFixture.Roaming 'success' '' @($retiredTarget)
+        Assert-Fixture ($hostResult.ExitCode -eq 4 -and $hostResult.Calls.Count -eq 0) 'Retired host target was not rejected before employee mutation'
+        Assert-OldInstallRestored $hostFixture
         Assert-ProfileStatePreserved $hostFixture
-        if ($knownTarget -eq 'manual') { Assert-Fixture ([IO.Path]::IsPathRooted($hostResult.Payload.manual_mcp_registration.config.mcpServers.'fargowork-employee'.command)) 'Explicit manual target lost its standard stdio configuration' }
-    }
-
-    foreach ($reasonMode in @('missing-client', 'unsafe-reason')) {
-        $reasonFixture = New-UpdateFixture $reasonMode
-        $global:EmployeeFixtureInstallRoot = $reasonFixture.EmployeeRoot
-        $reasonResult = Invoke-FixtureInstaller $reasonFixture.Roaming $reasonMode '' @('codex')
-        Assert-Fixture ($reasonResult.ExitCode -eq $(if ($reasonMode -eq 'missing-client') { 3 } else { 41 }) -and $reasonResult.Payload.targets[0].status -eq 'error') "$reasonMode`: registration failure did not stop the official attempt"
-        if ($reasonMode -eq 'missing-client') {
-            Assert-Fixture ($reasonResult.Payload.targets[0].message -eq 'Codex is not installed; skipped.') 'Safe client failure reason was replaced by a generic exit code'
-        } else {
-            Assert-Fixture (($reasonResult.Output -join ' ') -notmatch 'secret-fixture-token-must-not-appear') 'Unapproved CLI reason leaked into the safe result'
-        }
-        Assert-Fixture ($reasonResult.Payload.targets[0].next_action -match 'Do not') 'Failed registration omitted the stop-and-report action'
-        Assert-OldInstallRestored $reasonFixture
-    }
-
-    $multiple = New-UpdateFixture 'multiple-targets'
-    $global:EmployeeFixtureInstallRoot = $multiple.EmployeeRoot
-    $multiResult = Invoke-FixtureInstaller $multiple.Roaming 'success' '' @('cursor,codex', 'cursor', 'claude-code')
-    Assert-Fixture ($multiResult.ExitCode -eq 0 -and ($multiResult.Payload.targets.target -join ',') -eq 'cursor,codex,claude-code') 'Comma/array multi-target selection did not normalize or deduplicate'
-    Assert-Fixture (@($multiResult.Calls | Where-Object { $_.command -eq 'install' }).Count -eq 3) 'Multi-target install did not call each selected adapter once'
-    Assert-ProfileStatePreserved $multiple
-
-    $partial = New-UpdateFixture 'partial-target-failure'
-    $global:EmployeeFixtureInstallRoot = $partial.EmployeeRoot
-    $partialResult = Invoke-FixtureInstaller $partial.Roaming 'partial-fail' '' @('codex', 'cursor', 'manual')
-    Assert-Fixture ($partialResult.ExitCode -eq 41 -and $partialResult.Payload.installed -and $partialResult.Payload.code -eq 'post_install_failed') 'Partial host failure did not return nonzero while retaining successful installations'
-    Assert-Fixture (($partialResult.Payload.targets | Where-Object { $_.target -eq 'cursor' }).status -eq 'error') 'Partial failure was not attributed to the failed target'
-    Assert-Fixture (Test-Path -LiteralPath (Join-Path $partial.Bin 'fargowork.exe')) 'Partial host failure rolled back the executable used by successful targets'
-    Assert-Fixture (-not (Test-Path -LiteralPath (Join-Path $partial.Bin 'old-client.txt'))) 'Partial host failure restored the previous incompatible client'
-    Assert-ProfileStatePreserved $partial
-
-    foreach ($signal in @('rollback-required', 'mutation-evidence', 'registered-evidence', 'top-level-mutation')) {
-        $registrationFixture = New-UpdateFixture ('failed-registration-' + $signal)
-        $global:EmployeeFixtureInstallRoot = $registrationFixture.EmployeeRoot
-        $registrationResult = Invoke-FixtureInstaller $registrationFixture.Roaming $signal '' @('codex')
-        Assert-Fixture ($registrationResult.ExitCode -eq 41 -and $registrationResult.Payload.installed -and $registrationResult.Payload.code -eq 'post_install_failed') "$signal`: possibly registered host failure did not retain the package with nonzero exit"
-        Assert-Fixture ($registrationResult.Payload.targets[0].requires_manual_recovery -and -not $registrationResult.Payload.targets[0].installed -and -not $registrationResult.Payload.targets[0].rolled_back) "$signal`: uncertain host recovery or installation status was not reported accurately"
-        Assert-Fixture (Test-Path -LiteralPath (Join-Path $registrationFixture.Bin 'fargowork.exe')) "$signal`: failed registration removed an executable which may already be referenced"
-        Assert-Fixture (-not (Test-Path -LiteralPath (Join-Path $registrationFixture.Bin 'old-client.txt'))) "$signal`: installer restored the previous executable despite host mutation evidence"
-        Assert-Fixture ((Get-Content -LiteralPath (Join-Path $registrationFixture.Plugin 'plugin.json') -Raw | ConvertFrom-Json).version -eq $script:FixtureVersion) "$signal`: possibly referenced plugin was rolled back"
-        Assert-ProfileStatePreserved $registrationFixture
     }
 
     foreach ($loginMode in @('success', 'login-fail', 'identity-fail')) {
         $loginFixture = New-UpdateFixture ('login-' + $loginMode)
         $global:EmployeeFixtureInstallRoot = $loginFixture.EmployeeRoot
-        $loginResult = Invoke-FixtureInstaller $loginFixture.Roaming $loginMode '' @('manual', 'codex') -WithLogin
+        $loginResult = Invoke-FixtureInstaller $loginFixture.Roaming $loginMode '' @('cli') -WithLogin
         Assert-Fixture (@($loginResult.Calls | Where-Object { $_.command -eq 'login' }).Count -eq 1) "$loginMode`: installer did not perform exactly one login"
         $loginCall = @($loginResult.Calls | Where-Object { $_.command -eq 'login' })[0]
         Assert-Fixture (($loginCall.arguments -join ' ') -match '--browser always') "$loginMode`: browser preference was not passed to the CLI"
         if ($loginMode -eq 'success') {
             Assert-Fixture ($loginResult.ExitCode -eq 0 -and $loginResult.Payload.connected -and $loginResult.Payload.identity_verified) 'Successful login did not require actual status identity verification'
-            Assert-Fixture (@($loginResult.Calls | Where-Object { $_.command -eq 'status' }).Count -eq 2) 'Login did not verify identity for each target'
+            Assert-Fixture (@($loginResult.Calls | Where-Object { $_.command -eq 'status' }).Count -eq 1) 'Login did not verify identity for each target'
             Assert-Fixture ($loginResult.Payload.profile_pending_reset -and $loginResult.Payload.profile.status -eq 'ready') 'Profile upgrade default-keep prompt was swallowed by the installer'
         } else {
             Assert-Fixture ($loginResult.ExitCode -eq $(if ($loginMode -eq 'login-fail') { 43 } else { 3 }) -and $loginResult.Payload.installed -and -not $loginResult.Payload.connected -and -not $loginResult.Payload.identity_verified) "$loginMode`: post-install authentication failure was misreported"
@@ -518,8 +459,6 @@ exit 0
 
     $attemptIds = @($successResult.Calls | ForEach-Object { $argumentIndex = [Array]::IndexOf($_.arguments, '--attempt-id'); if ($argumentIndex -ge 0) { $_.arguments[$argumentIndex + 1] } } | Select-Object -Unique)
     Assert-Fixture ($attemptIds.Count -eq 1 -and $attemptIds[0] -ceq $successResult.Payload.attempt_id) 'Installer commands did not share one correlated attempt'
-    $codexCalls = @($multiResult.Calls | Where-Object { $_.target -eq 'codex' })
-    foreach ($codexCall in $codexCalls) { Assert-Fixture (($codexCall.arguments -join ' ') -match '--codex-path C:\\fixture\\codex.exe') 'Verified embedded Codex path was not passed to the CLI' }
 
     $invalid = New-UpdateFixture 'invalid-target'
     $global:EmployeeFixtureInstallRoot = $invalid.EmployeeRoot
@@ -635,7 +574,7 @@ exit 0
     Write-InstallationDiagnostic 'installation_finished' 'finish' 'failed' 'unknown_error' 4
     Assert-Fixture ($script:diagnosticUnavailable -and (Get-FileHash -LiteralPath $foreign -Algorithm SHA256).Hash -ceq $foreignHash) 'Full diagnostic budget modified foreign files or blocked without a safe failure'
 
-    Write-Output 'Employee installer fixture: PASS (quiet default CLI; optional MCP targets; no automatic business calls; browser guidance and explicit manual URL; real native exit; bounded diagnostics; identity verification; package rejection; rollback/recovery; foreign host configuration and personal state preserved)'
+    Write-Output 'Employee installer fixture: PASS (quiet default CLI; retired host targets rejected; no automatic business calls; browser guidance and explicit manual URL; real native exit; bounded diagnostics; identity verification; package rejection; rollback/recovery; foreign host configuration and personal state preserved)'
 } finally {
     $env:APPDATA = $oldAppData
     $env:LOCALAPPDATA = $oldLocalAppData

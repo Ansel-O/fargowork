@@ -5,8 +5,6 @@
   "files": [
     "LICENSE",
     "README.md",
-    "bin/fargowork.cmd",
-    "mcp.json",
     "plugin.json",
     "skills/fargowork-employee/SKILL.md",
     "skills/fargowork-employee/references/workflow-annual-leave.md",
@@ -53,11 +51,6 @@
     {
       "component": "cli",
       "pattern": "fargowork-cli-v{version}-{platform}-{arch}.{archive}",
-      "status": "emitted-by-m4-native-builder"
-    },
-    {
-      "component": "bridge",
-      "pattern": "fargowork-bridge-v{version}-{platform}-{arch}.{archive}",
       "status": "emitted-by-m4-native-builder"
     }
   ]

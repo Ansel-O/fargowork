@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string[]]$Target = @('cli'),
-    [string]$Version = '1.3.0',
+    [string]$Version = '1.4.0',
     [string]$ServiceIssuer,
     [string]$LocalArtifactDir,
     [string]$ReleaseBaseUrl,
@@ -172,44 +172,7 @@ function Write-InstallationDiagnostic([string]$Event, [string]$Phase, [string]$O
 }
 
 function Invoke-HostPreflight([string[]]$Targets) {
-    if ($CodexPath -and 'codex' -notin $Targets) { throw '[codex_path_invalid] CodexPath requires the codex target.' }
-    if ('codex' -notin $Targets) { return }
-    $candidate = $CodexPath
-    if (-not $candidate) {
-        $command = Get-Command -Name 'codex.exe' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($command) { $candidate = $command.Source }
-    }
-    if (-not $candidate) {
-        throw '[client_not_detected] Codex was not found on PATH. For an embedded host, provide its verified absolute native executable with -CodexPath; no package was downloaded or installed.'
-    }
-    if (-not [IO.Path]::IsPathRooted($candidate) -or [IO.Path]::GetExtension($candidate) -ine '.exe' -or
-        -not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
-        throw '[codex_path_invalid] CodexPath must name an existing absolute native .exe file.'
-    }
-    Assert-DiagnosticPath $candidate
-    $probe = [Diagnostics.Process]::new()
-    try {
-        $probe.StartInfo = [Diagnostics.ProcessStartInfo]::new()
-        $probe.StartInfo.FileName = [IO.Path]::GetFullPath($candidate)
-        $probe.StartInfo.Arguments = '--version'
-        $probe.StartInfo.UseShellExecute = $false
-        $probe.StartInfo.CreateNoWindow = $true
-        $probe.StartInfo.RedirectStandardOutput = $true
-        $probe.StartInfo.RedirectStandardError = $true
-        $probe.Start() | Out-Null
-        $standardOutput = $probe.StandardOutput.ReadToEndAsync()
-        $standardError = $probe.StandardError.ReadToEndAsync()
-        if (-not $probe.WaitForExit(5000)) {
-            $probe.Kill()
-            throw '[client_probe_failed] Codex version check timed out; installation stopped.'
-        }
-        $probe.WaitForExit()
-        if ($probe.ExitCode -ne 0 -or $standardOutput.Result.Length -gt 1024 -or
-            $standardOutput.Result -notmatch '^codex-cli [0-9]+\.[0-9]+\.[0-9]+') {
-            throw '[client_probe_failed] The supplied executable did not report a supported native Codex CLI; installation stopped.'
-        }
-        $script:resolvedCodexPath = [IO.Path]::GetFullPath($candidate)
-    } finally { $probe.Dispose() }
+    if ($CodexPath) { throw '[invalid_target] CodexPath is no longer supported; install the official CLI.' }
 }
 
 function Get-InstallationErrorCode([string]$Message, [string]$Fallback = 'installation_failed') {
@@ -227,12 +190,12 @@ function Emit-Result([hashtable]$Payload) {
 }
 
 function Resolve-Targets([string[]]$Values) {
-    $allowed = @('cli', 'manual', 'codex', 'cursor', 'workbuddy', 'claude-code')
+    $allowed = @('cli')
     $selected = [System.Collections.Generic.List[string]]::new()
     foreach ($value in $Values) {
         foreach ($part in $value.Split(',')) {
             $name = $part.Trim().ToLowerInvariant()
-            if ($name -notin $allowed) { throw "Unsupported FargoWork target: $name. Choose cli, manual, codex, cursor, workbuddy, or claude-code." }
+            if ($name -notin $allowed) { throw "Unsupported FargoWork target: $name. Only cli is supported." }
             if (-not $selected.Contains($name)) { $selected.Add($name) }
         }
     }
@@ -319,7 +282,7 @@ function Get-SafeClientFailure([object]$Payload, [string]$Target, [string]$Phase
 
 function Get-SafeClientSummary([object]$Payload) {
     $summary = @{}
-    foreach ($name in @('cli', 'manual', 'codex', 'cursor', 'workbuddy', 'claude-code')) {
+    foreach ($name in @('cli')) {
         $client = if ($Payload.clients) { $Payload.clients.$name } else { $null }
         if (-not $client) { continue }
         $record = @{}
@@ -341,9 +304,42 @@ function Get-SafeClientSummary([object]$Payload) {
             if ($client.skill.status -cin @('ready', 'missing', 'modified', 'unavailable', 'manual_import_required')) { $skill.status = $client.skill.status }
             $record.skill = $skill
         }
+        if ($client.legacy_migration) {
+            $migration = @{}
+            foreach ($legacyName in @('cursor', 'codex', 'claude-code', 'workbuddy')) {
+                $legacy = $client.legacy_migration.$legacyName
+                if ($legacy.status -cin @('absent', 'removed', 'preserved', 'unverified')) {
+                    $migration[$legacyName] = @{ status = $legacy.status; needs_user_action = $legacy.needs_user_action -eq $true }
+                }
+            }
+            $record.legacy_migration = $migration
+        }
         $summary[$name] = $record
     }
     return $summary
+}
+
+function Test-LegacyBridgeFilesProven([string]$PluginDirectory) {
+    if (-not (Test-Path -LiteralPath $PluginDirectory -PathType Container)) { return $true }
+    $retired = @('mcp.json', 'bin/fargowork.cmd', 'bin/fargowork.exe', 'bin/fargowork')
+    $present = @($retired | Where-Object { Test-Path -LiteralPath (Join-Path $PluginDirectory $_) })
+    if ($present.Count -eq 0) { return $true }
+    $manifestPath = Join-Path $PluginDirectory 'PACKAGE-MANIFEST.json'
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { return $false }
+    try {
+        Assert-NoReparsePointChain $manifestPath
+        $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+        foreach ($relative in $present) {
+            $subject = Join-Path $PluginDirectory $relative
+            Assert-NoReparsePointChain $subject
+            $entry = @($manifest.files | Where-Object { $_.path -ceq $relative })
+            if ($entry.Count -ne 1 -or $entry[0].sha256 -cnotmatch '^[0-9a-f]{64}$' -or
+                -not (Test-Path -LiteralPath $subject -PathType Leaf) -or
+                (Get-FileHash -LiteralPath $subject -Algorithm SHA256).Hash.ToLowerInvariant() -cne $entry[0].sha256 -or
+                (Get-Item -LiteralPath $subject).Length -ne $entry[0].size) { return $false }
+        }
+        return $true
+    } catch { return $false }
 }
 
 function Read-Checksums([string]$Path) {
@@ -571,7 +567,6 @@ $script:retainInstall = $false
 $script:targetResults = [System.Collections.Generic.List[object]]::new()
 $script:identityVerified = $false
 $script:connected = $null
-$script:manualRegistration = $null
 $script:skillPath = $null
 $script:diagnosticComponent = 'installer'
 $script:diagnosticUnavailable = $false
@@ -584,6 +579,7 @@ $script:profilePendingReset = $false
 $script:authenticationErrorCode = $null
 $script:failureExitCode = 4
 $script:businessCliAvailable = $false
+$script:legacyBridgeFilesProven = $true
 
 try {
     $selectedTargets = @(Resolve-Targets $Target)
@@ -608,17 +604,14 @@ try {
     $checksumPath = Download-OrUseLocal 'SHA256SUMS' $LocalArtifactDir $ReleaseBaseUrl $script:tempDir
     $checksums = Read-Checksums $checksumPath
     $cliName = "fargowork-cli-v$Version-$platformName-$archName.zip"
-    $bridgeName = "fargowork-bridge-v$Version-$platformName-$archName.zip"
     $pluginName = "fargowork-agent-plugin-v$Version-$platformName-$archName.zip"
-    foreach ($name in @($cliName, $bridgeName, $pluginName)) {
+    foreach ($name in @($cliName, $pluginName)) {
         if (-not $checksums.ContainsKey($name)) { throw "SHA256SUMS does not declare $name" }
     }
     $cliZip = Download-OrUseLocal $cliName $LocalArtifactDir $ReleaseBaseUrl $script:tempDir
-    $bridgeZip = Download-OrUseLocal $bridgeName $LocalArtifactDir $ReleaseBaseUrl $script:tempDir
     $pluginZip = Download-OrUseLocal $pluginName $LocalArtifactDir $ReleaseBaseUrl $script:tempDir
     $script:installationPhase = 'verify'
     Assert-Checksum $cliZip $checksums[$cliName]
-    Assert-Checksum $bridgeZip $checksums[$bridgeName]
     Assert-Checksum $pluginZip $checksums[$pluginName]
     Write-InstallationDiagnostic 'package_verified' 'verify' 'succeeded'
     $extractRoot = Join-Path $script:tempDir 'extract'
@@ -630,14 +623,17 @@ try {
     $exe = Get-ChildItem -LiteralPath $cliRoot -Filter 'fargowork.exe' -File -Recurse | Select-Object -First 1
     $pluginSource = Join-Path $pluginRoot 'fargowork'
     if (-not $exe -or -not (Test-Path -LiteralPath $pluginSource -PathType Container)) { throw '[incomplete_install] Verified artifact is missing the native executable or Plugin directory.' }
-    foreach ($requiredPath in @('plugin.json', 'mcp.json', 'bin\fargowork.cmd', 'skills\fargowork-employee\SKILL.md')) {
+    foreach ($requiredPath in @('plugin.json', 'skills\fargowork-employee\SKILL.md')) {
         if (-not (Test-Path -LiteralPath (Join-Path $pluginSource $requiredPath) -PathType Leaf)) { throw '[incomplete_install] Verified artifact lacks a required Plugin, launcher or core Skill file; employee state was not changed.' }
+    }
+    foreach ($retiredPath in @('mcp.json', 'bin')) {
+        if (Test-Path -LiteralPath (Join-Path $pluginSource $retiredPath)) { throw '[artifact_invalid] CLI-only employee package contains retired host registration or launcher files.' }
     }
     $pluginManifest = Get-Content -LiteralPath (Join-Path $pluginSource 'plugin.json') -Raw | ConvertFrom-Json
     if ($pluginManifest.name -ne 'fargowork-employee' -or $pluginManifest.version -ne $Version) { throw '[artifact_invalid] Plugin identity or version does not match this employee candidate.' }
     if ($DryRun) {
         Write-InstallationDiagnostic 'installation_finished' 'finish' 'succeeded' '' 0
-        Emit-Result @{ event = 'dry_run'; status = 'verified'; installed = $false; connected = $null; identity_verified = $false; trusted = if (@($selectedTargets | Where-Object { $_ -ne 'cli' }).Count -eq 0) { 'not_required' } else { 'unknown' }; needs_user_action = $true; selected_targets = $selectedTargets; login_requested = [bool]$Login; employee_configuration_changed = $false; temporary_downloads = $true; diagnostics_written = -not $script:diagnosticUnavailable; connection_mode = if ('cli' -in $selectedTargets) { 'cli' } else { 'mcp' }; mcp_registration_required = @($selectedTargets | Where-Object { $_ -ne 'cli' }).Count -gt 0; business_cli_available = $false; tool_capability = 'not_checked'; message = 'Host prerequisites and local/remote artifacts verified. Temporary downloads and bounded diagnostics may be written; employee configuration, credentials and host registration are unchanged.' }
+        Emit-Result @{ event = 'dry_run'; status = 'verified'; installed = $false; connected = $null; identity_verified = $false; trusted = if (@($selectedTargets | Where-Object { $_ -ne 'cli' }).Count -eq 0) { 'not_required' } else { 'unknown' }; needs_user_action = $true; selected_targets = $selectedTargets; login_requested = [bool]$Login; employee_configuration_changed = $false; temporary_downloads = $true; diagnostics_written = -not $script:diagnosticUnavailable; connection_mode = 'cli'; mcp_registration_required = $false; business_cli_available = $false; tool_capability = 'not_checked'; message = 'Host prerequisites and local/remote artifacts verified. Temporary downloads and bounded diagnostics may be written; employee configuration, credentials and host registration are unchanged.' }
         exit 0
     }
     $script:installationPhase = 'stage'
@@ -689,6 +685,7 @@ try {
     }
     Assert-NoReparsePointChain $script:pluginDest
     if (Test-Path -LiteralPath $script:pluginDest) { Assert-OwnedDirectory $script:pluginDest }
+    $script:legacyBridgeFilesProven = Test-LegacyBridgeFilesProven $script:pluginDest
 
     $script:stageToken = [guid]::NewGuid().ToString('N')
     $script:stage = Join-Path $script:installRoot ('.fargowork-stage-' + $script:stageToken)
@@ -704,8 +701,6 @@ try {
     Copy-Item -LiteralPath $exe.FullName -Destination (Join-Path $stageBin 'fargowork.exe')
     $newPlugin = Join-Path $stagePlugin 'fargowork-employee'
     Copy-Item -LiteralPath $pluginSource -Destination $newPlugin -Recurse
-    New-Item -ItemType Directory -Path (Join-Path $newPlugin 'bin') -Force | Out-Null
-    Copy-Item -LiteralPath $exe.FullName -Destination (Join-Path $newPlugin 'bin\fargowork.exe') -Force
     Write-ExactMarker (Join-Path $stageBin '.fargowork-owner') 'fargowork-employee-v1'
     Write-ExactMarker (Join-Path $newPlugin '.fargowork-owner') 'fargowork-employee-v1'
     Assert-StageDirectory
@@ -734,7 +729,7 @@ try {
     $script:installationPhase = 'register'
     $successfulTargets = 0
     foreach ($selectedTarget in $selectedTargets) {
-        $result = @{ target = $selectedTarget; status = 'error'; installed = $false; connected = $null; identity_verified = $false; trusted = if ($selectedTarget -eq 'cli') { 'not_required' } else { 'unknown' }; needs_user_action = $true; connection_mode = if ($selectedTarget -eq 'cli') { 'cli' } else { 'mcp' }; mcp_registration_required = $selectedTarget -ne 'cli'; business_cli_available = $false; tool_capability = 'not_checked' }
+        $result = @{ target = $selectedTarget; status = 'error'; installed = $false; connected = $null; identity_verified = $false; trusted = if ($selectedTarget -eq 'cli') { 'not_required' } else { 'unknown' }; needs_user_action = $true; connection_mode = 'cli'; mcp_registration_required = $false; business_cli_available = $false; tool_capability = 'not_checked' }
         $script:targetResults.Add($result)
         try {
             $installArguments = @('install', '--target', $selectedTarget, '--issuer', $ServiceIssuer, '--attempt-id', $script:attemptId, '--output', 'jsonl')
@@ -768,6 +763,7 @@ try {
                 throw (Get-SafeClientFailure $installation.Payload $selectedTarget 'installation' $installation.ExitCode)
             }
             $result.installed = $true
+            $result.clients = Get-SafeClientSummary $installation.Payload
             if ($installation.Payload.business_cli_available -is [bool]) {
                 $result.business_cli_available = $installation.Payload.business_cli_available
                 $script:businessCliAvailable = $script:businessCliAvailable -or $result.business_cli_available
@@ -787,8 +783,8 @@ try {
             }
             $result.status = if ($diagnostic.ExitCode -eq 3) { 'needs_user_action' } else { 'installed' }
             $result.trusted = if ($selectedTarget -eq 'cli') { 'not_required' } elseif ($diagnostic.Payload.trusted -is [bool]) { $diagnostic.Payload.trusted } else { 'unknown' }
-            $result.clients = Get-SafeClientSummary $diagnostic.Payload
-            if ($selectedTarget -eq 'manual' -and $installation.Payload.manual_mcp_registration) { $script:manualRegistration = $installation.Payload.manual_mcp_registration }
+            # Keep migration evidence from install; doctor deliberately performs
+            # no host mutation and must not erase a preserved-connection warning.
             if ($installation.Payload.skill_path) { $script:skillPath = $installation.Payload.skill_path }
             $successfulTargets++
         } catch {
@@ -835,7 +831,8 @@ try {
             $verifiedTargets++
             $result.needs_user_action = [bool]$verification.Payload.needs_user_action
             $result.trusted = if ($result.target -eq 'cli') { 'not_required' } elseif ($verification.Payload.trusted -is [bool]) { $verification.Payload.trusted } else { 'unknown' }
-            $result.clients = Get-SafeClientSummary $verification.Payload
+            # Install already recorded strict legacy migration results. A
+            # read-only status reply must not replace that evidence.
             if ($verification.Payload.profile) { $result.profile = $verification.Payload.profile; $script:profileResult = $verification.Payload.profile }
             if ($verification.Payload.profile_pending_reset -eq $true) { $result.profile_pending_reset = $true; $script:profilePendingReset = $true }
             $result.status = if ($result.needs_user_action) { 'needs_user_action' } else { 'ready' }
@@ -848,14 +845,22 @@ try {
     $needsAction = -not $script:identityVerified -or @($script:targetResults | Where-Object { $_.needs_user_action }).Count -gt 0
     $message = "FargoWork installed for $($selectedTargets -join ', ')."
     $cleanupPending = $false
-    try { Remove-VerifiedStage } catch {
+    try {
+        if (-not $script:legacyBridgeFilesProven) {
+            $cleanupPending = $true
+            $script:recoveryPath = $script:stage
+            $script:recoveryError = 'Old Bridge files were modified or could not be verified; recovery material was preserved.'
+        } else { Remove-VerifiedStage }
+    } catch {
         $cleanupPending = $true
         $script:recoveryPath = $script:stage
         $script:recoveryError = "The update succeeded, but old recovery material could not be cleaned: $($_.Exception.Message)"
     }
-    $payload = @{ event = 'installed'; status = if ($needsAction) { 'needs_user_action' } else { 'ready' }; installed = $true; connected = $script:connected; identity_verified = $script:identityVerified; trusted = if (@($selectedTargets | Where-Object { $_ -ne 'cli' }).Count -eq 0) { 'not_required' } elseif (@($script:targetResults | Where-Object { $_.trusted -ne $true }).Count -eq 0) { $true } else { 'unknown' }; needs_user_action = $needsAction; plugin_dir = $script:pluginDest; targets = $script:targetResults.ToArray(); skill_path = $script:skillPath; login_command = "& '$($installedExe.Replace("'", "''"))' login --browser always"; message = $message; connection_mode = if ('cli' -in $selectedTargets) { 'cli' } else { 'mcp' }; mcp_registration_required = @($selectedTargets | Where-Object { $_ -ne 'cli' }).Count -gt 0; business_cli_available = $script:businessCliAvailable; tool_capability = 'not_checked' }
-    if ($script:manualRegistration) { $payload.manual_mcp_registration = $script:manualRegistration }
+    $payload = @{ event = 'installed'; status = if ($needsAction) { 'needs_user_action' } else { 'ready' }; installed = $true; connected = $script:connected; identity_verified = $script:identityVerified; trusted = if (@($selectedTargets | Where-Object { $_ -ne 'cli' }).Count -eq 0) { 'not_required' } elseif (@($script:targetResults | Where-Object { $_.trusted -ne $true }).Count -eq 0) { $true } else { 'unknown' }; needs_user_action = $needsAction; plugin_dir = $script:pluginDest; targets = $script:targetResults.ToArray(); skill_path = $script:skillPath; login_command = "& '$($installedExe.Replace("'", "''"))' login --browser always"; message = $message; connection_mode = 'cli'; mcp_registration_required = $false; business_cli_available = $script:businessCliAvailable; tool_capability = 'not_checked' }
     $payload.cli_path = $installedExe
+    $payload.legacy_bridge_files_preserved = -not $script:legacyBridgeFilesProven
+    $payload.legacy_connection_review_required = @($script:targetResults | Where-Object { $_.clients.cli.needs_user_action }).Count -gt 0
+    if ($payload.legacy_connection_review_required) { $payload.needs_user_action = $true; $payload.status = 'needs_user_action'; $payload.message = 'FargoWork CLI is installed. Old unproven client connections were preserved; review the reported migration states.' }
     if ($script:profileResult) { $payload.profile = $script:profileResult }
     $payload.profile_pending_reset = $script:profilePendingReset
     if ($cleanupPending) { $payload.recovery_path = $script:recoveryPath; $payload.message = $script:recoveryError }
@@ -883,7 +888,6 @@ try {
         foreach ($result in $script:targetResults) { $result.rollback_status = 'recovery_required' }
     }
     $payload = @{ event = 'error'; status = if ($script:retainInstall) { 'installed_with_errors' } else { 'error' }; installed = $script:retainInstall; connected = $script:connected; identity_verified = $script:identityVerified; trusted = if ($selectedTargets.Count -gt 0 -and @($selectedTargets | Where-Object { $_ -ne 'cli' }).Count -eq 0) { 'not_required' } else { 'unknown' }; needs_user_action = $true; targets = $script:targetResults.ToArray(); skill_path = $script:skillPath; code = if ($script:recoveryPath) { 'install_failed_recovery_required' } elseif ($script:retainInstall) { 'post_install_failed' } else { 'install_failed' }; message = $mainError; business_cli_available = $script:businessCliAvailable; tool_capability = 'not_checked' }
-    if ($script:manualRegistration) { $payload.manual_mcp_registration = $script:manualRegistration }
     if ($script:retainInstall -and $installedExe) { $payload.cli_path = $installedExe }
     $payload.phase = $script:installationPhase
     $payload.error_code = $failureCode

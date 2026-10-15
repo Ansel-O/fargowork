@@ -87,7 +87,7 @@ jobs:
           python-version: "3.12"
       - name: Install standalone builder
         run: python -m pip install --disable-pip-version-check pyinstaller==6.13.0
-      - name: Build real CLI and bridge artifacts
+      - name: Build official CLI and Skill artifacts
         shell: bash
         run: >-
           python tools/release/build_local_release.py
@@ -150,8 +150,6 @@ jobs:
               "artifacts": artifacts,
               "checksums": "SHA256SUMS",
               "cli": {"status": "emitted", "entrypoint": "fargowork"},
-              "bridge": {"status": "emitted", "entrypoint": "fargowork bridge", "transport": "stdio -> MCP 2026-07-28 Streamable HTTP"},
-              "workbuddy": {"status": "official-codebuddy-user-registration-ui-trust-required"},
               "macos": {"status": "deferred", "reason": "native Security.framework Keychain support is not included in this release"},
               "release": {"remote": "draft-only", "signing": "not-configured", "attestation": "CI-only"},
           }
@@ -169,4 +167,4 @@ jobs:
           dist/release/v${VERSION}/release-manifest.json
           --repo "${GITHUB_REPOSITORY}"
           --verify-tag --draft --title "FargoWork v${VERSION}"
-          --notes "FargoWork office-pilot client RC: one CLI/bridge executable, Agent Plugin, adapters, and checksum-verified installers. WorkBuddy UI trust/enable remains user action; no Server source, rules, credentials, or business data is bundled."
+          --notes "FargoWork office-pilot client RC: official business CLI, employee Skills, and checksum-verified installers; no Server source, rules, credentials, or business data is bundled."

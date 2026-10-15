@@ -133,29 +133,18 @@ def build(*, version: str, platform_name: str, arch: str, output_dir: Path) -> d
         executable = _build_executable(version, platform_name, arch, staging)
         extension = "exe" if platform_name == "windows" else "bin"
         cli_archive = output_dir / f"fargowork-cli-v{version}-{platform_name}-{arch}.zip"
-        bridge_archive = output_dir / f"fargowork-bridge-v{version}-{platform_name}-{arch}.zip"
         cli_root = staging / "cli"
         cli_root.mkdir()
         shutil.copy2(executable, cli_root / f"fargowork.{extension}")
         (cli_root / "VERSION").write_text(version + "\n", encoding="utf-8")
         (cli_root / "README.txt").write_text(
-            "FargoWork single executable. Use fargowork install, login, doctor, or bridge.\n",
+            "FargoWork single executable. Use fargowork install, login, tools, or doctor.\n",
             encoding="utf-8",
         )
         _zip_tree(cli_root, cli_archive)
-        bridge_root = staging / "bridge"
-        bridge_root.mkdir()
-        shutil.copy2(executable, bridge_root / f"fargowork.{extension}")
-        (bridge_root / "bridge.txt").write_text(
-            "The bridge artifact is the same FargoWork executable invoked as: fargowork bridge\n",
-            encoding="utf-8",
-        )
-        _zip_tree(bridge_root, bridge_archive)
-
-        # The plugin package is built by the existing fail-closed deterministic
-        # builder and then staged with the platform executable beside the
-        # plugin-relative launcher.  This keeps the checked-in public source
-        # text-only while the release package contains the actual binary.
+        # Ship the allowlist-checked Skill separately from the native CLI.
+        # The employee installer places the executable in its managed bin;
+        # the Skill package contains no Bridge or platform launcher.
         plugin_builder = ROOT / "tools" / "release" / "build_public_release.py"
         plugin_temp = staging / "plugin"
         subprocess.run(
@@ -165,21 +154,7 @@ def build(*, version: str, platform_name: str, arch: str, output_dir: Path) -> d
         )
         plugin_archive = next(plugin_temp.glob("fargowork-agent-plugin-*.zip"))
         rebuilt_plugin = output_dir / f"fargowork-agent-plugin-v{version}-{platform_name}-{arch}.zip"
-        with zipfile.ZipFile(plugin_archive, "r") as source_zip, zipfile.ZipFile(rebuilt_plugin, "w", compression=zipfile.ZIP_DEFLATED) as output_zip:
-            binary_member = "fargowork/bin/fargowork.exe" if platform_name == "windows" else "fargowork/bin/fargowork"
-            package_manifest = json.loads(source_zip.read("fargowork/PACKAGE-MANIFEST.json").decode("utf-8"))
-            package_manifest["files"].append({"path": binary_member.removeprefix("fargowork/"), "size": executable.stat().st_size, "sha256": sha256(executable)})
-            package_manifest["files"] = sorted(package_manifest["files"], key=lambda item: item["path"])
-            for info in sorted(source_zip.infolist(), key=lambda item: item.filename):
-                data = source_zip.read(info.filename)
-                if info.filename == "fargowork/PACKAGE-MANIFEST.json":
-                    data = (json.dumps(package_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
-                output_zip.writestr(info, data)
-            info = zipfile.ZipInfo(binary_member, date_time=(1980, 1, 1, 0, 0, 0))
-            info.compress_type = zipfile.ZIP_DEFLATED
-            info.create_system = 3
-            info.external_attr = 0o100755 << 16
-            output_zip.writestr(info, executable.read_bytes())
+        shutil.copy2(plugin_archive, rebuilt_plugin)
 
     artifacts = []
     for path in sorted(output_dir.iterdir(), key=lambda item: item.name):
@@ -204,13 +179,7 @@ def build(*, version: str, platform_name: str, arch: str, output_dir: Path) -> d
         "artifacts": artifacts,
         "checksums": "SHA256SUMS",
         "cli": {"status": "emitted", "entrypoint": "fargowork"},
-        "bridge": {
-            "status": "emitted",
-            "entrypoint": "fargowork bridge",
-            "transport": "stdio -> modern MCP Streamable HTTP",
-            "supported_protocol_versions": protocols,
-        },
-        "workbuddy": {"status": "official-codebuddy-user-registration-ui-trust-required"},
+        "business_interface": "official-cli",
         "release": {"remote": "not-published", "signing": "not-configured", "attestation": "CI-only"},
     }
     (output_dir / "release-manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
