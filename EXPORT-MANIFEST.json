@@ -1,140 +1,165 @@
 {
-  "format": "fargowork-public-repository-export/v1",
-  "repository": "Ansel-O/fargowork",
-  "visibility": "public",
-  "license": "Apache-2.0",
-  "source_revision": "8b00f2f640a74453a34c2273e316adda1f1b20ea",
   "files": [
     {
       "path": ".gitattributes",
-      "size": 88,
-      "sha256": "1d459fe85e27a8d6ef6dc148f727684b829690935f00b94ebd601a405b65aafc"
+      "sha256": "1d459fe85e27a8d6ef6dc148f727684b829690935f00b94ebd601a405b65aafc",
+      "size": 88
     },
     {
       "path": ".github/workflows/delivery-integrity.yml",
-      "size": 5107,
-      "sha256": "5b2be78749afedc6f60058069353e5493a7a93dacab762a8eafde48fd9ce168a"
+      "sha256": "eee7d916c6503df0b96aa194d2b89bc472ce092041559fc6564883527af3b5dc",
+      "size": 6738
     },
     {
       "path": ".gitignore",
-      "size": 94,
-      "sha256": "768acf49216180dd038f938ca5ae54be826d005c7dcc866172a4bd21add6fbb3"
+      "sha256": "768acf49216180dd038f938ca5ae54be826d005c7dcc866172a4bd21add6fbb3",
+      "size": 94
     },
     {
       "path": "DEBUG.md",
-      "size": 5291,
-      "sha256": "d9a05ffeb0264bff2db82b881894efc4b32adddc4c8c48ddd7f13aa6cddea851"
+      "sha256": "d9a05ffeb0264bff2db82b881894efc4b32adddc4c8c48ddd7f13aa6cddea851",
+      "size": 5291
     },
     {
       "path": "INSTALL.md",
-      "size": 880,
-      "sha256": "10ae2867e6cd9e2a874fcb3ed9cd21ed77fa69387a2e7c889d104cff585bd5dc"
+      "sha256": "716b727841c287d98ab896d1bf77b099051a0c59caad12c07ac1cb419aa58cd3",
+      "size": 931
     },
     {
       "path": "LICENSE",
-      "size": 11552,
-      "sha256": "5b19088d30c5da6ded8e4e0155178d59dc0c3bb2f1ebcb9a4272f8cf0da77ef4"
-    },
-    {
-      "path": "public/agent-plugin/fargowork/LICENSE",
-      "size": 11552,
-      "sha256": "5b19088d30c5da6ded8e4e0155178d59dc0c3bb2f1ebcb9a4272f8cf0da77ef4"
-    },
-    {
-      "path": "public/agent-plugin/fargowork/plugin.json",
-      "size": 386,
-      "sha256": "e4ebd957cfa71b27a6708c29b55f514a5d25b7b55985613305c2a7531e612c52"
-    },
-    {
-      "path": "public/agent-plugin/fargowork/README.md",
-      "size": 1353,
-      "sha256": "7edb2e839f04f4e1d97b1d031afbc30b53edf11260db952452c7843774f6e275"
-    },
-    {
-      "path": "public/agent-plugin/fargowork/skills/fargowork-employee/references/time-contract.md",
-      "size": 1867,
-      "sha256": "9936e2a3a908d90523ed54cd89f28926e4a7998a76a9c56ef4f4b431cd358926"
-    },
-    {
-      "path": "public/agent-plugin/fargowork/skills/fargowork-employee/references/workflow-annual-leave.md",
-      "size": 2587,
-      "sha256": "962d3f7147e46cfe0eb16f2cd795841efe74ed0935b39e663f8d011a69b25e71"
-    },
-    {
-      "path": "public/agent-plugin/fargowork/skills/fargowork-employee/references/workflow-business-trip.md",
-      "size": 2446,
-      "sha256": "827befc489347eac71645cafde6af865c1796e74d04c19fbeed9785f5178a38a"
-    },
-    {
-      "path": "public/agent-plugin/fargowork/skills/fargowork-employee/SKILL.md",
-      "size": 12581,
-      "sha256": "506063bcad90df9e05f13dab76887edc67ce43a61f8a601f687d280d99fd9ae3"
-    },
-    {
-      "path": "public/bootstrap.ps1",
-      "size": 20975,
-      "sha256": "6458cd86e3b128e73d77c4ddfee0ddc592745d23e27b2d5e8ed1863466e9cd52"
-    },
-    {
-      "path": "public/cli/client_diagnostics.py",
-      "size": 20384,
-      "sha256": "98fcf06d03bec759e61cb1b68b5b2e648302427b242ea3d1cbdfd931e04ef46d"
-    },
-    {
-      "path": "public/cli/employee_attachments.py",
-      "size": 34319,
-      "sha256": "840a91ce5dc893eef520b69f892ca92d482ae4fe6b0efde856d21d4bab87f0d1"
-    },
-    {
-      "path": "public/cli/employee_profile.py",
-      "size": 21348,
-      "sha256": "b8172303530dfd04aecc1987a781050c906761f510732f7b666b0c46c170c37a"
-    },
-    {
-      "path": "public/cli/fargowork_cli.py",
-      "size": 129871,
-      "sha256": "f5da5638a155b7a6130ad4e6d6767205a0e0cb4446fcddc1f7b4ad3e59ef5eeb"
-    },
-    {
-      "path": "public/EMPLOYEE-DATA-NOTE.md",
-      "size": 1667,
-      "sha256": "59aefed8acced2c1d111a45ec3f7afcc4a2256aefa16cc04eb5b0b5d553ff05d"
-    },
-    {
-      "path": "public/EMPLOYEE-README.md",
-      "size": 529,
-      "sha256": "18be69c7f23395750d3308f254ce9795ad2aea53d9c960b81ad57643e5403a78"
-    },
-    {
-      "path": "public/install.ps1",
-      "size": 56499,
-      "sha256": "937a4265709f81e24bbd10823ceab2e28e29fd0993bc8b6b6650cba293fe2493"
-    },
-    {
-      "path": "public/install.sh",
-      "size": 7172,
-      "sha256": "cdf1c904ee100beb2f5b45befa32af911b74dbf7ab042fb343d81ef42ed7ea66"
-    },
-    {
-      "path": "public/release/version.json",
-      "size": 170,
-      "sha256": "1f59dd568b5f1c28b1ce8fabcd9ebd26c92925915209539aacadab9e325ad9c1"
-    },
-    {
-      "path": "public/release/windows-trial.json",
-      "size": 804,
-      "sha256": "af22c87e2023f0745a71d18976706a68b740ca6bb39289864f7e220d0a0e8e10"
+      "sha256": "5b19088d30c5da6ded8e4e0155178d59dc0c3bb2f1ebcb9a4272f8cf0da77ef4",
+      "size": 11552
     },
     {
       "path": "README.md",
-      "size": 479,
-      "sha256": "b6dda86723dc5fbc18a4c3bc7ce4b1c6d2ad1e1a45adb8e055683dd7e1062e1b"
+      "sha256": "b6dda86723dc5fbc18a4c3bc7ce4b1c6d2ad1e1a45adb8e055683dd7e1062e1b",
+      "size": 479
     },
     {
       "path": "SECURITY.md",
-      "size": 407,
-      "sha256": "fb06f37bd37a089505f9ba442473f016f83507b71ad4ecc1e6d4905169ac90b1"
+      "sha256": "fb06f37bd37a089505f9ba442473f016f83507b71ad4ecc1e6d4905169ac90b1",
+      "size": 407
+    },
+    {
+      "path": "public/EMPLOYEE-DATA-NOTE.md",
+      "sha256": "59aefed8acced2c1d111a45ec3f7afcc4a2256aefa16cc04eb5b0b5d553ff05d",
+      "size": 1667
+    },
+    {
+      "path": "public/EMPLOYEE-README.md",
+      "sha256": "770653ac4abee310fe91848840cefea49b73c6e2bd6f1cd97e99f706844d0f83",
+      "size": 524
+    },
+    {
+      "path": "public/agent-plugin/fargowork/LICENSE",
+      "sha256": "5b19088d30c5da6ded8e4e0155178d59dc0c3bb2f1ebcb9a4272f8cf0da77ef4",
+      "size": 11552
+    },
+    {
+      "path": "public/agent-plugin/fargowork/README.md",
+      "sha256": "5df9996f6c9051b7fc79b09d807a66bbba52ecfc0b785516aeac55ebf81675e9",
+      "size": 1638
+    },
+    {
+      "path": "public/agent-plugin/fargowork/plugin.json",
+      "sha256": "ff2de33849f84b983d184515b89d3da1d9b822b6f30952f66b3848a13c321e34",
+      "size": 387
+    },
+    {
+      "path": "public/agent-plugin/fargowork/skills/fargowork-annual-leave/SKILL.md",
+      "sha256": "5c12aa8c40cb6129847d9512378e8e8ffa6bfe58bbd49250e1252b51bbd53c9b",
+      "size": 1915
+    },
+    {
+      "path": "public/agent-plugin/fargowork/skills/fargowork-business-trip/SKILL.md",
+      "sha256": "b6d2319bb14567c2bde05dc9d32a06605fe9fd1ff21753c1b0bca119e370114c",
+      "size": 1891
+    },
+    {
+      "path": "public/agent-plugin/fargowork/skills/fargowork-employee/SKILL.md",
+      "sha256": "d4768a600afcc2582eacd99fd3124e41d62ce75085b6cd0f220790c24a4b39f7",
+      "size": 1620
+    },
+    {
+      "path": "public/agent-plugin/fargowork/skills/fargowork-employee/references/attachment-contract.md",
+      "sha256": "dd94ca521b2cc99b145fc554433b900691a0972e55fbc86e2bcef11b11b972fe",
+      "size": 3121
+    },
+    {
+      "path": "public/agent-plugin/fargowork/skills/fargowork-employee/references/employee-runtime-contract.md",
+      "sha256": "867563dd50ef86a7ba6555b34eefa3a8b37732a142fcd458f97261557f9bd280",
+      "size": 5540
+    },
+    {
+      "path": "public/agent-plugin/fargowork/skills/fargowork-employee/references/login-contract.md",
+      "sha256": "8991d144f2b8c184c2f9d0a31556a567fe98b919243098228d51333cc1523161",
+      "size": 2030
+    },
+    {
+      "path": "public/agent-plugin/fargowork/skills/fargowork-employee/references/time-contract.md",
+      "sha256": "92e88db9cfa7dd5d9da5a3b02e74718c9588c34247273e277ff7f7e0045e2138",
+      "size": 1025
+    },
+    {
+      "path": "public/agent-plugin/fargowork/skills/fargowork-external-expense-request/SKILL.md",
+      "sha256": "4517dcffa54571d517d771f719d113d7629bfbea869cf6029dc22b96ad7102a1",
+      "size": 5264
+    },
+    {
+      "path": "public/agent-plugin/fargowork/skills/fargowork-procurement-request/SKILL.md",
+      "sha256": "be2af082278abfb13f5c6539b3a0f061f214e76be7a8f28d117e9b0ea3a1c126",
+      "size": 2150
+    },
+    {
+      "path": "public/bootstrap.ps1",
+      "sha256": "b3b719f1b23e8a317884cce94588c0ad9e8ae494554163ec9a386cce6255d0e7",
+      "size": 20785
+    },
+    {
+      "path": "public/cli/client_diagnostics.py",
+      "sha256": "eb4202f21fae03e884d0686f72fe3e33f95231948bf7a4b32e0c7aa9b975319d",
+      "size": 20613
+    },
+    {
+      "path": "public/cli/employee_attachments.py",
+      "sha256": "840a91ce5dc893eef520b69f892ca92d482ae4fe6b0efde856d21d4bab87f0d1",
+      "size": 34319
+    },
+    {
+      "path": "public/cli/employee_profile.py",
+      "sha256": "b8172303530dfd04aecc1987a781050c906761f510732f7b666b0c46c170c37a",
+      "size": 21348
+    },
+    {
+      "path": "public/cli/fargowork_cli.py",
+      "sha256": "c61027196bebb982c7abb807333f900de7230842f670e2ec3b094300d24f03a3",
+      "size": 136001
+    },
+    {
+      "path": "public/install.ps1",
+      "sha256": "5006a82ead9672d37b96ad88af8c19bb8b581223be2293b8a538a7d11133e011",
+      "size": 47732
+    },
+    {
+      "path": "public/install.sh",
+      "sha256": "15312ff5248bb18b34286fbe2ad8aee4e0790b6bc003f85167ae0c7441d4a795",
+      "size": 7357
+    },
+    {
+      "path": "public/release/version.json",
+      "sha256": "3f16562199812013d7d765560d377679df966697ada56a1a9196c77d4fb44b14",
+      "size": 153
+    },
+    {
+      "path": "public/release/windows-trial.json",
+      "sha256": "cb603477c302446d3630c8726ee3418b6a9331fd48c1fbe43ffc78ceee71a8ef",
+      "size": 763
     }
   ],
-  "private_components_included": false
+  "format": "fargowork-public-repository-export/v1",
+  "license": "Apache-2.0",
+  "private_components_included": false,
+  "repository": "Ansel-O/fargowork",
+  "source_revision": "5147c80b1e05329f042efcca053efa84cb6b2866",
+  "visibility": "public"
 }

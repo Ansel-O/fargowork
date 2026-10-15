@@ -1,9 +1,7 @@
 {
-  "version": "1.4.0",
+  "version": "1.4.1",
   "tag_prefix": "v",
   "agent_plugins_spec": "1.0.0",
-  "mcp_protocol_versions": [
-    "2026-07-28"
-  ],
+  "mcp_protocol_versions": ["2026-07-28"],
   "action_result_contract": 1
 }

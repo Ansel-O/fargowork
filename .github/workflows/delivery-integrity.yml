@@ -15,6 +15,7 @@ permissions:
 jobs:
   delivery-integrity:
     name: Validate public installation contents
+    if: github.repository == 'Ansel-O/fargowork'
     runs-on: ubuntu-22.04
     steps:
       - name: Check out source
@@ -25,27 +26,47 @@ jobs:
           python3 - <<'PY'
           import json
           import re
-          from pathlib import Path
+          from pathlib import Path, PurePosixPath
 
+          root = Path.cwd()
           required = {
-              "README.md", "INSTALL.md", "LICENSE", "SECURITY.md", "DEBUG.md",
-              "public/bootstrap.ps1", "public/install.ps1", "public/install.sh",
-              "public/EMPLOYEE-README.md", "public/EMPLOYEE-DATA-NOTE.md",
-              "public/cli/fargowork_cli.py", "public/cli/client_diagnostics.py",
-              "public/cli/employee_profile.py", "public/cli/employee_attachments.py",
-              "public/release/version.json", "public/release/windows-trial.json",
+              "README.md",
+              "INSTALL.md",
+              "LICENSE",
+              "SECURITY.md",
+              "DEBUG.md",
+              "public/bootstrap.ps1",
+              "public/install.ps1",
+              "public/install.sh",
+              "public/EMPLOYEE-README.md",
+              "public/EMPLOYEE-DATA-NOTE.md",
+              "public/cli/fargowork_cli.py",
+              "public/cli/client_diagnostics.py",
+              "public/cli/employee_profile.py",
+              "public/cli/employee_attachments.py",
+              "public/release/version.json",
+              "public/release/windows-trial.json",
               "public/agent-plugin/fargowork/LICENSE",
               "public/agent-plugin/fargowork/README.md",
               "public/agent-plugin/fargowork/plugin.json",
-              "public/agent-plugin/fargowork/skills/fargowork-employee/SKILL.md",
           }
+          skill_names = {
+              "fargowork-employee",
+              "fargowork-business-trip",
+              "fargowork-annual-leave",
+              "fargowork-procurement-request",
+              "fargowork-external-expense-request",
+          }
+          skill_root = Path("public/agent-plugin/fargowork/skills")
           actual_skills = {
-              path.parent.name
-              for path in Path("public/agent-plugin/fargowork/skills").glob("*/SKILL.md")
+              path.parent.name for path in skill_root.glob("*/SKILL.md")
           }
-          if actual_skills != {"fargowork-employee"}:
+          if actual_skills != skill_names:
               raise SystemExit(f"unexpected employee Skill set: {sorted(actual_skills)}")
-          missing = sorted(path for path in required if not Path(path).is_file())
+          required.update(
+              (skill_root / name / "SKILL.md").as_posix() for name in skill_names
+          )
+          missing = sorted(path for path in required if not (root / path).is_file())
           if missing:
               raise SystemExit(f"public employee files are missing: {missing}")
           if Path("tests").exists() or Path("tools/release").exists():
@@ -75,11 +96,41 @@ jobs:
               raise SystemExit("README is missing its short installation or troubleshooting link")
           if any(marker in readme.lower() for marker in (".zip", "tools/release", "mcp.json", "tests/")):
               raise SystemExit("README contains maintainer or manual package instructions")
+
           install_doc = Path("INSTALL.md").read_text(encoding="utf-8")
-          if f"/v{version['version']}/public/bootstrap.ps1" not in install_doc or "-Target cli" not in install_doc or "-Login" not in install_doc or "-OpenBrowser always" not in install_doc or "-OutputJsonl" not in install_doc or "skill_path" not in install_doc or "DEBUG.md" not in install_doc:
-              raise SystemExit("INSTALL.md does not match the frozen bootstrap and Skill-loading contract")
+          if (
+              f"/v{version['version']}/public/bootstrap.ps1" not in install_doc
+              or "-Login" not in install_doc
+              or "-OpenBrowser always" not in install_doc
+              or "-Target" in install_doc
+              or "-OutputJsonl" in install_doc
+              or "skill_paths" not in install_doc
+              or "DEBUG.md" not in install_doc
+          ):
+              raise SystemExit("INSTALL.md does not match the fixed bootstrap and Skill-loading contract")
           employee_doc = Path("public/EMPLOYEE-README.md").read_text(encoding="utf-8")
-          if "./install.ps1" not in employee_doc or "-Target cli" not in employee_doc or "skill_path" not in employee_doc or "DEBUG.md" not in employee_doc:
+          if (
+              "./install.ps1" not in employee_doc
+              or "-ServiceIssuer" not in employee_doc
+              or "-LocalArtifactDir ." not in employee_doc
+              or "-Login" not in employee_doc
+              or "-OpenBrowser always" not in employee_doc
+              or "-Target" in employee_doc
+              or "-OutputJsonl" in employee_doc
+              or "skill_paths" not in employee_doc
+              or "DEBUG.md" not in employee_doc
+              or "EMPLOYEE-DATA-NOTE.md" not in employee_doc
+          ):
               raise SystemExit("employee package README is missing its local installer or support links")
+
+          markdown_files = list(Path("public/agent-plugin/fargowork/skills").rglob("*.md"))
+          link_pattern = re.compile(r"\]\((?!https?://|mailto:|#)([^)#]+)(?:#[^)]+)?\)")
+          for source in markdown_files:
+              text = source.read_text(encoding="utf-8")
+              for target in link_pattern.findall(text):
+                  resolved = (source.parent / PurePosixPath(target)).resolve()
+                  if not resolved.is_relative_to(root.resolve()) or not resolved.is_file():
+                      raise SystemExit(f"broken or unsafe Skill reference in {source}: {target}")
+
           print("Public employee delivery files, versions, archive metadata, and Skill references are complete.")
           PY

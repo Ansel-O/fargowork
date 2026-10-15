@@ -1,22 +1,29 @@
 # FargoWork Employee Agent Plugin
 
-The Windows x64 employee package contains the standard FargoWork Skill and
-official CLI. The default workflow path is `fargowork tools list` and
-`fargowork tools call NAME`; the CLI owns OAuth, protected credential storage
-and access to the administrator-configured service.
+The Windows x64 employee package ships one official CLI and five Skills: the
+`fargowork-employee` process router plus independent Business Trip, Annual
+Leave, Procurement Request, and External Expense Request Skills. They install
+together; employees do not install a separate process package.
 
-Load the employee Skill and complete employee login. The employee can then
-request a workflow without editing MCP JSON, installing a temporary Node
-client or changing the host to FullAccess. This release ships no stdio Bridge, host MCP registration or launcher.
-The CLI retains OAuth and its service-side MCP HTTP protocol.
+The default workflow path uses `fargowork tools list` and
+`fargowork tools call NAME`. The CLI owns OAuth, protected credential storage,
+and access to the administrator-configured service. Load the employee router
+or the matching process Skill and complete employee login before beginning a
+workflow.
 
-The Server Manifest controls workflows, inputs and permissions. The Skill
-shows a complete business preview and obtains one natural-language confirmation
-for the exact draft. Do not ask again for an unchanged, unexpired, confirmed
-draft. Stop on unsafe errors or unknown outcomes; never automatically resubmit.
+This package does not ship a stdio Bridge, host MCP registration, or launcher.
+Employees do not need to edit MCP JSON, install an ad hoc runtime, or change the
+host to FullAccess. The CLI retains its service-side MCP HTTP protocol.
 
-Account preferences are separate, editable documents for the verified employee.
+The current Server contract controls workflows, inputs, candidates, validation,
+and permissions. The matching Skill presents the complete semantic preview and
+obtains one natural-language confirmation for the exact draft. An unchanged,
+unexpired, already confirmed draft is submitted without asking again. Unsafe
+errors and unknown outcomes stop; a business submission is never automatically
+resubmitted.
+
+Account preferences are separate editable documents for the verified employee.
 Updates preserve them and ask once about reset, defaulting to keep. Local
-diagnostics are payload-free and voluntarily exported. Fargo AI/Fargo Pass is
-a separate product whose credentials and configuration are outside this package.
-macOS support is deferred; current company workflows are for testing.
+diagnostics are payload-free and voluntarily exported. Fargo AI/Fargo Pass is a
+separate product whose credentials and configuration are outside this package.
+macOS support is deferred.

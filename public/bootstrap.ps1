@@ -1,21 +1,18 @@
 #requires -Version 5.1
 [CmdletBinding()]
 param(
-    [string[]]$Target = @('cli'),
     [string]$ServiceIssuer = 'https://fargowork.fargowealthapp.com',
     [switch]$Login,
     [ValidateSet('auto', 'always', 'never')]
     [string]$OpenBrowser = 'auto',
     [switch]$DryRun,
-    [switch]$OutputJsonl,
-    [string]$CodexPath,
     [string]$AttemptId
 )
 
 $ErrorActionPreference = 'Stop'
 # Pin the built-in module to this runtime when launched by another AI shell.
 Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -Force
-$version = '1.4.0'
+$version = '1.4.1'
 $tag = 'v' + $version
 $bundleName = "fargowork-employee-v$version-windows-x64.zip"
 $repository = 'Ansel-O/fargowork'
@@ -26,7 +23,6 @@ $script:diagnosticComponent = 'bootstrap'
 $script:diagnosticUnavailable = $false
 $script:attemptId = $null
 $script:diagnosticDirectory = $null
-$script:resolvedCodexPath = $null
 $script:installationPhase = 'preflight'
 $script:bootstrapPayload = $null
 
@@ -95,12 +91,11 @@ public static class FargoWorkDiagnosticFileInfo {
 function Write-InstallationDiagnostic([string]$Event, [string]$Phase, [string]$Outcome,
                                       [string]$ErrorCode = '', [int]$ExitCode = -9999) {
     $events = @('installation_started', 'preflight_result', 'package_verified', 'files_staged',
-                'client_detection_result', 'client_registration_result', 'installation_finished',
+                'skill_install_result', 'installation_finished',
                 'launcher_started', 'launcher_finished')
-    $phases = @('start', 'preflight', 'download', 'verify', 'stage', 'detect', 'register', 'login', 'identity', 'finish', 'cleanup')
+    $phases = @('start', 'preflight', 'download', 'verify', 'stage', 'install', 'login', 'identity', 'finish', 'cleanup')
     $outcomes = @('started', 'succeeded', 'failed', 'rejected', 'unavailable', 'skipped', 'pending', 'not_attempted')
-    $errors = @('attempt_id_invalid', 'client_not_detected', 'codex_path_invalid', 'client_probe_failed',
-                'artifact_invalid', 'installation_failed', 'registration_failed', 'login_failed',
+    $errors = @('attempt_id_invalid', 'service_issuer_invalid', 'artifact_invalid', 'installation_failed', 'skill_install_failed', 'login_failed',
                 'identity_verification_failed', 'permission_denied', 'incomplete_install',
                 'unsafe_path', 'diagnostic_failed', 'unknown_error')
     if (-not $script:attemptId -or $Event -cnotin $events -or $Phase -cnotin $phases -or $Outcome -cnotin $outcomes) { return }
@@ -182,10 +177,6 @@ function Write-InstallationDiagnostic([string]$Event, [string]$Phase, [string]$O
     }
 }
 
-function Invoke-HostPreflight([string[]]$Targets) {
-    if ($CodexPath) { throw '[invalid_target] CodexPath is no longer supported; install the official CLI.' }
-}
-
 function Get-InstallationErrorCode([string]$Message, [string]$Fallback = 'installation_failed') {
     if ($Message -match '^\[([a-z][a-z0-9_]+)\]') { return $Matches[1] }
     return $Fallback
@@ -240,19 +231,23 @@ function Invoke-InstallerLauncher([string[]]$Arguments) {
 
 try {
     Resolve-InstallationAttempt
+    try {
+        $selectedIssuer = [Uri]$ServiceIssuer
+        $issuerPath = $selectedIssuer.AbsolutePath
+        if (-not $selectedIssuer.IsAbsoluteUri -or $selectedIssuer.UserInfo -or $selectedIssuer.Query -or $selectedIssuer.Fragment -or
+            $issuerPath -notin @('', '/') -or
+            ($selectedIssuer.Scheme -cne 'https' -and -not ($selectedIssuer.Scheme -ceq 'http' -and $selectedIssuer.IsLoopback))) {
+            throw 'invalid service endpoint'
+        }
+        $ServiceIssuer = $selectedIssuer.GetLeftPart([UriPartial]::Authority).TrimEnd('/')
+    } catch {
+        throw '[service_issuer_invalid] Select one HTTPS FargoWork endpoint or an HTTP loopback endpoint.'
+    }
     $nativeArchitecture = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
     if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT -or
         -not [Environment]::Is64BitOperatingSystem -or $nativeArchitecture -ne 'AMD64') {
         throw 'This trial requires Windows x64. macOS is deferred.'
     }
-    $selectedTargets = @()
-    foreach ($name in ($Target -join ',').Split(',')) {
-        if ($name.Trim().ToLowerInvariant() -notin @('cli')) {
-            throw "Unsupported installation target: $name"
-        }
-        $selectedTargets += $name.Trim().ToLowerInvariant()
-    }
-    Invoke-HostPreflight $selectedTargets
     Write-InstallationDiagnostic 'installation_started' 'start' 'started'
     Write-InstallationDiagnostic 'preflight_result' 'preflight' 'succeeded'
     $script:installationPhase = 'download'
@@ -279,7 +274,7 @@ try {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [IO.Compression.ZipFile]::OpenRead($archivePath)
     try {
-        $expected = @('README.md', 'DATA-AND-SUPPORT.md', 'DEBUG.md', 'install.ps1', 'release-manifest.json', 'SHA256SUMS', 'candidate-manifest.json',
+        $expected = @('README.md', 'DATA-AND-SUPPORT.md', 'DEBUG.md', 'install.ps1', 'release-manifest.json', 'SHA256SUMS',
             "fargowork-cli-v$version-windows-x64.zip", "fargowork-agent-plugin-v$version-windows-x64.zip")
         $seen = @{}
         foreach ($entry in $archive.Entries) {
@@ -296,9 +291,8 @@ try {
     [IO.Compression.ZipFile]::ExtractToDirectory($archivePath, $extractRoot)
     $installer = Join-Path $extractRoot 'install.ps1'
     $arguments = @('-NoProfile', '-File', $installer,
-        '-Version', $version, '-Target', ($Target -join ','), '-ServiceIssuer', $ServiceIssuer,
-        '-LocalArtifactDir', $extractRoot, '-AttemptId', $script:attemptId, '-OutputJsonl')
-    if ($script:resolvedCodexPath) { $arguments += @('-CodexPath', $script:resolvedCodexPath) }
+        '-Version', $version, '-ServiceIssuer', $ServiceIssuer,
+        '-LocalArtifactDir', $extractRoot, '-AttemptId', $script:attemptId)
     if ($Login) { $arguments += @('-Login', '-OpenBrowser', $OpenBrowser) }
     if ($DryRun) { $arguments += '-DryRun' }
     $script:installationPhase = 'stage'

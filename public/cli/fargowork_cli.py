@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
+import copy
 import ctypes
 import ctypes.wintypes
 import errno
@@ -29,6 +30,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
+import zipfile
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -46,9 +48,8 @@ from employee_profile import ProfileError, ProfileStore
 import employee_attachments
 
 
-VERSION = "1.4.0"
+VERSION = "1.4.1"
 MCP_PROTOCOL_VERSION = "2026-07-28"
-AGENT_PLUGINS_SPEC_VERSION = "1.0.0"
 ACTION_RESULT_CONTRACT_VERSION = 1
 MCP_SCOPE = "fargowork:mcp"
 CLIENT_ENVIRONMENT = "employee"
@@ -58,6 +59,13 @@ DEFAULT_RESOURCE_METADATA_URI = ""
 DEFAULT_CLIENT_ID = "fargowork-cli"
 DEFAULT_REDIRECT_URI = "http://127.0.0.1:37680/oauth/callback"
 PLUGIN_NAME = "fargowork-employee"
+SKILL_NAMES = (
+    "fargowork-employee",
+    "fargowork-business-trip",
+    "fargowork-annual-leave",
+    "fargowork-procurement-request",
+    "fargowork-external-expense-request",
+)
 MARKER = "fargowork-owned-v1"
 
 EXIT_OK = 0
@@ -1416,85 +1424,237 @@ def _emit_event(payload: Mapping[str, Any], *, force_json: bool = False, output:
 def _compatibility_contract() -> dict[str, Any]:
     return {
         "mcp_protocol_versions": [MCP_PROTOCOL_VERSION],
-        "agent_plugins_spec": AGENT_PLUGINS_SPEC_VERSION,
         "action_result_contract": ACTION_RESULT_CONTRACT_VERSION,
     }
 
 
 def _canonical_skill_path(config: Config) -> Path:
-    return config.home / "skills" / PLUGIN_NAME
+    return config.home / "skills" / SKILL_NAMES[0]
 
 
-def _prepare_canonical_skill(config: Config) -> None:
-    source = config.plugin_dir / "skills" / PLUGIN_NAME
-    target = _canonical_skill_path(config)
-    _assert_path_within(config.home, target, label="employee Skill")
-    if not source.joinpath("SKILL.md").is_file():
-        raise FargoWorkError("the employee plugin does not contain its core Skill", code="skill_missing", exit_code=EXIT_UNAVAILABLE)
-    if target.exists() and not _owned_path(target):
-        raise FargoWorkError("refusing to overwrite an unowned employee Skill", code="ownership_conflict", exit_code=EXIT_NEEDS_ACTION)
-    _copy_managed_skill(source, target)
+def _canonical_skill_paths(config: Config) -> dict[str, Path]:
+    return {name: config.home / "skills" / name for name in SKILL_NAMES}
 
 
-def _client_trust(clients: Mapping[str, Mapping[str, Any]], target: str) -> bool | str:
-    if target == "cli":
-        return "not_required"
-    if target != "all":
-        return clients.get(target, {}).get("trusted", "unknown")
-    return clients.get("workbuddy", {}).get("trusted", "unknown")
+def _preflight_canonical_skills(config: Config, source_root: Path | None = None) -> dict[str, Any]:
+    package_root = source_root or config.plugin_dir
+    if package_root.exists() or package_root.is_symlink():
+        _assert_safe_tree(package_root, label="employee Skill package")
+    sources = {name: package_root / "skills" / name for name in SKILL_NAMES}
+    targets = _canonical_skill_paths(config)
+    skills_root = config.home / "skills"
+    _assert_path_within(config.home, skills_root, label="employee Skills")
+    if skills_root.exists() or skills_root.is_symlink():
+        _assert_safe_tree(skills_root, label="employee Skills")
+    expected_hashes: dict[str, dict[str, str]] = {}
+    unchanged_unowned: set[str] = set()
+    for name, source in sources.items():
+        if not source.joinpath("SKILL.md").is_file():
+            raise FargoWorkError(f"the employee package is missing Skill {name}", code="skill_missing", exit_code=EXIT_UNAVAILABLE)
+        expected_hashes[name] = _tree_hashes(source)
+        target = targets[name]
+        _assert_path_within(config.home, target, label=f"employee Skill {name}")
+        if not target.exists():
+            continue
+        if _is_link_or_reparse(target) or not target.is_dir():
+            raise FargoWorkError(f"refusing to replace unsafe Skill path {name}", code="unsafe_path", exit_code=EXIT_NEEDS_ACTION)
+        if not _owned_path(target):
+            if expected_hashes[name] != _tree_hashes(target):
+                raise FargoWorkError(f"refusing to overwrite unowned Skill {name}", code="ownership_conflict", exit_code=EXIT_NEEDS_ACTION)
+            unchanged_unowned.add(name)
+            continue
+        current = _tree_hashes(target)
+        try:
+            marker = json.loads((target / ".fargowork-owner").read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            marker = {}
+        baseline = marker.get("source_hashes") if isinstance(marker, dict) else None
+        if current != (baseline if isinstance(baseline, dict) else expected_hashes[name]):
+            raise FargoWorkError(f"installed Skill {name} has local changes; it was preserved", code="modified_skill_preserved", exit_code=EXIT_NEEDS_ACTION)
+    return {
+        "sources": sources,
+        "targets": targets,
+        "skills_root": skills_root,
+        "expected_hashes": expected_hashes,
+        "unchanged_unowned": unchanged_unowned,
+    }
 
 
-def _clients_need_action(
-    clients: Mapping[str, Mapping[str, Any]], *, target: str
-) -> bool:
-    return any(
-        bool(client.get("needs_user_action"))
-        and (target not in {"all", "auto"} or bool(client.get("detected")) or client.get("registered") is True)
-        for client in clients.values()
-    )
+def _finish_canonical_skills(config: Config, transaction: Mapping[str, Any]) -> dict[str, Any]:
+    root = Path(transaction["root"])
+    recovery_archive: Path | None = None
+    try:
+        _assert_path_within(config.home / "skills", root, label="Skill transaction")
+        _assert_safe_tree(root, label="Skill transaction")
+        marker = root / ".fargowork-stage-owner"
+        if marker.read_text(encoding="ascii") != transaction["token"]:
+            raise FargoWorkError("Skill transaction ownership changed", code="unsafe_path", exit_code=EXIT_NEEDS_ACTION)
+        moved = [name for name in transaction.get("moved", ()) if (root / "old" / name).is_dir()]
+        if moved:
+            skills_root = config.home / "skills"
+            token = str(transaction["token"])
+            recovery_archive = skills_root / f".fargowork-recovery-{token}.zip"
+            staging_archive = skills_root / f".fargowork-recovery-{token}.tmp"
+            _assert_path_within(skills_root, recovery_archive, label="Skill recovery archive")
+            _assert_path_within(skills_root, staging_archive, label="Skill recovery staging archive")
+            if any(path.exists() or path.is_symlink() for path in (recovery_archive, staging_archive)):
+                raise FargoWorkError("Skill recovery archive path already exists", code="unsafe_path", exit_code=EXIT_NEEDS_ACTION)
+            try:
+                with zipfile.ZipFile(staging_archive, mode="x", compression=zipfile.ZIP_DEFLATED) as archive:
+                    for name in moved:
+                        backup = root / "old" / name
+                        _assert_safe_tree(backup, label=f"previous employee Skill {name}")
+                        for path in sorted(backup.rglob("*")):
+                            relative = path.relative_to(root / "old").as_posix()
+                            archive.write(path, relative + ("/" if path.is_dir() else ""))
+                with zipfile.ZipFile(staging_archive, mode="r") as archive:
+                    if archive.testzip() is not None:
+                        raise OSError("Skill recovery archive verification failed")
+                # Link creation is atomic and refuses to replace an existing path.
+                os.link(staging_archive, recovery_archive)
+                staging_archive.unlink()
+            except BaseException:
+                staging_archive.unlink(missing_ok=True)
+                raise
+        shutil.rmtree(root)
+    except (OSError, FargoWorkError, zipfile.BadZipFile):
+        return {
+            "skill_cleanup_pending": True,
+            "skill_recovery_path": str(recovery_archive if recovery_archive and recovery_archive.exists() else root),
+        }
+    if recovery_archive is not None:
+        try:
+            # Unlink is atomic: a failed cleanup leaves the complete recovery archive.
+            recovery_archive.unlink()
+        except OSError:
+            return {"skill_cleanup_pending": True, "skill_recovery_path": str(recovery_archive)}
+    return {}
 
 
-def _registration_failed(clients: Mapping[str, Mapping[str, Any]], target: str) -> bool:
-    return target not in {"manual", "cli"} and any(
-        client.get("registered") is not True and (
-            bool(client.get("detected")) or target not in {"all", "auto"}
-        ) for client in clients.values()
-    )
+def _rollback_canonical_skills(config: Config, transaction: Mapping[str, Any]) -> None:
+    root = Path(transaction["root"])
+    _assert_path_within(config.home / "skills", root, label="Skill transaction")
+    _assert_safe_tree(root, label="Skill transaction")
+    marker = root / ".fargowork-stage-owner"
+    if marker.is_file():
+        if marker.read_text(encoding="ascii") != transaction["token"]:
+            raise FargoWorkError("Skill recovery directory ownership changed", code="unsafe_path", exit_code=EXIT_NEEDS_ACTION)
+    elif any(root.iterdir()):
+        raise FargoWorkError("Skill recovery directory is unverified and was preserved", code="install_failed_recovery_required", exit_code=EXIT_UNAVAILABLE)
+    else:
+        shutil.rmtree(root)
+        return
+
+    targets = _canonical_skill_paths(config)
+    expected_hashes = transaction["expected_hashes"]
+    for name in reversed(transaction["installed"]):
+        target = targets[name]
+        if target.exists():
+            _assert_path_within(config.home, target, label=f"employee Skill {name}")
+            _assert_safe_tree(target, label=f"new employee Skill {name}")
+            if not _owned_path(target) or _tree_hashes(target) != expected_hashes[name]:
+                raise FargoWorkError(f"new employee Skill {name} changed before rollback and was preserved", code="install_failed_recovery_required", exit_code=EXIT_UNAVAILABLE)
+            shutil.rmtree(target)
+    for name in reversed(transaction["moved"]):
+        backup = root / "old" / name
+        target = targets[name]
+        if backup.exists():
+            _assert_safe_tree(backup, label=f"previous employee Skill {name}")
+            if not _owned_path(backup) or target.exists():
+                raise FargoWorkError(f"previous employee Skill {name} could not be restored safely", code="install_failed_recovery_required", exit_code=EXIT_UNAVAILABLE)
+            os.replace(backup, target)
+    _finish_canonical_skills(config, transaction)
+
+
+def _prepare_canonical_skills(
+    config: Config,
+    *,
+    source_root: Path | None = None,
+    defer_cleanup: bool = False,
+) -> dict[str, Any]:
+    plan = _preflight_canonical_skills(config, source_root)
+    sources = plan["sources"]
+    targets = plan["targets"]
+    skills_root = plan["skills_root"]
+    expected_hashes = plan["expected_hashes"]
+    unchanged_unowned = plan["unchanged_unowned"]
+    skills_root.mkdir(parents=True, exist_ok=True)
+    _assert_safe_tree(skills_root, label="employee Skills")
+    transaction = Path(tempfile.mkdtemp(prefix=".fargowork-skills-", dir=str(skills_root)))
+    transaction_token = secrets.token_hex(16)
+    moved: list[str] = []
+    installed: list[str] = []
+    state: dict[str, Any] = {
+        "root": transaction,
+        "token": transaction_token,
+        "moved": moved,
+        "installed": installed,
+        "expected_hashes": expected_hashes,
+    }
+    try:
+        _assert_path_within(skills_root, transaction, label="Skill transaction")
+        _assert_safe_tree(transaction, label="Skill transaction")
+        (transaction / ".fargowork-stage-owner").write_text(transaction_token, encoding="ascii")
+        staged_root = transaction / "new"
+        backup_root = transaction / "old"
+        staged_root.mkdir()
+        backup_root.mkdir()
+        for name, source in sources.items():
+            _copy_tree_atomic(source, staged_root / name, owner_metadata={"source_hashes": expected_hashes[name]})
+            if _tree_hashes(staged_root / name) != expected_hashes[name]:
+                raise FargoWorkError(f"employee Skill {name} changed while it was being staged", code="skill_package_changed", exit_code=EXIT_UNAVAILABLE)
+        current_plan = _preflight_canonical_skills(config, source_root)
+        if current_plan["expected_hashes"] != expected_hashes:
+            raise FargoWorkError("employee Skill package changed during installation", code="skill_package_changed", exit_code=EXIT_UNAVAILABLE)
+        unchanged_unowned = current_plan["unchanged_unowned"]
+        for name in SKILL_NAMES:
+            target = targets[name]
+            if name in unchanged_unowned:
+                continue
+            if target.exists():
+                os.replace(target, backup_root / name)
+                moved.append(name)
+            os.replace(staged_root / name, target)
+            installed.append(name)
+    except BaseException:
+        try:
+            _rollback_canonical_skills(config, state)
+        except BaseException as rollback_error:
+            raise FargoWorkError("Skill installation failed and prior files were retained in the recovery directory", code="install_failed_recovery_required", exit_code=EXIT_UNAVAILABLE) from rollback_error
+        raise
+    if defer_cleanup:
+        return state
+    return _finish_canonical_skills(config, state)
+
+
+def _installed_skills(config: Config) -> dict[str, bool]:
+    return {name: (path / "SKILL.md").is_file() for name, path in _canonical_skill_paths(config).items()}
+
+
+def _employee_cli_executable(config: Config) -> Path:
+    return config.home / "bin" / ("fargowork.exe" if platform.system() == "Windows" else "fargowork")
 
 
 def _status_payload(
     config: Config,
     *,
-    clients: dict[str, Any],
-    target: str = "cli",
     connected: bool | None = None,
     identity: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    plugin_ready = (config.plugin_dir / "plugin.json").is_file()
-    if target == "cli":
-        executable = config.home / "bin" / ("fargowork.exe" if platform.system() == "Windows" else "fargowork")
-        plugin_ready = executable.is_file() and (_canonical_skill_path(config) / "SKILL.md").is_file()
-    needs_action = (
-        target == "manual"
-        or not plugin_ready
-        or connected is not True
-        or _clients_need_action(clients, target=target)
-    )
+    skills = _installed_skills(config)
+    installed = _employee_cli_executable(config).is_file() and all(skills.values())
+    needs_action = not installed or connected is not True
     payload = {
         "event": "status",
-        "status": ("ready" if not needs_action else "needs_user_action") if target == "cli" and plugin_ready else "ok" if plugin_ready else "not_installed",
-        "target": target,
+        "status": "ready" if not needs_action else "needs_user_action" if installed else "not_installed",
         "version": VERSION,
         "compatibility": _compatibility_contract(),
-        "installed": plugin_ready,
+        "installed": installed,
         "connected": connected,
         "identity_verified": connected is True and identity is not None,
-        "mutation_may_have_happened": any(bool(client.get("mutation_may_have_happened")) for client in clients.values()),
-        "trusted": _client_trust(clients, target),
         "needs_user_action": needs_action,
         "config": {
             "home": str(config.home),
-            "plugin_dir": str(config.plugin_dir),
             "environment": config.environment,
             "issuer": config.issuer,
             "resource": config.resource,
@@ -1502,12 +1662,12 @@ def _status_payload(
             "client_id": config.client_id,
             "scope": config.scope,
         },
-        "clients": clients,
+        "skills": skills,
+        "skill_paths": {name: str(path / "SKILL.md") for name, path in _canonical_skill_paths(config).items()},
         "skill_path": str(_canonical_skill_path(config) / "SKILL.md"),
+        "connection_mode": "official_cli",
     }
-    if target == "cli":
-        payload.update(connection_mode="cli", mcp_registration_required=False,
-                       business_cli_available=plugin_ready, tool_capability="not_checked")
+    payload.update(business_cli_available=installed, tool_capability="not_checked")
     if identity:
         payload["identity"] = identity
     return payload
@@ -1528,6 +1688,29 @@ def _explicit_codex_path(value: str) -> str:
     if _is_link_or_reparse(path) or not path.is_file():
         raise FargoWorkError("The specified Codex executable is unavailable; supply its current path. No alternate executable was guessed.", code="client_not_detected", exit_code=EXIT_NEEDS_ACTION)
     return str(path.absolute())
+
+
+def _snapshot_install_config(config: Config) -> dict[str, Any]:
+    path = config.home / "config.json"
+    _assert_path_within(config.home, path, label="employee configuration")
+    if path.exists() or path.is_symlink():
+        if _is_link_or_reparse(path) or not path.is_file():
+            raise FargoWorkError("employee configuration path is unsafe", code="unsafe_path", exit_code=EXIT_NEEDS_ACTION)
+        return {"path": path, "existed": True, "content": path.read_bytes()}
+    return {"path": path, "existed": False, "content": None}
+
+
+def _restore_install_config(snapshot: Mapping[str, Any]) -> None:
+    path = Path(snapshot["path"])
+    if snapshot["existed"]:
+        if path.exists() and (_is_link_or_reparse(path) or not path.is_file()):
+            raise FargoWorkError("previous employee configuration could not be restored safely", code="install_failed_recovery_required", exit_code=EXIT_UNAVAILABLE)
+        _atomic_write(path, snapshot["content"])
+        return
+    if path.exists() or path.is_symlink():
+        if _is_link_or_reparse(path) or not path.is_file():
+            raise FargoWorkError("new employee configuration could not be removed safely", code="install_failed_recovery_required", exit_code=EXIT_UNAVAILABLE)
+        path.unlink()
 
 
 def _owned_path(path: Path) -> bool:
@@ -1594,14 +1777,6 @@ def _assert_safe_tree(root: Path, *, label: str) -> None:
                 raise FargoWorkError(f"{label} contains a path escape", code="unsafe_path", exit_code=EXIT_USAGE) from exc
 
 
-def _remove_owned_tree(base: Path, target: Path, *, label: str) -> None:
-    _assert_path_within(base, target, label=label)
-    _assert_safe_tree(target, label=label)
-    if not target.is_dir() or not _owned_path(target):
-        raise FargoWorkError(f"refusing to remove an unowned {label}", code="ownership_conflict", exit_code=EXIT_NEEDS_ACTION)
-    shutil.rmtree(target)
-
-
 def _copy_tree_atomic(source: Path, target: Path, *, owner_metadata: dict[str, Any] | None = None) -> None:
     if not source.is_dir():
         raise FargoWorkError(f"plugin source directory is missing: {source}", code="plugin_missing", exit_code=EXIT_UNAVAILABLE)
@@ -1649,32 +1824,6 @@ def _tree_hashes(root: Path) -> dict[str, str]:
             continue
         hashes[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
     return hashes
-
-
-def _copy_managed_skill(source: Path, target: Path) -> None:
-    expected = _tree_hashes(source)
-    if target.exists():
-        if not _owned_path(target):
-            raise FargoWorkError("refusing to overwrite an unowned Skill", code="ownership_conflict", exit_code=EXIT_NEEDS_ACTION)
-        current = _tree_hashes(target)
-        try:
-            marker = json.loads((target / ".fargowork-owner").read_text(encoding="utf-8"))
-        except (OSError, ValueError, json.JSONDecodeError):
-            marker = {}
-        baseline = marker.get("source_hashes") if isinstance(marker, dict) else None
-        if current != (baseline if isinstance(baseline, dict) else expected):
-            raise FargoWorkError("the installed Skill contains local changes; it was preserved", code="modified_skill_preserved", exit_code=EXIT_NEEDS_ACTION)
-    _copy_tree_atomic(source, target, owner_metadata={"source_hashes": expected})
-
-
-def _adopt_identical_tree(source: Path, target: Path) -> bool:
-    """Adopt an exact prior FargoWork copy without overwriting foreign content."""
-    if not target.is_dir() or _owned_path(target):
-        return _owned_path(target)
-    if _tree_hashes(source) != _tree_hashes(target):
-        return False
-    (target / ".fargowork-owner").write_text(MARKER + "\n", encoding="utf-8")
-    return True
 
 
 class LegacyBridgeMigration:
@@ -2022,34 +2171,6 @@ class LegacyBridgeMigration:
         return results
 
 
-class ClientAdapters:
-    """CLI and canonical Skill installation, with bounded legacy cleanup only."""
-
-    def __init__(self, config: Config, registration_mode: str | None = None):
-        self.config = config
-
-    def selected(self, target: str = "cli") -> dict[str, Any]:
-        if target != "cli":
-            raise FargoWorkError("Only the official CLI is supported", code="invalid_target", exit_code=EXIT_USAGE)
-        return {"cli": {"detected": True, "registered": False, "registration": "cli-no-mcp",
-                        "trusted": "not_required", "needs_user_action": False,
-                        "skill_path": str(_canonical_skill_path(self.config) / "SKILL.md")}}
-
-    def register(self, target: str = "cli") -> dict[str, Any]:
-        result = self.selected(target)
-        migration = LegacyBridgeMigration(self.config).migrate()
-        result["cli"]["legacy_migration"] = migration
-        result["cli"]["needs_user_action"] = any(item.get("needs_user_action") for item in migration.values())
-        return result
-
-    def uninstall(self, target: str = "cli") -> dict[str, Any]:
-        self.selected(target)
-        migration = LegacyBridgeMigration(self.config).migrate()
-        return {"cli": {"uninstalled": False, "needs_user_action": any(item.get("needs_user_action") for item in migration.values()),
-                        "reason": "Credentials and employee preferences were preserved; use logout to clear this device login.",
-                        "legacy_migration": migration}}
-
-
 def _prepare_plugin(config: Config, source: Path | None = None) -> None:
     _assert_path_within(config.home, config.plugin_dir, label="plugin directory")
     source_value = os.environ.get("FARGOWORK_SOURCE_PLUGIN") if CLIENT_ENVIRONMENT == "development" else None
@@ -2065,13 +2186,10 @@ def _prepare_plugin(config: Config, source: Path | None = None) -> None:
         marker.write_text(MARKER + "\n", encoding="utf-8")
 
 
-def _doctor(config: Config, *, target: str = "cli") -> dict[str, Any]:
-    adapters = ClientAdapters(config)
-    clients = adapters.selected(target)
-    plugin_ready = (config.plugin_dir / "plugin.json").is_file()
-    if target == "cli":
-        executable = config.home / "bin" / ("fargowork.exe" if platform.system() == "Windows" else "fargowork")
-        plugin_ready = executable.is_file() and (_canonical_skill_path(config) / "SKILL.md").is_file()
+def _doctor(config: Config) -> dict[str, Any]:
+    skills = _installed_skills(config)
+    executable_ready = _employee_cli_executable(config).is_file()
+    installed = executable_ready and all(skills.values())
     vault_present = False
     vault_error = None
     configured = bool(config.issuer and config.resource and config.resource_metadata_uri)
@@ -2083,43 +2201,36 @@ def _doctor(config: Config, *, target: str = "cli") -> dict[str, Any]:
     checks = {
         "config": "ok" if configured else "missing_service_issuer",
         "environment": config.environment,
-        "plugin": "ok" if plugin_ready else "missing",
+        "cli": "ok" if executable_ready else "missing",
+        "skills": "ok" if all(skills.values()) else "incomplete",
         "secure_vault": "ok" if vault_error is None else "error",
         "refresh_credential": "present" if vault_present else "missing",
         "issuer": config.issuer,
         "resource": config.resource,
-        "client_registration": {
-            name: client.get("registration", "unknown") for name, client in clients.items()
-        },
         "identity": "not_checked",
     }
-    if "workbuddy" in clients:
-        checks["workbuddy_trust"] = clients["workbuddy"]["trusted"]
     needs_action = (
-        target == "manual"
-        or not configured
-        or not plugin_ready
+        not configured
+        or not installed
         or vault_error is not None
         or not vault_present
-        or _clients_need_action(clients, target=target)
     )
     payload = {
         "event": "doctor",
         "status": "needs_user_action" if needs_action else "ready",
-        "target": target,
-        "installed": plugin_ready,
+        "installed": installed,
         "connected": None,
         "identity_verified": False,
-        "trusted": _client_trust(clients, target),
         "needs_user_action": needs_action,
         "checks": checks,
-        "clients": clients,
+        "skills": skills,
+        "skill_paths": {name: str(path / "SKILL.md") for name, path in _canonical_skill_paths(config).items()},
         "compatibility": _compatibility_contract(),
         "skill_path": str(_canonical_skill_path(config) / "SKILL.md"),
+        "connection_mode": "official_cli",
+        "business_cli_available": installed,
+        "tool_capability": "not_checked",
     }
-    if target == "cli":
-        payload.update(connection_mode="cli", mcp_registration_required=False,
-                       business_cli_available=plugin_ready, tool_capability="not_checked")
     return payload
 
 
@@ -2139,24 +2250,16 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", choices=("human", "jsonl"), default="human")
     parser.add_argument("--version", action="version", version=VERSION)
     sub = parser.add_subparsers(dest="command", required=True)
-    client_targets = ("cli",)
-    default_target = "cli"
-    registration_modes = ("auto", "official") if CLIENT_ENVIRONMENT == "employee" else ("auto", "official", "fixture")
 
-    install = sub.add_parser("install", help="prepare the official CLI and employee Skill")
-    install.add_argument("--target", choices=client_targets, default=default_target)
+    install = sub.add_parser("install", help="prepare the official CLI and employee Skills")
     if CLIENT_ENVIRONMENT == "development":
         install.add_argument("--source-plugin", type=Path)
     install.add_argument("--issuer")
-    install.add_argument("--resource")
-    install.add_argument("--resource-metadata-uri")
-    install.add_argument("--redirect-uri")
     install.add_argument("--output", choices=("human", "jsonl"), default="human")
     install.add_argument("--attempt-id")
 
-    for name in ("doctor", "repair", "uninstall", "status", "logout"):
+    for name in ("doctor", "repair", "status", "logout"):
         command = sub.add_parser(name, help=f"{name} FargoWork")
-        command.add_argument("--target", choices=client_targets, default=default_target)
         command.add_argument("--output", choices=("human", "jsonl"), default="human")
         command.add_argument("--attempt-id")
 
@@ -2195,7 +2298,7 @@ def _build_parser() -> argparse.ArgumentParser:
     diagnostics.add_argument("--destination", type=Path)
     diagnostics.add_argument("--output", choices=("human", "jsonl"), default="human")
 
-    tools = sub.add_parser("tools", help="discover/call Server-published employee tools without host MCP registration")
+    tools = sub.add_parser("tools", help="discover or call employee tools from the selected FargoWork service")
     actions = tools.add_subparsers(dest="tools_action", required=True)
     for name in ("list", "call"):
         command = actions.add_parser(name, help="list public tools and input schemas" if name == "list" else "call one published tool once; submission requires prior user confirmation")
@@ -2204,7 +2307,7 @@ def _build_parser() -> argparse.ArgumentParser:
             inputs = command.add_mutually_exclusive_group()
             inputs.add_argument("--input-file", type=Path, help="UTF-8 JSON arguments object from a regular file (max 64 KiB)")
             inputs.add_argument("--input-json", help="literal JSON arguments object; prefer stdin/input-file to avoid shell quoting")
-            command.description = "Send one JSON arguments object. With no input flag read stdin; empty/interactive stdin means {}. No automatic login, business retry, endpoint override or Bearer parameter. A completed call is not submission success; inspect the public result."
+        command.description = "Send one JSON arguments object to the selected service endpoint. With no input flag read stdin; empty/interactive stdin means {}. No automatic login, business retry, endpoint override or Bearer parameter. A completed call is not submission success; inspect the public result."
         command.add_argument("--attempt-id", help="optional canonical UUID for payload-free diagnostics")
         command.add_argument("--output", choices=("jsonl", "json"), default="jsonl", help="one final JSON object; no progress on stdout")
     employee_attachments.add_parser(sub)
@@ -2222,20 +2325,80 @@ def _config_from_install(config: Config, args: argparse.Namespace) -> Config:
             raise FargoWorkError("employee service issuer must use HTTPS", code="invalid_config", exit_code=EXIT_USAGE)
     expected_resource = f"{config.issuer}/mcp"
     expected_metadata = f"{config.issuer}/.well-known/oauth-protected-resource"
-    supplied_resource = getattr(args, "resource", None)
-    supplied_metadata = getattr(args, "resource_metadata_uri", None)
-    if supplied_resource and supplied_resource.rstrip("/") != expected_resource:
-        raise FargoWorkError("resource must be derived from the configured issuer", code="invalid_config", exit_code=EXIT_USAGE)
-    if supplied_metadata and supplied_metadata.rstrip("/") != expected_metadata:
-        raise FargoWorkError("metadata URI must be derived from the configured issuer", code="invalid_config", exit_code=EXIT_USAGE)
     config.resource = _validate_endpoint("resource", expected_resource)
     config.resource_metadata_uri = _validate_endpoint("resource_metadata_uri", expected_metadata)
-    redirect_value = getattr(args, "redirect_uri", None) or DEFAULT_REDIRECT_URI
-    if redirect_value != DEFAULT_REDIRECT_URI:
-        raise FargoWorkError("redirect_uri must use the fixed FargoWork loopback callback", code="invalid_config", exit_code=EXIT_USAGE)
     config.redirect_uri = _validate_redirect(DEFAULT_REDIRECT_URI)
     config.environment = CLIENT_ENVIRONMENT
     return config
+
+
+def _install_source_plugin(config: Config, args: argparse.Namespace) -> Path | None:
+    source = getattr(args, "source_plugin", None)
+    if source is None and CLIENT_ENVIRONMENT == "development":
+        value = os.environ.get("FARGOWORK_SOURCE_PLUGIN")
+        if value:
+            source = Path(value).expanduser()
+    if source is not None:
+        source = Path(source).expanduser()
+        if not source.is_dir():
+            raise FargoWorkError("employee Skill package directory is missing", code="plugin_missing", exit_code=EXIT_UNAVAILABLE)
+        return source
+    return None
+
+
+def _run_install(config: Config, args: argparse.Namespace, *, output: str) -> int:
+    config_snapshot = _snapshot_install_config(config)
+    install_config = copy.deepcopy(config)
+    _config_from_install(install_config, args)
+    source_plugin = _install_source_plugin(install_config, args)
+    source_root = source_plugin or install_config.plugin_dir
+    _preflight_canonical_skills(install_config, source_root)
+
+    _prepare_plugin(install_config, source_plugin)
+    skill_transaction: dict[str, Any] | None = None
+    try:
+        skill_transaction = _prepare_canonical_skills(
+            install_config, source_root=source_root, defer_cleanup=True
+        )
+        install_config.save()
+        payload = _status_payload(install_config, connected=None)
+        legacy_migration = LegacyBridgeMigration(install_config).migrate()
+        payload["event"] = "installed"
+        payload["legacy_migration"] = legacy_migration
+        payload["legacy_connection_review_required"] = any(
+            item.get("needs_user_action") for item in legacy_migration.values()
+        )
+        if payload["legacy_connection_review_required"]:
+            payload["needs_user_action"] = True
+            payload["status"] = "needs_user_action"
+            payload["message"] = "FargoWork is installed. An old unverified FargoWork connection was preserved for review."
+        else:
+            payload["message"] = "FargoWork is installed for the selected service endpoint. Sign in to continue."
+    except BaseException as install_error:
+        rollback_error: BaseException | None = None
+        if skill_transaction is not None:
+            try:
+                _rollback_canonical_skills(install_config, skill_transaction)
+            except BaseException as exc:
+                rollback_error = exc
+        try:
+            _restore_install_config(config_snapshot)
+        except BaseException as exc:
+            rollback_error = rollback_error or exc
+        if rollback_error is not None:
+            raise FargoWorkError(
+                "FargoWork install failed and automatic rollback could not be confirmed; recovery material was preserved.",
+                code="install_failed_recovery_required",
+                exit_code=EXIT_UNAVAILABLE,
+            ) from rollback_error
+        raise install_error
+
+    cleanup = _finish_canonical_skills(install_config, skill_transaction)
+    payload.update(cleanup)
+    if cleanup.get("skill_cleanup_pending"):
+        payload["message"] += f" Previous Skill copies remain in recovery material: {cleanup['skill_recovery_path']}"
+    _emit_event(payload, output=output)
+    return EXIT_OK
 
 
 def _require_configured(config: Config) -> None:
@@ -2289,9 +2452,6 @@ def _run_main(args: argparse.Namespace, holder: dict[str, Any]) -> int:
                           automatic_retry_allowed=False, **client.trace())
             _emit_business_result(result)
             return EXIT_OK
-        if getattr(args, "codex_path", None):
-            config.codex_path = _explicit_codex_path(args.codex_path)
-        adapters = ClientAdapters(config, registration_mode=getattr(args, "registration_mode", "auto"))
         if args.command == "version":
             _emit_event(
                 {
@@ -2304,54 +2464,42 @@ def _run_main(args: argparse.Namespace, holder: dict[str, Any]) -> int:
             )
             return EXIT_OK
         if args.command == "install":
-            config = _config_from_install(config, args)
-            config.save()
-            _prepare_plugin(config, getattr(args, "source_plugin", None))
-            _prepare_canonical_skill(config)
-            clients = adapters.register(args.target)
-            payload = _status_payload(
-                config,
-                clients=clients,
-                target=args.target,
-                connected=None,
-            )
-            payload["event"] = "installed"
-            payload["message"] = (
-                "Employee files prepared for the official business CLI; host MCP registration is not required."
-                if args.target == "cli" else
-                "Employee files prepared; the requested client was not registered."
-                if _registration_failed(clients, args.target)
-                else "Employee files prepared; sign in and complete any client approval shown in the status."
-            )
-            _emit_event(payload, output=output)
-            return EXIT_NEEDS_ACTION if _registration_failed(clients, args.target) else EXIT_OK
+            return _run_install(config, args, output=output)
         if args.command == "doctor":
-            payload = _doctor(config, target=args.target)
+            payload = _doctor(config)
             _emit_event(payload, output=output)
             return EXIT_NEEDS_ACTION if payload["status"] == "needs_user_action" else EXIT_OK
         if args.command == "repair":
-            if getattr(args, "codex_path", None):
-                config.save()
             _prepare_plugin(config)
-            _prepare_canonical_skill(config)
-            clients = adapters.register(args.target)
-            payload = _status_payload(config, clients=clients, target=args.target, connected=None)
+            skill_cleanup = _prepare_canonical_skills(config)
+            legacy_migration = LegacyBridgeMigration(config).migrate()
+            payload = _status_payload(config, connected=None)
             payload["event"] = "repaired"
-            _emit_event(payload, output=output)
-            return EXIT_NEEDS_ACTION if _registration_failed(clients, args.target) else EXIT_OK
-        if args.command == "uninstall":
-            results = adapters.uninstall(args.target)
-            if args.target == "all" and config.environment == "development" and not any(item.get("needs_user_action") for item in results.values()):
-                try:
-                    config.secure_vault().delete()
-                except VaultError:
-                    pass
-                plugin_marker = config.plugin_dir / ".fargowork-owner"
-                if plugin_marker.exists() or plugin_marker.is_symlink() or config.plugin_dir.is_symlink():
-                    _remove_owned_tree(config.home, config.plugin_dir, label="FargoWork plugin")
-            payload = {"event": "uninstalled", "installed": config.plugin_dir.exists(), "connected": False, "trusted": "unknown", "needs_user_action": any(item.get("needs_user_action") for item in results.values()), "clients": results}
+            payload.update(skill_cleanup)
+            payload["legacy_migration"] = legacy_migration
+            payload["legacy_connection_review_required"] = any(
+                item.get("needs_user_action") for item in legacy_migration.values()
+            )
+            if payload["legacy_connection_review_required"]:
+                payload["needs_user_action"] = True
+                payload["status"] = "needs_user_action"
             _emit_event(payload, output=output)
             return EXIT_OK
+        if args.command == "status":
+            _require_configured(config)
+            session = TokenSession(config)
+            try:
+                identity = session.me()
+                connected = True
+            except FargoWorkError:
+                identity = None
+                connected = False
+            payload = _status_payload(config, connected=connected, identity=identity)
+            if identity is not None:
+                payload["profile"] = _current_profile(config, identity)
+                payload["profile_pending_reset"] = payload["profile"].get("reset_prompt_pending") is True
+            _emit_event(payload, output=output)
+            return EXIT_NEEDS_ACTION if payload["needs_user_action"] else EXIT_OK
         if args.command == "login":
             _require_configured(config)
             session = TokenSession(config)
@@ -2376,28 +2524,6 @@ def _run_main(args: argparse.Namespace, holder: dict[str, Any]) -> int:
             _emit_event({"event": "logged_out", "connected": False, "message": "current device credentials cleared",
                          "attachment_logout": attachment_logout, **logout_status}, output=output)
             return EXIT_OK
-        if args.command == "status":
-            _require_configured(config)
-            session = TokenSession(config)
-            try:
-                identity = session.me()
-                connected = True
-            except FargoWorkError:
-                identity = None
-                connected = False
-            clients = adapters.selected(args.target)
-            payload = _status_payload(
-                config,
-                clients=clients,
-                target=args.target,
-                connected=connected,
-                identity=identity,
-            )
-            if identity is not None:
-                payload["profile"] = _current_profile(config, identity)
-                payload["profile_pending_reset"] = payload["profile"].get("reset_prompt_pending") is True
-            _emit_event(payload, output=output)
-            return EXIT_NEEDS_ACTION if payload["needs_user_action"] else EXIT_OK
         if args.command == "update":
             payload = {"event": "update_unavailable", "status": "unavailable", "available": False, "reason": "No public FargoWork Release base URL is configured for this installation."}
             _emit_event(payload, output=output)

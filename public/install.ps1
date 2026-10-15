@@ -1,7 +1,6 @@
 [CmdletBinding()]
 param(
-    [string[]]$Target = @('cli'),
-    [string]$Version = '1.4.0',
+    [string]$Version = '1.4.1',
     [string]$ServiceIssuer,
     [string]$LocalArtifactDir,
     [string]$ReleaseBaseUrl,
@@ -9,8 +8,6 @@ param(
     [ValidateSet('auto', 'always', 'never')]
     [string]$OpenBrowser = 'auto',
     [switch]$DryRun,
-    [switch]$OutputJsonl,
-    [string]$CodexPath,
     [string]$AttemptId
 )
 
@@ -84,12 +81,11 @@ public static class FargoWorkDiagnosticFileInfo {
 function Write-InstallationDiagnostic([string]$Event, [string]$Phase, [string]$Outcome,
                                       [string]$ErrorCode = '', [int]$ExitCode = -9999) {
     $events = @('installation_started', 'preflight_result', 'package_verified', 'files_staged',
-                'client_detection_result', 'client_registration_result', 'installation_finished',
+                'skill_install_result', 'installation_finished',
                 'launcher_started', 'launcher_finished')
-    $phases = @('start', 'preflight', 'download', 'verify', 'stage', 'detect', 'register', 'login', 'identity', 'finish', 'cleanup')
+    $phases = @('start', 'preflight', 'download', 'verify', 'stage', 'install', 'login', 'identity', 'finish', 'cleanup')
     $outcomes = @('started', 'succeeded', 'failed', 'rejected', 'unavailable', 'skipped', 'pending', 'not_attempted')
-    $errors = @('attempt_id_invalid', 'client_not_detected', 'codex_path_invalid', 'client_probe_failed',
-                'artifact_invalid', 'installation_failed', 'registration_failed', 'login_failed',
+    $errors = @('attempt_id_invalid', 'service_issuer_invalid', 'artifact_invalid', 'installation_failed', 'skill_install_failed', 'login_failed',
                 'identity_verification_failed', 'permission_denied', 'incomplete_install',
                 'unsafe_path', 'diagnostic_failed', 'unknown_error')
     if (-not $script:attemptId -or $Event -cnotin $events -or $Phase -cnotin $phases -or $Outcome -cnotin $outcomes) { return }
@@ -171,13 +167,19 @@ function Write-InstallationDiagnostic([string]$Event, [string]$Phase, [string]$O
     }
 }
 
-function Invoke-HostPreflight([string[]]$Targets) {
-    if ($CodexPath) { throw '[invalid_target] CodexPath is no longer supported; install the official CLI.' }
-}
-
 function Get-InstallationErrorCode([string]$Message, [string]$Fallback = 'installation_failed') {
     if ($Message -match '^\[([a-z][a-z0-9_]+)\]') { return $Matches[1] }
     return $Fallback
+}
+
+function Resolve-ServiceIssuer([string]$Value) {
+    if (-not $Value -or $Value -match '[\s\\]') { throw '[service_issuer_invalid] Select one HTTPS FargoWork endpoint or an HTTP loopback endpoint.' }
+    try { $uri = [Uri]$Value } catch { throw '[service_issuer_invalid] Select one HTTPS FargoWork endpoint or an HTTP loopback endpoint.' }
+    if (-not $uri.IsAbsoluteUri -or $uri.UserInfo -or $uri.Query -or $uri.Fragment -or $uri.AbsolutePath -notin @('', '/') -or
+        ($uri.Scheme -cne 'https' -and -not ($uri.Scheme -ceq 'http' -and $uri.IsLoopback))) {
+        throw '[service_issuer_invalid] Select one HTTPS FargoWork endpoint or an HTTP loopback endpoint.'
+    }
+    return $uri.GetLeftPart([UriPartial]::Authority).TrimEnd('/')
 }
 
 function Emit-Result([hashtable]$Payload) {
@@ -187,20 +189,6 @@ function Emit-Result([hashtable]$Payload) {
     # One terminal machine-readable result is the default contract. Support
     # diagnostics remain in the bounded log rather than becoming an Agent report.
     $Payload | ConvertTo-Json -Compress -Depth 10
-}
-
-function Resolve-Targets([string[]]$Values) {
-    $allowed = @('cli')
-    $selected = [System.Collections.Generic.List[string]]::new()
-    foreach ($value in $Values) {
-        foreach ($part in $value.Split(',')) {
-            $name = $part.Trim().ToLowerInvariant()
-            if ($name -notin $allowed) { throw "Unsupported FargoWork target: $name. Only cli is supported." }
-            if (-not $selected.Contains($name)) { $selected.Add($name) }
-        }
-    }
-    if ($selected.Count -eq 0) { throw 'At least one FargoWork target is required.' }
-    return $selected.ToArray()
 }
 
 function Invoke-EmployeeCli([string]$Exe, [string[]]$Arguments) {
@@ -240,81 +228,30 @@ function Invoke-EmployeeCli([string]$Exe, [string[]]$Arguments) {
     return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Payload = $capture.payload }
 }
 
-function Get-SafeClientFailure([object]$Payload, [string]$Target, [string]$Phase, [int]$ExitCode) {
-    $reason = $null
-    $client = if ($Payload.clients) { $Payload.clients.$Target } else { $null }
-    $fixedReasons = @(
-        'Codex is not installed; skipped.', 'Cursor is not installed; skipped.', 'WorkBuddy is not installed; skipped.',
-        'Claude Code is not installed; skipped.', 'existing non-FargoWork entry preserved',
-        'Import the stdio MCP entry and the employee Skill in your client; client registration and trust were not inspected.',
-        'MCP is registered; WorkBuddy UI trust/enable is still required.',
-        'MCP configuration is verified; Cursor runtime connection and UI trust were not checked.',
-        'User-scope MCP configuration is verified; Claude Code runtime connection and approvals were not checked.',
-        'Configured Codex executable is unavailable; use --codex-path with the current path. No alternate executable was guessed.',
-        'CodeBuddy MCP status could not be read; no registration was attempted.',
-        'CodeBuddy already has a FargoWork-named MCP entry not owned by this installation; it was preserved.',
-        'CodeBuddy user-scope MCP registration failed; retry repair.',
-        'CodeBuddy did not report the expected user-scope FargoWork command after registration; ownership was not recorded.',
-        'Cursor has a same-name MCP entry without matching FargoWork ownership; it was preserved.',
-        'Claude Code has a same-name entry without matching FargoWork ownership; it was preserved.',
-        'Codex MCP configuration could not be verified; no registration was attempted.',
-        'Codex already has a same-name MCP entry that is not an exact FargoWork-owned registration; it was preserved.',
-        'Codex official registration command failed; inspect Codex configuration and retry.',
-        'Codex official registration could not be confirmed; no ownership was recorded.',
-        'Codex did not report the exact FargoWork command, arguments, and environment after registration; ownership was not recorded.'
-    )
-    if ($client -and $client.reason -cin $fixedReasons) { $reason = [string]$client.reason }
-    $fixedCodes = @{
-        skill_missing = 'The employee package is incomplete: its core Skill is missing.'
-        modified_skill_preserved = 'The official Skill has local changes; they were preserved.'
+function Get-SafeInstallFailure([object]$Payload, [string]$Phase, [int]$ExitCode) {
+    $code = [string]$Payload.error_code
+    $fixed = @{
+        service_issuer_invalid = 'The selected service endpoint is invalid; no alternate endpoint was tried.'
+        skill_missing = 'The employee package is incomplete; all five workflow Skills are required.'
+        modified_skill_preserved = 'An installed Skill has local changes; all existing Skill files were preserved.'
         ownership_conflict = 'An existing unowned path was preserved; installation stopped.'
         unsafe_path = 'A linked or unsafe installation path was rejected.'
-        registration_rollback_required = 'Host registration recovery requires review; referenced employee files were retained.'
-        invalid_client_config = 'The existing host configuration could not be safely read; it was preserved.'
-        client_config_changed = 'The host configuration changed during registration; it was preserved.'
-        codex_path_invalid = 'The supplied Codex executable path is invalid.'
-        client_not_detected = 'Codex was not detected; provide its verified absolute executable with -CodexPath.'
+        configuration_required = 'Select the FargoWork service endpoint supplied by your administrator.'
+        invalid_config = 'The selected FargoWork service endpoint or stored configuration is invalid.'
+        install_failed_recovery_required = 'Skill installation failed; review the preserved recovery files before retrying.'
     }
-    if (-not $reason -and $Payload.code -and $fixedCodes.ContainsKey([string]$Payload.code)) { $reason = $fixedCodes[[string]$Payload.code] }
-    if (-not $reason) { $reason = "FargoWork $Phase for $Target did not complete (exit $ExitCode)." }
-    return $reason
+    if ($code -and $fixed.ContainsKey($code)) { return $fixed[$code] }
+    return "FargoWork $Phase did not complete (exit $ExitCode)."
 }
 
-function Get-SafeClientSummary([object]$Payload) {
+function Get-SafeLegacyMigration([object]$Payload) {
     $summary = @{}
-    foreach ($name in @('cli')) {
-        $client = if ($Payload.clients) { $Payload.clients.$name } else { $null }
-        if (-not $client) { continue }
-        $record = @{}
-        foreach ($field in @('detected', 'registered', 'needs_user_action', 'mutation_may_have_happened')) {
-            if ($client.$field -is [bool]) { $record[$field] = $client.$field }
+    if (-not $Payload.legacy_migration) { return $summary }
+    foreach ($legacyName in @('cursor', 'codex', 'claude-code', 'workbuddy')) {
+        $legacy = $Payload.legacy_migration.$legacyName
+        if ($legacy.status -cin @('absent', 'removed', 'preserved', 'unverified')) {
+            $summary[$legacyName] = @{ status = $legacy.status; needs_user_action = $legacy.needs_user_action -eq $true }
         }
-        $record.trusted = if ($client.trusted -is [bool]) { $client.trusted } elseif ($name -eq 'cli' -and $client.trusted -ceq 'not_required') { 'not_required' } else { 'unknown' }
-        if ($client.registration -cin @('not_detected', 'not_registered', 'conflict', 'registration_missing',
-                'registration_unverified', 'official-cli-error', 'official-cli-failed', 'config_unreadable',
-                'official-codex-cli', 'official-cursor-user-json', 'official-claude-code-user', 'official-codebuddy-user', 'cli-no-mcp')) {
-            $record.registration = $client.registration
-        }
-        if ($client.reason) { $record.reason = Get-SafeClientFailure $Payload $name 'client setup' 3 }
-        if ($client.skill) {
-            $skill = @{}
-            foreach ($field in @('installed', 'managed', 'modified', 'needs_user_action')) {
-                if ($client.skill.$field -is [bool]) { $skill[$field] = $client.skill.$field }
-            }
-            if ($client.skill.status -cin @('ready', 'missing', 'modified', 'unavailable', 'manual_import_required')) { $skill.status = $client.skill.status }
-            $record.skill = $skill
-        }
-        if ($client.legacy_migration) {
-            $migration = @{}
-            foreach ($legacyName in @('cursor', 'codex', 'claude-code', 'workbuddy')) {
-                $legacy = $client.legacy_migration.$legacyName
-                if ($legacy.status -cin @('absent', 'removed', 'preserved', 'unverified')) {
-                    $migration[$legacyName] = @{ status = $legacy.status; needs_user_action = $legacy.needs_user_action -eq $true }
-                }
-            }
-            $record.legacy_migration = $migration
-        }
-        $summary[$name] = $record
     }
     return $summary
 }
@@ -564,7 +501,7 @@ $script:recoveryPath = $null
 $script:recoveryError = $null
 $script:tempDir = $null
 $script:retainInstall = $false
-$script:targetResults = [System.Collections.Generic.List[object]]::new()
+$script:installResult = $null
 $script:identityVerified = $false
 $script:connected = $null
 $script:skillPath = $null
@@ -572,7 +509,6 @@ $script:diagnosticComponent = 'installer'
 $script:diagnosticUnavailable = $false
 $script:attemptId = $null
 $script:diagnosticDirectory = $null
-$script:resolvedCodexPath = $null
 $script:installationPhase = 'preflight'
 $script:profileResult = $null
 $script:profilePendingReset = $false
@@ -582,15 +518,12 @@ $script:businessCliAvailable = $false
 $script:legacyBridgeFilesProven = $true
 
 try {
-    $selectedTargets = @(Resolve-Targets $Target)
     Resolve-InstallationAttempt
     if ($PSBoundParameters.ContainsKey('OpenBrowser') -and -not $Login) { throw '-OpenBrowser requires -Login.' }
-    if (-not $ServiceIssuer) { throw 'Pass -ServiceIssuer with the real HTTPS FargoWork service address supplied by your administrator.' }
+    $ServiceIssuer = Resolve-ServiceIssuer $ServiceIssuer
     if (-not $LocalArtifactDir -and -not $ReleaseBaseUrl) { throw 'Pass -LocalArtifactDir for a verified local candidate or -ReleaseBaseUrl for an explicitly published release.' }
-    if ($ServiceIssuer -notmatch '^https://[^/]+/?$') { throw 'ServiceIssuer must be the HTTPS FargoWork issuer origin supplied by your administrator.' }
     $platformName = 'windows'
     $archName = if ([Environment]::Is64BitOperatingSystem) { 'x64' } else { throw '32-bit Windows is not supported by this release.' }
-    Invoke-HostPreflight $selectedTargets
     Write-InstallationDiagnostic 'installation_started' 'start' 'started'
     Write-InstallationDiagnostic 'preflight_result' 'preflight' 'succeeded'
     $script:installationPhase = 'download'
@@ -622,9 +555,10 @@ try {
     Expand-SafeZip $pluginZip $pluginRoot
     $exe = Get-ChildItem -LiteralPath $cliRoot -Filter 'fargowork.exe' -File -Recurse | Select-Object -First 1
     $pluginSource = Join-Path $pluginRoot 'fargowork'
-    if (-not $exe -or -not (Test-Path -LiteralPath $pluginSource -PathType Container)) { throw '[incomplete_install] Verified artifact is missing the native executable or Plugin directory.' }
-    foreach ($requiredPath in @('plugin.json', 'skills\fargowork-employee\SKILL.md')) {
-        if (-not (Test-Path -LiteralPath (Join-Path $pluginSource $requiredPath) -PathType Leaf)) { throw '[incomplete_install] Verified artifact lacks a required Plugin, launcher or core Skill file; employee state was not changed.' }
+    if (-not $exe -or -not (Test-Path -LiteralPath $pluginSource -PathType Container)) { throw '[incomplete_install] Verified artifact is missing the native executable or Skill package.' }
+    $skillNames = @('fargowork-employee', 'fargowork-business-trip', 'fargowork-annual-leave', 'fargowork-procurement-request', 'fargowork-external-expense-request')
+    foreach ($requiredPath in @('plugin.json') + @($skillNames | ForEach-Object { 'skills\' + $_ + '\SKILL.md' })) {
+        if (-not (Test-Path -LiteralPath (Join-Path $pluginSource $requiredPath) -PathType Leaf)) { throw '[skill_missing] Verified artifact lacks one of the five required workflow Skills; employee state was not changed.' }
     }
     foreach ($retiredPath in @('mcp.json', 'bin')) {
         if (Test-Path -LiteralPath (Join-Path $pluginSource $retiredPath)) { throw '[artifact_invalid] CLI-only employee package contains retired host registration or launcher files.' }
@@ -633,7 +567,7 @@ try {
     if ($pluginManifest.name -ne 'fargowork-employee' -or $pluginManifest.version -ne $Version) { throw '[artifact_invalid] Plugin identity or version does not match this employee candidate.' }
     if ($DryRun) {
         Write-InstallationDiagnostic 'installation_finished' 'finish' 'succeeded' '' 0
-        Emit-Result @{ event = 'dry_run'; status = 'verified'; installed = $false; connected = $null; identity_verified = $false; trusted = if (@($selectedTargets | Where-Object { $_ -ne 'cli' }).Count -eq 0) { 'not_required' } else { 'unknown' }; needs_user_action = $true; selected_targets = $selectedTargets; login_requested = [bool]$Login; employee_configuration_changed = $false; temporary_downloads = $true; diagnostics_written = -not $script:diagnosticUnavailable; connection_mode = 'cli'; mcp_registration_required = $false; business_cli_available = $false; tool_capability = 'not_checked'; message = 'Host prerequisites and local/remote artifacts verified. Temporary downloads and bounded diagnostics may be written; employee configuration, credentials and host registration are unchanged.' }
+        Emit-Result @{ event = 'dry_run'; status = 'verified'; installed = $false; connected = $null; identity_verified = $false; needs_user_action = $true; service_issuer = $ServiceIssuer; required_skills = $skillNames; login_requested = [bool]$Login; employee_configuration_changed = $false; temporary_downloads = $true; diagnostics_written = -not $script:diagnosticUnavailable; connection_mode = 'official_cli'; business_cli_available = $false; tool_capability = 'not_checked'; message = 'The selected endpoint and local artifacts were verified. Temporary downloads and bounded diagnostics may be written; employee files and personal credentials are unchanged.' }
         exit 0
     }
     $script:installationPhase = 'stage'
@@ -726,81 +660,47 @@ try {
     Invoke-TrackedMove $newPlugin $script:pluginDest 'new-plugin'
 
     $installedExe = Join-Path $script:binDir 'fargowork.exe'
-    $script:installationPhase = 'register'
-    $successfulTargets = 0
-    foreach ($selectedTarget in $selectedTargets) {
-        $result = @{ target = $selectedTarget; status = 'error'; installed = $false; connected = $null; identity_verified = $false; trusted = if ($selectedTarget -eq 'cli') { 'not_required' } else { 'unknown' }; needs_user_action = $true; connection_mode = 'cli'; mcp_registration_required = $false; business_cli_available = $false; tool_capability = 'not_checked' }
-        $script:targetResults.Add($result)
-        try {
-            $installArguments = @('install', '--target', $selectedTarget, '--issuer', $ServiceIssuer, '--attempt-id', $script:attemptId, '--output', 'jsonl')
-            if ($selectedTarget -eq 'codex' -and $script:resolvedCodexPath) { $installArguments += @('--codex-path', $script:resolvedCodexPath) }
-            $installation = Invoke-EmployeeCli $installedExe $installArguments
-            $result.install_exit_code = $installation.ExitCode
-            $clientStates = @()
-            if ($installation.Payload.clients -is [System.Collections.IDictionary]) {
-                $clientStates = @($installation.Payload.clients.Values)
-            } elseif ($installation.Payload.clients) {
-                $clientStates = @($installation.Payload.clients.PSObject.Properties | ForEach-Object { $_.Value })
-            }
-            $hasRegistrationEvidence = @($clientStates | Where-Object { $_.registered -eq $true }).Count -gt 0
-            $hasMutationEvidence = $installation.Payload.mutation_may_have_happened -eq $true -or @($clientStates | Where-Object { $_.mutation_may_have_happened -eq $true }).Count -gt 0
-            if ($installation.Payload.code -eq 'registration_rollback_required' -or $hasRegistrationEvidence -or $hasMutationEvidence) {
-                # A failed host operation may still reference these files. Keep
-                # the installed package and report manual recovery explicitly.
-                $script:retainInstall = $true
-                $result.clients = Get-SafeClientSummary $installation.Payload
-                if ($installation.ExitCode -ne 0) {
-                    $result.requires_manual_recovery = $true
-                    $result.mutation_may_have_happened = $hasMutationEvidence
-                    $result.registration_evidence = $hasRegistrationEvidence
-                }
-            }
-            if ($installation.ExitCode -ne 0 -or -not $installation.Payload.installed -or $installation.Payload.event -ne 'installed') {
-                if ($installation.ExitCode -ne 0) { $script:failureExitCode = $installation.ExitCode }
-                if ($installation.Payload.code) { $result.code = $installation.Payload.code }
-                $result.next_action = if ($hasRegistrationEvidence -or $hasMutationEvidence) { 'Review the reported registration state. Do not retry or manually edit configuration until the service owner confirms recovery.' } else { 'Stop and send the attempt ID, safe result and diagnostic export to the service owner. Do not manually stage files or try alternate installation commands.' }
-                Write-InstallationDiagnostic 'client_registration_result' 'register' 'failed' 'registration_failed' $installation.ExitCode
-                throw (Get-SafeClientFailure $installation.Payload $selectedTarget 'installation' $installation.ExitCode)
-            }
-            $result.installed = $true
-            $result.clients = Get-SafeClientSummary $installation.Payload
-            if ($installation.Payload.business_cli_available -is [bool]) {
-                $result.business_cli_available = $installation.Payload.business_cli_available
-                $script:businessCliAvailable = $script:businessCliAvailable -or $result.business_cli_available
-            }
-            # Registration may already reference this executable. A later
-            # diagnostic or authentication failure must not remove it.
-            $script:retainInstall = $true
-            Write-InstallationDiagnostic 'client_registration_result' 'register' $(if ($selectedTarget -in @('cli', 'manual')) { 'not_attempted' } else { 'succeeded' }) '' $installation.ExitCode
-            $doctorArguments = @('doctor', '--target', $selectedTarget, '--attempt-id', $script:attemptId, '--output', 'jsonl')
-            if ($selectedTarget -eq 'codex' -and $script:resolvedCodexPath) { $doctorArguments += @('--codex-path', $script:resolvedCodexPath) }
-            $diagnostic = Invoke-EmployeeCli $installedExe $doctorArguments
-            $result.doctor_exit_code = $diagnostic.ExitCode
-            if ($diagnostic.ExitCode -notin @(0, 3) -or $diagnostic.Payload.event -ne 'doctor' -or -not $diagnostic.Payload.installed) {
-                if ($diagnostic.ExitCode -ne 0) { $script:failureExitCode = $diagnostic.ExitCode }
-                if ($diagnostic.Payload.code) { $result.code = $diagnostic.Payload.code }
-                throw (Get-SafeClientFailure $diagnostic.Payload $selectedTarget 'diagnostic' $diagnostic.ExitCode)
-            }
-            $result.status = if ($diagnostic.ExitCode -eq 3) { 'needs_user_action' } else { 'installed' }
-            $result.trusted = if ($selectedTarget -eq 'cli') { 'not_required' } elseif ($diagnostic.Payload.trusted -is [bool]) { $diagnostic.Payload.trusted } else { 'unknown' }
-            # Keep migration evidence from install; doctor deliberately performs
-            # no host mutation and must not erase a preserved-connection warning.
-            if ($installation.Payload.skill_path) { $script:skillPath = $installation.Payload.skill_path }
-            $successfulTargets++
-        } catch {
-            $result.message = $_.Exception.Message
-            $result.status = 'error'
-        }
+    $script:installationPhase = 'install'
+    $script:installResult = @{ status = 'error'; installed = $false; connected = $null; identity_verified = $false; needs_user_action = $true }
+    $installArguments = @('install', '--issuer', $ServiceIssuer, '--attempt-id', $script:attemptId, '--output', 'jsonl')
+    $installation = Invoke-EmployeeCli $installedExe $installArguments
+    $script:installResult.install_exit_code = $installation.ExitCode
+    if ($installation.ExitCode -ne 0 -or $installation.Payload.event -ne 'installed' -or -not $installation.Payload.installed -or
+        $installation.Payload.config.issuer -cne $ServiceIssuer -or $installation.Payload.version -cne $Version) {
+        if ($installation.ExitCode -ne 0) { $script:failureExitCode = $installation.ExitCode }
+        $script:installResult.error_code = [string]$installation.Payload.error_code
+        $script:installResult.message = Get-SafeInstallFailure $installation.Payload 'Skill installation' $installation.ExitCode
+        Write-InstallationDiagnostic 'skill_install_result' 'install' 'failed' 'skill_install_failed' $installation.ExitCode
+        throw $script:installResult.message
     }
-    # Each host adapter owns its exact configuration transaction. Keep the new
-    # employee executable when another host already installed successfully.
-    $script:retainInstall = $script:retainInstall -or $successfulTargets -gt 0
-    if ($successfulTargets -ne $selectedTargets.Count) {
-        if (@($script:targetResults | Where-Object { $_.requires_manual_recovery }).Count -gt 0) {
-            throw 'One or more host registrations may have changed. Installed files were retained; review the per-target recovery results before retrying.'
-        }
-        throw 'One or more FargoWork targets failed; see the per-target results.'
+    $script:installResult.installed = $true
+    $script:installResult.skills = $installation.Payload.skills
+    $script:installResult.skill_paths = $installation.Payload.skill_paths
+    $script:installResult.skill_cleanup_pending = $installation.Payload.skill_cleanup_pending -eq $true
+    if ($script:installResult.skill_cleanup_pending -and $installation.Payload.skill_recovery_path) {
+        $script:installResult.skill_recovery_path = [string]$installation.Payload.skill_recovery_path
     }
+    $script:installResult.legacy_migration = Get-SafeLegacyMigration $installation.Payload
+    $script:installResult.legacy_connection_review_required = $installation.Payload.legacy_connection_review_required -eq $true
+    $script:installResult.business_cli_available = $installation.Payload.business_cli_available -eq $true
+    $script:businessCliAvailable = $script:installResult.business_cli_available
+    $script:skillPath = [string]$installation.Payload.skill_path
+    # The official CLI and its five Skills are now installed. Later login or
+    # diagnostics failures must keep the selected endpoint and user files.
+    $script:retainInstall = $true
+    Write-InstallationDiagnostic 'skill_install_result' 'install' 'succeeded' '' $installation.ExitCode
+
+    $doctorArguments = @('doctor', '--attempt-id', $script:attemptId, '--output', 'jsonl')
+    $diagnostic = Invoke-EmployeeCli $installedExe $doctorArguments
+    $script:installResult.doctor_exit_code = $diagnostic.ExitCode
+    if ($diagnostic.ExitCode -notin @(0, 3) -or $diagnostic.Payload.event -ne 'doctor' -or -not $diagnostic.Payload.installed -or
+        $diagnostic.Payload.checks.issuer -cne $ServiceIssuer) {
+        if ($diagnostic.ExitCode -ne 0) { $script:failureExitCode = $diagnostic.ExitCode }
+        $script:installResult.message = Get-SafeInstallFailure $diagnostic.Payload 'Local install verification' $diagnostic.ExitCode
+        throw $script:installResult.message
+    }
+    $script:installResult.needs_user_action = $diagnostic.Payload.needs_user_action -eq $true -or $script:installResult.legacy_connection_review_required
+    $script:installResult.status = if ($script:installResult.needs_user_action) { 'needs_user_action' } else { 'installed' }
 
     if ($Login) {
         $script:installationPhase = 'login'
@@ -808,42 +708,31 @@ try {
         $script:connected = $false
         if ($authentication.ExitCode -ne 0 -or $authentication.Payload.event -ne 'logged_in' -or $authentication.Payload.connected -ne $true) {
             if ($authentication.ExitCode -ne 0) { $script:failureExitCode = $authentication.ExitCode }
-            $script:authenticationErrorCode = $authentication.Payload.code
+            $script:authenticationErrorCode = $authentication.Payload.error_code
             throw "FargoWork login failed (exit $($authentication.ExitCode)); installed files and personal state were retained."
         }
         if ($authentication.Payload.profile) { $script:profileResult = $authentication.Payload.profile }
         $script:profilePendingReset = $authentication.Payload.profile_pending_reset -eq $true
-        $verifiedTargets = 0
         $script:installationPhase = 'identity'
-        foreach ($result in $script:targetResults) {
-            $statusArguments = @('status', '--target', $result.target, '--attempt-id', $script:attemptId, '--output', 'jsonl')
-            if ($result.target -eq 'codex' -and $script:resolvedCodexPath) { $statusArguments += @('--codex-path', $script:resolvedCodexPath) }
-            $verification = Invoke-EmployeeCli $installedExe $statusArguments
-            $result.status_exit_code = $verification.ExitCode
-            $result.identity_verified = $verification.Payload.identity_verified -eq $true
-            $result.connected = $verification.Payload.connected -eq $true -and $result.identity_verified
-            if ($verification.ExitCode -notin @(0, 3) -or -not $result.connected) {
-                if ($verification.ExitCode -ne 0) { $script:failureExitCode = $verification.ExitCode }
-                $result.status = 'identity_verification_failed'
-                $result.needs_user_action = $true
-                continue
-            }
-            $verifiedTargets++
-            $result.needs_user_action = [bool]$verification.Payload.needs_user_action
-            $result.trusted = if ($result.target -eq 'cli') { 'not_required' } elseif ($verification.Payload.trusted -is [bool]) { $verification.Payload.trusted } else { 'unknown' }
-            # Install already recorded strict legacy migration results. A
-            # read-only status reply must not replace that evidence.
-            if ($verification.Payload.profile) { $result.profile = $verification.Payload.profile; $script:profileResult = $verification.Payload.profile }
-            if ($verification.Payload.profile_pending_reset -eq $true) { $result.profile_pending_reset = $true; $script:profilePendingReset = $true }
-            $result.status = if ($result.needs_user_action) { 'needs_user_action' } else { 'ready' }
+        $verification = Invoke-EmployeeCli $installedExe @('status', '--attempt-id', $script:attemptId, '--output', 'jsonl')
+        if ($verification.ExitCode -notin @(0, 3) -or $verification.Payload.event -ne 'status' -or
+            $verification.Payload.connected -ne $true -or $verification.Payload.identity_verified -ne $true -or
+            $verification.Payload.config.issuer -cne $ServiceIssuer) {
+            if ($verification.ExitCode -ne 0) { $script:failureExitCode = $verification.ExitCode }
+            throw 'FargoWork login could not verify identity on the selected service endpoint; no other endpoint was tried.'
         }
-        $script:identityVerified = $verifiedTargets -eq $selectedTargets.Count
-        $script:connected = $script:identityVerified
-        if (-not $script:identityVerified) { throw 'FargoWork was installed, but authenticated identity verification failed for one or more targets.' }
+        $script:identityVerified = $true
+        $script:connected = $true
+        $script:installResult.connected = $true
+        $script:installResult.identity_verified = $true
+        $script:installResult.needs_user_action = $verification.Payload.needs_user_action -eq $true -or $script:installResult.legacy_connection_review_required
+        $script:installResult.status = if ($script:installResult.needs_user_action) { 'needs_user_action' } else { 'ready' }
+        if ($verification.Payload.profile) { $script:profileResult = $verification.Payload.profile }
+        if ($verification.Payload.profile_pending_reset -eq $true) { $script:profilePendingReset = $true }
     }
 
-    $needsAction = -not $script:identityVerified -or @($script:targetResults | Where-Object { $_.needs_user_action }).Count -gt 0
-    $message = "FargoWork installed for $($selectedTargets -join ', ')."
+    $needsAction = $script:installResult.needs_user_action -or -not $script:identityVerified
+    $message = 'FargoWork CLI and five workflow Skills are installed for the selected service endpoint.'
     $cleanupPending = $false
     try {
         if (-not $script:legacyBridgeFilesProven) {
@@ -856,11 +745,12 @@ try {
         $script:recoveryPath = $script:stage
         $script:recoveryError = "The update succeeded, but old recovery material could not be cleaned: $($_.Exception.Message)"
     }
-    $payload = @{ event = 'installed'; status = if ($needsAction) { 'needs_user_action' } else { 'ready' }; installed = $true; connected = $script:connected; identity_verified = $script:identityVerified; trusted = if (@($selectedTargets | Where-Object { $_ -ne 'cli' }).Count -eq 0) { 'not_required' } elseif (@($script:targetResults | Where-Object { $_.trusted -ne $true }).Count -eq 0) { $true } else { 'unknown' }; needs_user_action = $needsAction; plugin_dir = $script:pluginDest; targets = $script:targetResults.ToArray(); skill_path = $script:skillPath; login_command = "& '$($installedExe.Replace("'", "''"))' login --browser always"; message = $message; connection_mode = 'cli'; mcp_registration_required = $false; business_cli_available = $script:businessCliAvailable; tool_capability = 'not_checked' }
+    $payload = @{ event = 'installed'; status = if ($needsAction) { 'needs_user_action' } else { 'ready' }; installed = $true; connected = $script:connected; identity_verified = $script:identityVerified; needs_user_action = $needsAction; service_issuer = $ServiceIssuer; installation = $script:installResult; skill_path = $script:skillPath; skill_paths = $script:installResult.skill_paths; login_command = "& '$($installedExe.Replace("'", "''"))' login --browser always"; message = $message; connection_mode = 'official_cli'; business_cli_available = $script:businessCliAvailable; tool_capability = 'not_checked' }
     $payload.cli_path = $installedExe
     $payload.legacy_bridge_files_preserved = -not $script:legacyBridgeFilesProven
-    $payload.legacy_connection_review_required = @($script:targetResults | Where-Object { $_.clients.cli.needs_user_action }).Count -gt 0
-    if ($payload.legacy_connection_review_required) { $payload.needs_user_action = $true; $payload.status = 'needs_user_action'; $payload.message = 'FargoWork CLI is installed. Old unproven client connections were preserved; review the reported migration states.' }
+    $payload.legacy_connection_review_required = $script:installResult.legacy_connection_review_required
+    $payload.legacy_migration = $script:installResult.legacy_migration
+    if ($payload.legacy_connection_review_required) { $payload.needs_user_action = $true; $payload.status = 'needs_user_action'; $payload.message = 'FargoWork CLI is installed. An old unverified FargoWork connection was preserved for review.' }
     if ($script:profileResult) { $payload.profile = $script:profileResult }
     $payload.profile_pending_reset = $script:profilePendingReset
     if ($cleanupPending) { $payload.recovery_path = $script:recoveryPath; $payload.message = $script:recoveryError }
@@ -883,11 +773,11 @@ try {
         }
     }
     if (-not $script:retainInstall -and -not $script:recoveryPath) {
-        foreach ($result in $script:targetResults) { $result.installed = $false; $result.rolled_back = $true }
+        if ($script:installResult) { $script:installResult.installed = $false; $script:installResult.rolled_back = $true }
     } elseif ($script:recoveryPath) {
-        foreach ($result in $script:targetResults) { $result.rollback_status = 'recovery_required' }
+        if ($script:installResult) { $script:installResult.rollback_status = 'recovery_required' }
     }
-    $payload = @{ event = 'error'; status = if ($script:retainInstall) { 'installed_with_errors' } else { 'error' }; installed = $script:retainInstall; connected = $script:connected; identity_verified = $script:identityVerified; trusted = if ($selectedTargets.Count -gt 0 -and @($selectedTargets | Where-Object { $_ -ne 'cli' }).Count -eq 0) { 'not_required' } else { 'unknown' }; needs_user_action = $true; targets = $script:targetResults.ToArray(); skill_path = $script:skillPath; code = if ($script:recoveryPath) { 'install_failed_recovery_required' } elseif ($script:retainInstall) { 'post_install_failed' } else { 'install_failed' }; message = $mainError; business_cli_available = $script:businessCliAvailable; tool_capability = 'not_checked' }
+    $payload = @{ event = 'error'; status = if ($script:retainInstall) { 'installed_with_errors' } else { 'error' }; installed = $script:retainInstall; connected = $script:connected; identity_verified = $script:identityVerified; needs_user_action = $true; service_issuer = $ServiceIssuer; installation = $script:installResult; skill_path = $script:skillPath; code = if ($script:recoveryPath) { 'install_failed_recovery_required' } elseif ($script:retainInstall) { 'post_install_failed' } else { 'install_failed' }; message = $mainError; business_cli_available = $script:businessCliAvailable; tool_capability = 'not_checked' }
     if ($script:retainInstall -and $installedExe) { $payload.cli_path = $installedExe }
     $payload.phase = $script:installationPhase
     $payload.error_code = $failureCode

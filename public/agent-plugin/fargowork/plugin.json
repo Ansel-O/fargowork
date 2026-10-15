@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "fargowork-employee",
-  "version": "1.4.0",
-  "description": "FargoWork employee workflow Skill using the official CLI.",
+  "version": "1.4.1",
+  "description": "FargoWork employee workflow Skills using the official CLI.",
   "author": {
     "name": "FargoWork maintainers"
   },
