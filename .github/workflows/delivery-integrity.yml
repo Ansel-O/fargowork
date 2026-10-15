@@ -1,0 +1,85 @@
+name: FargoWork public delivery integrity
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*.*.*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  delivery-integrity:
+    name: Validate public installation contents
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Verify the employee delivery tree
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          required = {
+              "README.md", "INSTALL.md", "LICENSE", "SECURITY.md", "DEBUG.md",
+              "public/bootstrap.ps1", "public/install.ps1", "public/install.sh",
+              "public/EMPLOYEE-README.md", "public/EMPLOYEE-DATA-NOTE.md",
+              "public/cli/fargowork_cli.py", "public/cli/client_diagnostics.py",
+              "public/cli/employee_profile.py", "public/cli/employee_attachments.py",
+              "public/release/version.json", "public/release/windows-trial.json",
+              "public/agent-plugin/fargowork/LICENSE",
+              "public/agent-plugin/fargowork/README.md",
+              "public/agent-plugin/fargowork/plugin.json",
+              "public/agent-plugin/fargowork/skills/fargowork-employee/SKILL.md",
+          }
+          actual_skills = {
+              path.parent.name
+              for path in Path("public/agent-plugin/fargowork/skills").glob("*/SKILL.md")
+          }
+          if actual_skills != {"fargowork-employee"}:
+              raise SystemExit(f"unexpected employee Skill set: {sorted(actual_skills)}")
+          missing = sorted(path for path in required if not Path(path).is_file())
+          if missing:
+              raise SystemExit(f"public employee files are missing: {missing}")
+          if Path("tests").exists() or Path("tools/release").exists():
+              raise SystemExit("public source must not contain tests or release tooling")
+          if Path("public/release/public-export.json").exists():
+              raise SystemExit("public source must not include the maintainer export allowlist")
+
+          version = json.loads(Path("public/release/version.json").read_text(encoding="utf-8"))
+          trial = json.loads(Path("public/release/windows-trial.json").read_text(encoding="utf-8"))
+          plugin = json.loads(Path("public/agent-plugin/fargowork/plugin.json").read_text(encoding="utf-8"))
+          if version.get("version") != plugin.get("version"):
+              raise SystemExit("plugin and public client versions differ")
+          if trial.get("version") != version.get("version") or trial.get("tag") != f"v{version['version']}":
+              raise SystemExit("bootstrap metadata does not match the public client version")
+          archive = trial.get("archive", {})
+          if not re.fullmatch(r"fargowork-employee-v[0-9]+\.[0-9]+\.[0-9]+-windows-x64\.zip", archive.get("name", "")):
+              raise SystemExit("bootstrap metadata has an invalid employee archive name")
+          if not re.fullmatch(r"[0-9a-f]{64}", archive.get("sha256", "")) or not isinstance(archive.get("size"), int) or archive["size"] <= 0:
+              raise SystemExit("bootstrap metadata lacks a valid archive checksum and size")
+          if set(trial) & {"acceptance", "business_submission", "candidate", "ci_provenance", "signing", "stage"}:
+              raise SystemExit("bootstrap metadata contains maintainer acceptance or candidate state")
+
+          readme = Path("README.md").read_text(encoding="utf-8")
+          if "https://github.com/Ansel-O/fargowork" not in readme:
+              raise SystemExit("README is missing the one-line employee installation entry")
+          if "[安装说明](INSTALL.md)" not in readme or "[排障说明](DEBUG.md)" not in readme:
+              raise SystemExit("README is missing its short installation or troubleshooting link")
+          if any(marker in readme.lower() for marker in (".zip", "tools/release", "mcp.json", "tests/")):
+              raise SystemExit("README contains maintainer or manual package instructions")
+          install_doc = Path("INSTALL.md").read_text(encoding="utf-8")
+          if f"/v{version['version']}/public/bootstrap.ps1" not in install_doc or "-Target cli" not in install_doc or "-Login" not in install_doc or "-OpenBrowser always" not in install_doc or "-OutputJsonl" not in install_doc or "skill_path" not in install_doc or "DEBUG.md" not in install_doc:
+              raise SystemExit("INSTALL.md does not match the frozen bootstrap and Skill-loading contract")
+          employee_doc = Path("public/EMPLOYEE-README.md").read_text(encoding="utf-8")
+          if "./install.ps1" not in employee_doc or "-Target cli" not in employee_doc or "skill_path" not in employee_doc or "DEBUG.md" not in employee_doc:
+              raise SystemExit("employee package README is missing its local installer or support links")
+          print("Public employee delivery files, versions, archive metadata, and Skill references are complete.")
+          PY

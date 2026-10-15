@@ -2,7 +2,8 @@
   "version": "1.4.0",
   "tag_prefix": "v",
   "agent_plugins_spec": "1.0.0",
-  "mcp_protocol_versions": ["2026-07-28"],
-  "action_result_contract": 1,
-  "stage": "windows-employee-trial"
+  "mcp_protocol_versions": [
+    "2026-07-28"
+  ],
+  "action_result_contract": 1
 }

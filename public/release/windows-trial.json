@@ -1,31 +1,16 @@
 {
-  "acceptance": {
-    "client_ui": "not-rerun-for-this-release",
-    "native_package": "passed-isolated-native-install-and-legacy-migration-fixtures",
-    "native_oauth": "passed-loopback-pkce-dpapi-refresh-logout-fixture",
-    "ordinary_employee_oauth": "prior-candidate-owner-accepted-not-rerun-for-this-release",
-    "business_cli": "passed-loopback-fixture-without-host-mcp",
-    "attachments_native": "passed-loopback-sdk-envelope-text-envelope-independent-issuer-fixtures",
-    "attachments_previous_candidate": "owner-accepted-local-business-cloud-three-file-process-binding",
-    "real_business_submission_for_this_release": "not-run"
-  },
   "archive": {
     "name": "fargowork-employee-v1.4.0-windows-x64.zip",
     "sha256": "98dc79e627489a49131b6615b51b0ff8207c541cb2ab1b50b59ccda460bbd917",
     "size": 10332300
   },
-  "business_submission": "dingtalk_role_test_only",
-  "ci_provenance": "not-claimed",
   "format": "fargowork-windows-trial/v1",
   "installation_targets": [
     "cli"
   ],
-  "macos": "deferred",
   "platform": "windows-x64",
   "repository": "Ansel-O/fargowork",
   "service_issuer": "https://fargowork.fargowealthapp.com",
-  "signing": "not-configured",
-  "stage": "employee-trial",
   "tag": "v1.4.0",
   "version": "1.4.0",
   "default_installation_target": "cli",
