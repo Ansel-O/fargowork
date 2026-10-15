@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '1.4.1',
+    [string]$Version = '1.4.2',
     [string]$ServiceIssuer,
     [string]$LocalArtifactDir,
     [string]$ReleaseBaseUrl,

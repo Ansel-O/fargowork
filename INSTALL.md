@@ -1,9 +1,9 @@
 # 安装 FargoWork
 
-请在 Windows 电脑上把仓库首页的一句话发给能运行本机命令的 AI。Agent 使用固定版本 v1.4.1 的官方入口，完成安装和钉钉登录：
+请在 Windows 电脑上把仓库首页的一句话发给能运行本机命令的 AI。Agent 使用固定版本 v1.4.2 的官方入口，完成安装和钉钉登录：
 
 ```powershell
-Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/Ansel-O/fargowork/v1.4.1/public/bootstrap.ps1' -OutFile './fargowork-bootstrap.ps1'
+Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/Ansel-O/fargowork/v1.4.2/public/bootstrap.ps1' -OutFile './fargowork-bootstrap.ps1'
 powershell.exe -NoProfile -File './fargowork-bootstrap.ps1' -Login -OpenBrowser always
 ```
 

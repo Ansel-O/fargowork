@@ -1,8 +1,8 @@
 {
   "archive": {
-    "name": "fargowork-employee-v1.4.1-windows-x64.zip",
-    "sha256": "49182f62da5be262b10d26a7512e29e4381edab813a90c4005586e507c62efe1",
-    "size": 10333404
+    "name": "fargowork-employee-v1.4.2-windows-x64.zip",
+    "sha256": "8a61a30771cc67fca65650c5af7c238f84d5aa2c102126e7e4f6f84da455fafa",
+    "size": 10356564
   },
   "attachments": {
     "business_identity_match_required": true,
@@ -19,6 +19,6 @@
   "platform": "windows-x64",
   "repository": "Ansel-O/fargowork",
   "service_issuer": "https://fargowork.fargowealthapp.com",
-  "tag": "v1.4.1",
-  "version": "1.4.1"
+  "tag": "v1.4.2",
+  "version": "1.4.2"
 }

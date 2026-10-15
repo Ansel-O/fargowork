@@ -12,7 +12,7 @@ param(
 $ErrorActionPreference = 'Stop'
 # Pin the built-in module to this runtime when launched by another AI shell.
 Import-Module (Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -Force
-$version = '1.4.1'
+$version = '1.4.2'
 $tag = 'v' + $version
 $bundleName = "fargowork-employee-v$version-windows-x64.zip"
 $repository = 'Ansel-O/fargowork'

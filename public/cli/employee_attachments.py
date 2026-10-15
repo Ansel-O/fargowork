@@ -9,15 +9,21 @@ from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import replace
 import hashlib
-import http.client
 import json
 import os
 from pathlib import Path
 import re
-import ssl
 import stat
-from urllib.parse import urlsplit
 import uuid
+
+from company_attachment_client import (
+    AttachmentClient as SDKAttachmentClient,
+    AttachmentError as SDKAttachmentError,
+    AuthenticationError as SDKAuthenticationError,
+    HTTPError as SDKHTTPError,
+    InputError as SDKInputError,
+    ResponseError as SDKResponseError,
+)
 
 
 DEFAULT_SERVICE = "https://attachments.fargowealthapp.com"
@@ -41,10 +47,12 @@ _PENDING_REASONS = frozenset({
 
 
 class AttachmentError(RuntimeError):
-    def __init__(self, code, message, *, kind="input", http_status=None):
+    def __init__(self, code, message, *, kind="input", http_status=None,
+                 outcome_unknown=None, attempts=None):
         super().__init__(message)
         self.code, self.kind = code, kind
         self.http_status = http_status
+        self.outcome_unknown, self.attempts = outcome_unknown, attempts
 
 
 def _identifier(value):
@@ -62,20 +70,21 @@ def _ids(values):
     return result
 
 
-def _service(value):
-    try:
-        parts = urlsplit(value)
-        _ = parts.port
-        valid = (isinstance(value, str) and value == value.strip() and value == value.rstrip("/")
-                 and parts.hostname and not parts.username and not parts.password
-                 and not parts.query and not parts.fragment and parts.path in {"", "/"}
-                 and "?" not in value and "#" not in value and not any(ord(c) < 33 for c in value)
-                 and (parts.scheme == "https" or parts.scheme == "http" and parts.hostname in {"127.0.0.1", "::1"}))
-    except (TypeError, ValueError):
-        valid = False
-    if not valid:
-        raise AttachmentError("attachment_configuration_invalid", "附件服务地址配置无效。")
-    return value
+def _sdk_error(error):
+    """Keep the employee CLI contract; never expose SDK/provider exception text."""
+    if isinstance(error, SDKInputError):
+        code = "attachment_configuration_invalid" if error.operation == "configure" else "attachment_input_invalid"
+        message, kind = "附件配置或本地输入无效，操作未发送。", "input"
+    elif isinstance(error, SDKAuthenticationError) or error.http_status == 401:
+        code, message, kind = "attachment_auth_required", "请先完成附件授权。", "auth"
+    elif isinstance(error, SDKResponseError) or isinstance(error, SDKHTTPError) and 300 <= (error.http_status or 0) < 400:
+        code, message, kind = "attachment_response_invalid", "附件接口返回无法核实，请保留本次操作供排查。", "transport"
+    elif isinstance(error, SDKHTTPError):
+        code, message, kind = "attachment_request_rejected", "附件服务未完成请求，请核对账号、文件或清单；不要重提业务流程。", "server"
+    else:
+        code, message, kind = "attachment_transport_failed", "附件请求结果尚未确认，请勿重复提交流程或盲目重传文件。", "transport"
+    return AttachmentError(code, message, kind=kind, http_status=error.http_status,
+                           outcome_unknown=error.outcome_unknown, attempts=error.attempts)
 
 
 def _body(result):
@@ -119,7 +128,12 @@ def _body(result):
 class AttachmentClient:
     def __init__(self, runtime, config, *, business_session=None, native_session=None):
         self.rt, self.config = runtime, config
-        self.service = _service(getattr(config, "attachments_url", DEFAULT_SERVICE))
+        try:
+            # Construction validates the service origin without requesting a token.
+            self.service = SDKAttachmentClient(getattr(config, "attachments_url", DEFAULT_SERVICE),
+                                               lambda: self.native.access()).base_url
+        except SDKAttachmentError as error:
+            raise _sdk_error(error) from None
         self.business = business_session or runtime.TokenSession(config)
         self.identity = None
         self.attachment_issuer = config.effective_attachments_issuer
@@ -133,14 +147,61 @@ class AttachmentClient:
         self.native = native_session or NativeSession(native_config)
 
     def _native_identity(self):
-        _status, value = self._request("GET", "/api/v1/me")
-        if (not isinstance(value, dict) or value.get("client_id") != NATIVE_CLIENT
-                or value.get("scope") != SCOPE
-                or any(not isinstance(value.get(key), str) or not value[key].strip()
-                       or len(value[key]) > 256 or any(ord(c) < 32 for c in value[key])
+        return self._checked_native_identity(self._sdk_call("me"))
+
+    def _checked_native_identity(self, value):
+        if (value.client_id != NATIVE_CLIENT or value.scope != SCOPE
+                or any(not isinstance(getattr(value, key), str) or not getattr(value, key).strip()
+                       or len(getattr(value, key)) > 256 or any(ord(c) < 32 for c in getattr(value, key))
                        for key in ("userid", "corp_id"))):
             raise AttachmentError("attachment_identity_mismatch", "附件身份无法核实，请重新授权。", kind="auth")
-        return {key: value.get(key, "") for key in ("userid", "corp_id", "name", "client_id", "scope")}
+        return {key: getattr(value, key) for key in ("userid", "corp_id", "name", "client_id", "scope")}
+
+    def _sdk_call(self, operation, *args, **kwargs):
+        # Freeze the account before SDK retries. Probe the exact token returned
+        # for each write attempt; a new login must not reuse the old batch/key.
+        expected = deepcopy(self.identity) if operation != "me" else None
+        provider_failure = None
+
+        def token_provider():
+            nonlocal provider_failure
+            provider_failure = None
+            try:
+                token = self.native.access()
+                if expected is not None:
+                    business = self.business.me()
+                    # This probe uses the already obtained token directly,
+                    # rather than this provider, so it cannot recurse.
+                    native = self._checked_native_identity(SDKAttachmentClient(self.service, lambda: token).me())
+                    if any(current.get(key) != expected.get(key)
+                           for current in (business, native) for key in ("userid", "corp_id")):
+                        raise AttachmentError("attachment_identity_mismatch", "当前账号已变化，原申请附件已保留；请勿换号继续本次操作。", kind="auth")
+                return token
+            except SDKAttachmentError as error:
+                provider_failure = _sdk_error(error)
+                raise
+            except AttachmentError as error:
+                provider_failure = error
+                raise
+            except self.rt.FargoWorkError as error:
+                is_auth = error.code in {"auth_required", "invalid_grant", "invalid_token"}
+                provider_failure = AttachmentError(
+                    "attachment_auth_required" if is_auth else "attachment_transport_failed",
+                    "请先完成附件授权。" if is_auth else "当前身份暂时无法核实，本次附件操作已停止。",
+                    kind="auth" if is_auth else "transport")
+                raise
+
+        try:
+            sdk = SDKAttachmentClient(self.service, token_provider)
+            return getattr(sdk, operation)(*args, **kwargs)
+        except SDKAttachmentError as error:
+            if provider_failure is not None:
+                # The SDK deliberately hides provider exceptions. Restore only
+                # our fixed classification, retaining any earlier unknown try.
+                provider_failure.outcome_unknown = bool(error.outcome_unknown or provider_failure.outcome_unknown)
+                provider_failure.attempts = error.attempts
+                raise provider_failure from None
+            raise _sdk_error(error) from None
 
     def verify(self):
         identity = self.business.me()
@@ -167,66 +228,6 @@ class AttachmentClient:
         self.identity = expected
         self._account_root()
         return {"connected": True, "identity_verified": True}
-
-    def _request(self, method, path, payload=None, *, file=None, batch_id=None):
-        token = self.native.access()
-        target = urlsplit(self.service)
-        connection = (http.client.HTTPSConnection(target.hostname, target.port, timeout=30,
-                      context=ssl.create_default_context()) if target.scheme == "https"
-                      else http.client.HTTPConnection(target.hostname, target.port, timeout=30))
-        headers = {"Authorization": "Bearer " + token, "Accept": "application/json"}
-        try:
-            if file is None:
-                data = json.dumps(payload, ensure_ascii=True, separators=(",", ":")).encode() if payload is not None else None
-                if data is not None:
-                    headers["Content-Type"] = "application/json"
-                connection.request(method, path, body=data, headers=headers)
-            else:
-                stream, name, size = file
-                boundary = "fargowork-" + uuid.uuid4().hex
-                # Quotes, separators and newlines in local names never become headers.
-                wire_name = name.replace('"', "_").replace("\\", "_")
-                prefix = (f'--{boundary}\r\nContent-Disposition: form-data; name="batch_id"\r\n\r\n{batch_id}\r\n'
-                    f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{wire_name}"\r\n'
-                    'Content-Type: application/octet-stream\r\n\r\n').encode("utf-8")
-                suffix = f"\r\n--{boundary}--\r\n".encode()
-                headers.update({"Content-Type": "multipart/form-data; boundary=" + boundary,
-                                "Content-Length": str(len(prefix) + size + len(suffix))})
-                connection.putrequest(method, path)
-                for name_, value_ in headers.items():
-                    connection.putheader(name_, value_)
-                connection.endheaders()
-                connection.send(prefix)
-                remaining = size
-                while remaining:
-                    chunk = stream.read(min(remaining, 1024 * 1024))
-                    if not chunk:
-                        raise AttachmentError("attachment_upload_unknown", "文件上传结果尚未确认，请勿直接重传。", kind="transport")
-                    connection.send(chunk)
-                    remaining -= len(chunk)
-                if stream.read(1):
-                    raise AttachmentError("attachment_upload_unknown", "上传中文件已变化，请保留本次操作供核查。", kind="transport")
-                connection.send(suffix)
-            response = connection.getresponse()
-            raw = response.read(MAX_JSON_BYTES + 1)
-            status = response.status
-        except (OSError, TimeoutError, http.client.HTTPException):
-            raise AttachmentError("attachment_transport_failed", "附件请求结果尚未确认，请勿重复提交流程或盲目重传文件。", kind="transport") from None
-        finally:
-            connection.close()
-        if 300 <= status < 400:
-            raise AttachmentError("attachment_response_invalid", "附件接口发生重定向，已停止转发凭据。", kind="transport")
-        if status == 401:
-            raise AttachmentError("attachment_auth_required", "请先完成附件授权。", kind="auth", http_status=status)
-        if not 200 <= status < 300:
-            raise AttachmentError("attachment_request_rejected", "附件服务未完成请求，请核对账号、文件或清单；不要重提业务流程。", kind="server", http_status=status)
-        try:
-            value = json.loads(raw) if len(raw) <= MAX_JSON_BYTES else None
-        except (ValueError, UnicodeError):
-            value = None
-        if not isinstance(value, dict):
-            raise AttachmentError("attachment_response_invalid", "附件接口返回无法核实，请保留本次操作供排查。", kind="transport")
-        return status, value
 
     def _account_root(self):
         if self.identity is None:
@@ -286,20 +287,6 @@ class AttachmentClient:
         self.rt._atomic_write(root / (batch + ".json"), json.dumps(value, ensure_ascii=True).encode())
         return {"batch_id": batch, "process_key": process_key}
 
-    def _validate_file(self, value):
-        if not isinstance(value, dict):
-            raise AttachmentError("attachment_response_invalid", "附件上传结果无效。", kind="transport")
-        file_id = _identifier(value.get("id"))
-        name, size, mime = value.get("name"), value.get("size"), value.get("type")
-        if (not isinstance(name, str) or not name or len(name) > 255
-                or any(ord(c) < 32 for c in name) or "/" in name or "\\" in name
-                or type(size) is not int or not 0 < size <= MAX_FILE_BYTES
-                or not isinstance(mime, str) or not mime or len(mime) > 100
-                or value.get("downloadUrl") != self.service + "/api/v1/files/" + file_id):
-            raise AttachmentError("attachment_response_invalid", "附件服务返回了无法核实的文件信息。", kind="transport")
-        return {"id": file_id, "name": name, "size": size, "type": mime,
-                "downloadUrl": value["downloadUrl"]}
-
     def upload(self, batch_id, file_path):
         self.verify()
         path = Path(file_path).absolute()
@@ -331,15 +318,21 @@ class AttachmentClient:
                 state["uploads"][operation] = {"fingerprint": fingerprint, "status": "unknown"}
             # Unknown is committed before any bytes leave this process.
             try:
-                _status, raw = self._request("POST", "/api/v1/attachments", file=(stream, name, size), batch_id=batch_id)
+                uploaded = self._sdk_call("upload", path, batch_id=batch_id)
             except AttachmentError as error:
-                if error.http_status in {400, 401, 403, 404, 409, 413, 415, 422}:
+                if error.outcome_unknown is False:
                     with self.state(batch_id) as state:
                         state["uploads"][operation]["status"] = "rejected"
                 raise
-            file = self._validate_file(raw)
-            if file["size"] != size or file["name"] != name:
-                raise AttachmentError("attachment_response_invalid", "上传返回的文件与所选文件不同。", kind="transport")
+            current = path.stat()
+            if (uploaded.size != size or uploaded.name != name
+                    or (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns)
+                    != (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)):
+                raise AttachmentError("attachment_response_invalid", "上传返回的文件与所选文件不同，请勿直接重传。",
+                                      kind="transport", outcome_unknown=True, attempts=1)
+            # This is the host's durable business-field shape, not HTTP parsing.
+            file = {key: value for key, value in uploaded.to_api_dict().items()
+                    if key in {"id", "name", "size", "type", "downloadUrl"}}
             with self.state(batch_id) as state:
                 state["files"][file["id"]] = file
                 if state["submission"] is None:
@@ -362,9 +355,7 @@ class AttachmentClient:
     def sync_selection(self, batch_id):
         with self.state(batch_id) as state:
             ids = list(state["selected_ids"])
-            _status, value = self._request("POST", f"/api/v1/batches/{batch_id}/selection", {"attachment_ids": ids})
-            if value.get("batch_id") != batch_id or value.get("status") != "saved" or value.get("attachment_ids") != ids:
-                raise AttachmentError("attachment_response_invalid", "最终附件清单尚未得到服务确认。", kind="transport")
+            self._sdk_call("set_selection", batch_id, ids)
             state["selection_synced"] = True
 
     def status(self, batch_id, *, verified=False):
@@ -497,10 +488,17 @@ class AttachmentClient:
                             "message": "申请已提交，本机未能保存附件关联结果，请联系维护者核查，勿重新提交流程。"}
                 try:
                     return self.notify(batch, verified=True)
-                except (AttachmentError, self.rt.FargoWorkError, OSError):
-                    return {"state": "pending_confirmation", "flow_binding_confirmed": False,
-                            "business_submitted": True, "local_result_saved": True,
-                            "message": "申请已提交，附件关联待确认，请勿重新提交流程。"}
+                except (AttachmentError, self.rt.FargoWorkError, OSError) as error:
+                    pending = {"state": "pending_confirmation", "flow_binding_confirmed": False,
+                               "business_submitted": True, "local_result_saved": True,
+                               "message": "申请已提交，附件关联待确认，请勿重新提交流程。"}
+                    if isinstance(error, AttachmentError):
+                        pending["notice_error_code"] = error.code
+                        for field in ("http_status", "outcome_unknown", "attempts"):
+                            detail = getattr(error, field, None)
+                            if detail is not None:
+                                pending[field] = detail
+                    return pending
             if value.get("status") in {"submission_unknown", "submitting"} or value.get("upstream_outcome") == "submission_unknown":
                 self.tool_failed(name, context)
             elif value.get("submitted") is False:
@@ -523,25 +521,35 @@ class AttachmentClient:
                 raise AttachmentError("attachment_state_invalid", "附件通知已尝试3次，请联系维护者核查；申请已提交，请勿重提。")
             submission["notice_attempts"] = submission.get("notice_attempts", 0) + 1
             payload = {key: submission[key] for key in ("idempotency_key", "process_id", "flow_type", "attachment_ids")}
-        status, value = self._request("POST", f"/api/v1/batches/{batch_id}/submission-notice", payload)
-        confirmed = value.get("flow_binding_confirmed")
-        if status != 202 or type(confirmed) is not bool or (confirmed and value.get("state") != "confirmed"):
-            raise AttachmentError("attachment_response_invalid", "附件引用的确认结果无效，已保留原通知供核查。", kind="transport")
+        try:
+            # The SDK alone owns network retries, always with this saved key and
+            # body. Valid pending responses return once; this host never polls.
+            value = self._sdk_call("notify_submission", batch_id=batch_id, **payload)
+        except AttachmentError as error:
+            with self.state(batch_id) as state:
+                state["submission"]["last_notice_error"] = {
+                    "error_code": error.code, "http_status": error.http_status,
+                    "outcome_unknown": error.outcome_unknown, "attempts": error.attempts,
+                }
+            raise
+        confirmed = value.flow_binding_confirmed
         with self.state(batch_id) as state:
             # Concurrent replies can arrive out of order; a confirmed binding
             # cannot be downgraded by an older pending response.
             confirmed = confirmed or state["submission"].get("binding") == "confirmed"
             state["submission"]["binding"] = "confirmed" if confirmed else "pending_confirmation"
+            state["submission"]["last_notice_http_attempts"] = value.attempts
+            state["submission"].pop("last_notice_error", None)
             support = {}
-            attempt_id = value.get("attempt_id")
+            attempt_id = value.attempt_id
             if isinstance(attempt_id, str) and _UUID.fullmatch(attempt_id):
                 support["attempt_id"] = attempt_id
-            pending_reason = value.get("pending_reason")
+            pending_reason = value.pending_reason
             if not confirmed and isinstance(pending_reason, str) and pending_reason in _PENDING_REASONS:
                 support["pending_reason"] = pending_reason
             state["submission"]["last_notice"] = support
         return {"state": "confirmed" if confirmed else "pending_confirmation", "flow_binding_confirmed": confirmed,
-                "business_submitted": True, "replayed": value.get("replayed") is True, **support}
+                "business_submitted": True, "replayed": value.replayed, "attempts": value.attempts, **support}
 
 
 def add_parser(subparsers):

@@ -48,7 +48,7 @@ from employee_profile import ProfileError, ProfileStore
 import employee_attachments
 
 
-VERSION = "1.4.1"
+VERSION = "1.4.2"
 MCP_PROTOCOL_VERSION = "2026-07-28"
 ACTION_RESULT_CONTRACT_VERSION = 1
 MCP_SCOPE = "fargowork:mcp"
@@ -2575,6 +2575,10 @@ def _run_main(args: argparse.Namespace, holder: dict[str, Any]) -> int:
         holder["error_code"] = exc.code
         payload = {"event": "error", "status": "error", "error_code": exc.code, "error_kind": exc.kind,
                    "exit_code": code, "message": str(exc), "automatic_retry_allowed": False}
+        for field in ("http_status", "outcome_unknown", "attempts"):
+            value = getattr(exc, field, None)
+            if value is not None:
+                payload[field] = value
         if exc.kind == "auth":
             payload.update(next_action="attachment_login", login_args=["attachments", "login", "--browser", "always"])
         _emit_business_result(payload)

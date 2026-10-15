@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-version=1.4.1
+version=1.4.2
 service_issuer=
 local_dir=
 release_base=${FARGOWORK_RELEASE_BASE_URL:-}
