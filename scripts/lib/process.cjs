@@ -155,7 +155,7 @@ function createProcessTrial({ client, appType, formUuid, processCode, stateDir,
     };
   }
 
-  async function prepare({ formData, deptId, preview, validBusinessDate } = {}) {
+  async function prepare({ formData, deptId, preview, verification = {}, validBusinessDate } = {}) {
     return locked(async () => {
       const prior = loadState();
       if (prior && prior.status !== 'prepared') fail('PROCESS_ATTEMPT_ALREADY_SENT');
@@ -173,7 +173,7 @@ function createProcessTrial({ client, appType, formUuid, processCode, stateDir,
       }
       const snapshot = copy({
         version: 1, target, actor, businessDate: day, timeZone: 'Asia/Shanghai',
-        preparedAt: instant.toISOString(), formData, deptId, preview,
+        preparedAt: instant.toISOString(), formData, deptId, preview, verification,
       });
       const draftSha256 = sha(snapshot);
       const snapshotFile = path.join(root, `draft-${draftSha256}.json`);
@@ -208,7 +208,15 @@ function createProcessTrial({ client, appType, formUuid, processCode, stateDir,
         response = await client.postFormOnce(endpoint('startInstance'), {
           processCode, formUuid, formDataJson: JSON.stringify(snapshot.formData), deptId: snapshot.deptId,
         });
-      } catch { fail('PROCESS_SUBMISSION_UNKNOWN_DO_NOT_RETRY'); }
+      } catch (error) {
+        // The adapter marks only a proven preflight rejection as unsent.
+        // Every transport/ambiguous result keeps the durable unknown state.
+        if (error.code === 'OPENYIDA_TARGET_UNVERIFIED' && error.sideEffectState === 'none') {
+          atomicWrite(stateFile, state);
+          throw error;
+        }
+        fail('PROCESS_SUBMISSION_UNKNOWN_DO_NOT_RETRY');
+      }
       if (response && response.success === false) {
         const rejected = { ...attempted, status: 'rejected', upstreamRejected: true,
           upstreamErrorCode: safeUpstreamCode(response), rejectedAt: now().toISOString() };

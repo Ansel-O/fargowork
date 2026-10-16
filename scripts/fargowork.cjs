@@ -35,6 +35,7 @@ const {
 const {
   validateInstance
 } = require('./lib/verification.cjs');
+const {supportForError} = require('./lib/support.cjs');
 const VERSION = require('../package.json').version;
 const json = x => JSON.parse(JSON.stringify(x));
 function parse(args) {
@@ -381,8 +382,9 @@ async function run(args, deps = {}) {
             check(!uploaded.some(x => x.reference.fileUuid === up.reference.fileUuid), 'ATTACHMENT_DUPLICATE_CONTENT');
             uploaded.push(up);
           }
-          prepared.formData[prepared.attachmentField] = uploaded.map(x => x.reference);
         }
+        // Freeze an empty selection too, so readback detects unexpected attachments.
+        if (prepared.attachmentField) prepared.formData[prepared.attachmentField] = uploaded.map(x => x.reference);
         const attachmentSummary = uploaded.map(x => ({
           name: x.reference.name,
           size: x.reference.size,
@@ -390,20 +392,19 @@ async function run(args, deps = {}) {
         }));
         const preview = {
           流程: w.title,
-          目标: '当前固定试用流程',
           ...prepared.preview,
           ...(prepared.attachmentField ? {
             附件: attachmentSummary.map(x => ({
               名称: x.name,
               字节数: x.size
             }))
-          } : {}),
-          有效日期: today()
+          } : {})
         };
         const receipt = await pm.prepare({
           formData: prepared.formData,
           deptId: String(prepared.departmentId),
           preview: json(preview),
+          verification: prepared.verification || {},
           validBusinessDate: today()
         });
         write(path.join(dir, 'prepared.json'), {
@@ -435,10 +436,10 @@ async function run(args, deps = {}) {
         return {
           status: 'prepared',
           draftId: id,
-          draftSha256: receipt.draftSha256,
-          preview: receipt.snapshot.preview,
+          nextAction: 'preview',
           requiresConfirmation: true,
-          localDraftOnly: true
+          localDraftOnly: true,
+          message: '草稿已准备。先读取并展示最终预览，然后等待员工回复；本步骤不授权提交。'
         };
       } catch (error) {
         // This is inside command.lock, so a failed older prepare cannot clobber
@@ -477,16 +478,29 @@ async function run(args, deps = {}) {
       saved = read(path.join(dir, 'prepared.json'));
       check(revision.version === VERSION && revision.workflow === info.workflow && sameActor(revision.actor, info.actor) && revision.revisionId === info.revisionId && revision.revisionId === saved.revisionId && revision.identity === info.identity && revision.identity === saved.identity && revision.draftSha256 === state.draftSha256 && revision.draftSha256 === saved.draftSha256, 'DRAFT_REVISION_INCOMPLETE');
     }
-    if (command === 'preview') return {
-      status: state.status,
-      draftId: arg,
-      draftSha256: state.draftSha256,
-      preview: state.snapshot.preview,
-      processInstanceId: state.processInstanceId
-    };
+    if (command === 'preview') {
+      if (state.status === 'prepared') {
+        check(state.snapshot.businessDate === today(), 'PROCESS_DRAFT_EXPIRED');
+        // Records that this exact visible preview was requested, not human consent.
+        write(path.join(dir, 'prepared.json'), {...saved, previewedDraftSha256: state.draftSha256});
+      }
+      return {
+        status: state.status === 'prepared' ? 'awaiting_user_confirmation' : state.status,
+        draftId: arg,
+        draftSha256: state.draftSha256,
+        preview: state.snapshot.preview,
+        processInstanceId: state.processInstanceId,
+        requiresConfirmation: state.status === 'prepared',
+        nextAction: state.status === 'prepared' ? 'wait_for_user_reply' : 'result',
+        ...(state.status === 'prepared' ? {
+          message: '向员工展示这份业务预览并结束本轮操作，等待员工下一条明确确认。此前提出申请或说提交，不代替此处确认。'
+        } : {})
+      };
+    }
     if (command === 'submit') {
       check(options.confirm && options.confirm === state.draftSha256, 'PROCESS_EXPLICIT_CONFIRMATION_REQUIRED');
       if (state.status === 'prepared') {
+        check(saved.previewedDraftSha256 === state.draftSha256, 'PROCESS_PREVIEW_REQUIRED');
         check(saved.version === VERSION && info.version === VERSION, 'DRAFT_VERSION_CHANGED');
         check(state.snapshot.businessDate === today(), 'PROCESS_DRAFT_EXPIRED');
         const fresh = json(await w.prepare(info.input, rt.ctx));
@@ -548,18 +562,25 @@ async function run(args, deps = {}) {
           status: 'submitted',
           draftId: arg,
           processInstanceId: state.processInstanceId,
+          mayRetry: false,
+          verificationStatus: back.responseIdentityVerified ? verification.status : 'unavailable',
+          attachmentVerification: back.responseIdentityVerified ? verification.attachmentStatus : 'unavailable',
           contentVerified: back.responseIdentityVerified && verification.allPassed,
           failedChecks: Object.entries(verification.checks).filter(([, v]) => !v).map(([k]) => k),
-          message: verification.allPassed ? '已核对流程内容与附件引用。' : '已提交；内容回读尚未全部核对通过，不要重新提交。'
+          message: verification.allPassed && back.responseIdentityVerified ? '申请已提交，内容及附件已核对。' : verification.status === 'mismatch' ? '申请已提交；回读发现需核对的数据差异，请联系支持人员核查，勿重提。' : '申请已提交；部分内容暂未完成核对，勿重提。'
         };
       } catch (e) {
+        const identityMismatch = safeCode(e) === 'PROCESS_READBACK_INSTANCE_MISMATCH';
         return {
           status: 'submitted',
           draftId: arg,
           processInstanceId: state.processInstanceId,
+          mayRetry: false,
+          verificationStatus: identityMismatch ? 'mismatch' : 'unavailable',
+          attachmentVerification: 'unavailable',
           contentVerified: false,
           code: safeCode(e),
-          message: '已提交；暂时无法回读核对，不要重新提交。'
+          message: identityMismatch ? '申请已提交；回读返回了不同实例，请联系 IT 核查，勿重提。' : '已提交；暂时无法回读核对，不要重新提交。'
         };
       }
     }
@@ -574,7 +595,7 @@ if (require.main === module) {
         draftId: e.draftId
       } : {}),
       mayRetry: false,
-      message: '操作已停止。请按错误码处理；不要猜测其他流程或自动重复提交。'
+      ...supportForError(safeCode(e))
     }) + '\n');
     process.exitCode = 1;
   });

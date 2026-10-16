@@ -32,17 +32,19 @@ jobs:
               'SKILL.md',
               'package-lock.json',
               'package.json',
+              'references/ATTACHMENTS.md',
+              'references/CHECKS.md',
               'references/CONNECTORS.md',
               'references/DEBUG.md',
               'scripts/fargowork.cjs',
               'scripts/lib/auth.cjs',
               'scripts/lib/common.cjs',
-              'scripts/lib/login-worker.cjs',
               'scripts/lib/native-attachment.cjs',
               'scripts/lib/official-cli.cjs',
               'scripts/lib/policy.cjs',
               'scripts/lib/process.cjs',
               'scripts/lib/runtime.cjs',
+              'scripts/lib/support.cjs',
               'scripts/lib/verification.cjs',
               'scripts/setup.cjs',
               'skills/annual-leave/SKILL.md',
@@ -94,7 +96,8 @@ jobs:
           assert {p.parent.name for p in Path('skills').glob('*/SKILL.md')} == {'annual-leave', 'business-trip', 'procurement-request', 'external-expense-request'}
           readme = Path('README.md').read_text(encoding='utf-8')
           assert 'https://github.com/Ansel-O/fargowork' in readme
-          assert 'https://github.com/openyida/openyida' in readme and 'npm install -g openyida' in readme
+          assert 'https://github.com/openyida/openyida' in readme
+          assert 'npm install -g openyida@2026.10.16' in Path('SKILL.md').read_text(encoding='utf-8')
           assert '.zip' not in readme.lower()
           for name in tracked:
               if not name.endswith('.md'):

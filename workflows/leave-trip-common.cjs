@@ -140,7 +140,7 @@ function department(map, requested) {
 function required(found, fieldId) {
   const props = found.get(fieldId)?.props;
   check(object(props), 'WORKFLOW_SCHEMA_CHANGED');
-  return props.required === true || (Array.isArray(props.validation) && props.validation.some(rule => rule.type === 'required'));
+  return props.required === true || props.behavior === 'REQUIRED' || (Array.isArray(props.validation) && props.validation.some(rule => rule?.type === 'required' || rule?.required === true || rule?.rule === 'required'));
 }
 async function contacts(ctx, source, sourceValue, {required = false} = {}) {
   const candidates = await ctx.query(source.form, {[source.key]: sourceValue}, [source.key, source.admin, source.admin + '_id']);
@@ -160,7 +160,7 @@ async function contacts(ctx, source, sourceValue, {required = false} = {}) {
       byId.set(id, names[index]);
     });
   }
-  check(!required || byId.size > 0, 'CONTACTS_NOT_FOUND', '未找到流程要求的管理员配置。');
+  check(!required || byId.size > 0, 'CONTACTS_NOT_FOUND', '办理所需的人员资料缺失，请联系 HR 核查。');
   return {ids: [...byId.keys()], names: [...byId.values()]};
 }
 module.exports = {DAY, OFFSET, OFFICE, COMPANY, ROSTER, ROSTER_CONNECTOR, fail, check, object, inputKeys, absent, text, optionalText, normalized, values, exact, single, number, date, sourceDate, dateText, dayOfWeek, inputRange, identity, fields, assertFields, option, rosterFields, rosterValue, department, required, contacts};

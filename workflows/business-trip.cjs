@@ -132,7 +132,7 @@ async function prepare(input, ctx) {
   const admin = await C.contacts(ctx,C.OFFICE,office,{required:C.required(schema,F.officeAdmin)});
   let linkage;
   if (input.is_project) { linkage = await project(ctx,input); if (linkage.needsInput) return linkage; }
-  C.check(!linkage || !C.required(schema,F.manager) || linkage.managers.length, 'DEPARTMENT_MANAGER_MISSING', '流程要求项目部门主管，请联系管理员。');
+  C.check(!linkage || !C.required(schema,F.manager) || linkage.managers.length, 'DEPARTMENT_MANAGER_MISSING', '办理所需的部门主管资料缺失，请联系 HR 核查。');
   const days = (end - start) / C.DAY + 1;
   const formData = {
     [F.applicant]:[actor.userid], [F.applicantId]:actor.userid, [F.application]:ctx.todayMs,
@@ -146,9 +146,8 @@ async function prepare(input, ctx) {
     formData,departmentId:dep.id,attachmentField,
     preview:{流程:title,申请人:name,申请日期:ctx.today,出差地点:location,出差目的:purpose,开始日期:input.start_date,结束日期:input.end_date,出差天数:days,预算港币:budget,出差内容:content,
       出差排程:schedule.rows.map(({date,item,remark}) => ({日期:date,事项:item,备注:remark})),是否项目出差:input.is_project,
-      ...(linkage ? {项目:linkage.name,项目部门:linkage.department.name,成本部门主管:linkage.managers} : {}),
-      发起部门:dep.id,其他任职部门:dep.alternatives,默认主部门:dep.defaulted,签约公司:company,办公场所:office,办公室行政:admin.names,
-      提示:[...(!admin.ids.length ? ['办公室行政未匹配到配置，按原流程保留为空。'] : []),...(linkage && !linkage.managers.length ? ['项目部门未配置主管，按原流程保留为空。'] : [])]},
+      ...(linkage ? {项目:linkage.name,项目部门:linkage.department.name} : {})},
+    verification:{optionalEmptyFields:[...(!admin.ids.length ? [F.officeAdmin] : []),...(linkage && !linkage.managers.length ? [F.manager] : [])]},
     resolvedInputs:{...input,trip_location:location,purpose,content,budget_hkd:budget,department_id:dep.id,itinerary:schedule.rows.map(({date,item,remark})=>({date,item,remark})),...(linkage ? {project_name:linkage.name,project_department:linkage.department.id} : {})}
   };
 }

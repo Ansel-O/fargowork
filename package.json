@@ -1,6 +1,6 @@
 {
   "name": "fargowork-openyida-skills",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "FargoWork 四流程技能包，使用已安装的官方 OpenYida CLI",
   "license": "Apache-2.0",

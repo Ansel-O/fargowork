@@ -29,7 +29,8 @@ function parsed(x) {
 }
 function createRuntime(key, {
   auth = require('./auth.cjs'),
-  fetchImpl = globalThis.fetch
+  fetchImpl = globalThis.fetch,
+  runOfficial = auth.command
 } = {}) {
   const w = workflow(key),
     initial = auth.actor();
@@ -39,6 +40,10 @@ function createRuntime(key, {
     return a;
   };
   async function getToken() {
+    sameActor();
+    // The official read path refreshes a rejected token before any gap request.
+    // Reuse this runtime's fixed-form schema read; never retry a gap write.
+    if (typeof runOfficial === 'function') await schema();
     sameActor();
     const value = await auth.token();
     sameActor();
@@ -93,8 +98,65 @@ function createRuntime(key, {
     }
     check(false, 'REQUEST_PATH_DENIED');
   }
+  async function officialRequest(method, p, b) {
+    const run = async (args, options) => {
+      sameActor();
+      const result = await runOfficial(args, options);
+      sameActor();
+      return result;
+    };
+    if (method === 'GET' && p === SCHEMA) return run(['get-schema', APP, w.formUuid]);
+    if (method === 'GET' && p === FORM) {
+      const args = ['data', 'query', 'form', APP, b.formUuid, '--page', String(b.currentPage), '--size', String(b.pageSize)];
+      if (b.searchFieldJson) args.push('--search-file', '__FARGOWORK_INPUT__');
+      const result = await run(args, b.searchFieldJson ? {input: b.searchFieldJson} : {});
+      // Official data query form flattens content into data/totalCount/page.
+      return result?.success === true && Array.isArray(result.data)
+        ? {...result, content: {data: result.data, totalCount: result.totalCount, currentPage: result.currentPage}} : result;
+    }
+    if (method === 'GET' && p === PROCESS + 'getInstances.json') return run([
+      'data', 'query', 'process', APP, b.formUuid, '--page', String(b.currentPage),
+      '--size', String(b.pageSize), '--originator-id', initial.userid]);
+    if (method === 'GET' && p === PROCESS + 'getInstanceById.json') return run([
+      'data', 'get', 'process', APP, '--process-inst-id', b.processInstanceId]);
+    if (method === 'POST' && p === PROCESS + 'startInstance.json') {
+      // Read the name of this exact fixed target only. Never choose an alternative
+      // form from navigation; the official create command verifies it again.
+      let matches;
+      try {
+        const rows = await run(['list-forms', APP, '--keyword', w.formUuid]);
+        matches = Array.isArray(rows) ? rows.filter(r => r.formUuid === w.formUuid
+          && ['process', 'process-form', 'workflow'].includes(r.formType)
+          && typeof r.formName === 'string' && r.formName.trim()) : [];
+      } catch {
+        require('./official-cli.cjs').targetFailure();
+      }
+      if (matches.length !== 1) require('./official-cli.cjs').targetFailure();
+      const args = ['data', 'create', 'process', APP, w.formUuid,
+        '--process-code', b.processCode, '--data-file', '__FARGOWORK_INPUT__',
+        '--expect-form-name', matches[0].formName.trim(), '--expect-form-type', 'process'];
+      if (b.deptId) args.push('--dept-id', String(b.deptId));
+      const result = await run(args, {mutation: true, input: b.formDataJson});
+      // Official create normalizes string/object responses to a verified ID.
+      // The durable submission layer consumes one unambiguous scalar receipt.
+      if (result?.success === true) {
+        check(result.idVerified === true && result.resource?.type === 'processInstance'
+          && result.resource.id === result.processInstanceId, 'WRITE_OUTCOME_UNKNOWN');
+        return {success: true, content: result.processInstanceId};
+      }
+      return result;
+    }
+    return null;
+  }
   async function request(base, method, p, b) {
     allowed(base, method, p, b);
+    if (base === ROOT && p !== INVOKE && typeof runOfficial === 'function') {
+      const value = await officialRequest(method, p, b);
+      check(value && typeof value === 'object' && typeof value.success === 'boolean',
+        method === 'POST' ? 'WRITE_OUTCOME_UNKNOWN' : 'UPSTREAM_FORMAT_INVALID');
+      return value;
+    }
+    // Gap adapter only: native attachments and fixed page connector actions.
     const t = await getToken();
     const url = new URL(p, base);
     if (method === 'GET') for (const [k, v] of Object.entries(b)) url.searchParams.set(k, String(v));

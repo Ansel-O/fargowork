@@ -1,6 +1,6 @@
 {
   "name": "fargowork-openyida-skills",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "files": [
     {
       "path": ".gitignore",
@@ -14,53 +14,58 @@
     },
     {
       "path": "README.md",
-      "bytes": 1887,
-      "sha256": "96491f8a5461b7bae2822f352d0b5aecda1100bfda97cdd6de20bdd5cabc234d"
+      "bytes": 1628,
+      "sha256": "58a6761c6415f9e0b8b36e2058c5b14a36a093539ec30049c8014f0b2b1eb5b2"
     },
     {
       "path": "SKILL.md",
-      "bytes": 6227,
-      "sha256": "d53f07f71ac0c38b98d9bc737855d335cd5164856c13192a4e9c210fbedd5f14"
+      "bytes": 4219,
+      "sha256": "52a032da64d2556771d9afb27d0602dbbfcaeca9594a6474176c131944f38d0f"
     },
     {
       "path": "package-lock.json",
       "bytes": 295,
-      "sha256": "dc02966ccf532f252f35963e2007095e5159b21801c433bc1d6ca00a3f48b0fe"
+      "sha256": "14bcf9aa684f4dea8a7824719eae3d18960e222a75e9713291469e03782daf7f"
     },
     {
       "path": "package.json",
       "bytes": 230,
-      "sha256": "8f04edc6e01c80d6bdcb840fc96a19ad4cc98c2c841ddc0d8112cb8fe74ce196"
+      "sha256": "541450601d3f8d54fb30885ea1fe5a743ec566bcb8c2921f2ebcc21be8daf89e"
+    },
+    {
+      "path": "references/ATTACHMENTS.md",
+      "bytes": 1354,
+      "sha256": "6b111f827c75b794df2d0b21d4cb224396a5e97fad658392871ffe7c15064d89"
+    },
+    {
+      "path": "references/CHECKS.md",
+      "bytes": 1311,
+      "sha256": "4af0bd3c1d5e9a34bf66b2d5d481d72f46a3d75f0d8eee6c001a5eb44e4ba793"
     },
     {
       "path": "references/CONNECTORS.md",
-      "bytes": 4123,
-      "sha256": "9d2aacc4239252aa57ed856da661900f7ef2a57fe5835e8215dbc6c510bdff9f"
+      "bytes": 4411,
+      "sha256": "a0d45ed80d5f076a2bb9519cbcc6dbccc7e8c0bf816fcaba4dbded19411c35e0"
     },
     {
       "path": "references/DEBUG.md",
-      "bytes": 3850,
-      "sha256": "80ab8dd8e72a2e2b31bd24828af92087f10ca3f0c30ff392450f21651151d159"
+      "bytes": 3443,
+      "sha256": "fac2d97454ef5e11bf5dd4b675609e655e1df36f9f75e50d4e5bdebe7b5673b1"
     },
     {
       "path": "scripts/fargowork.cjs",
-      "bytes": 20472,
-      "sha256": "5c397044d96771a5094597661695025f0ed49c0a28082dcff0042b3f32e87e49"
+      "bytes": 22246,
+      "sha256": "8e5ee14be95c0f503c21a6b2d6178f219f19406fd7b4f4507c31d3c1beacd48a"
     },
     {
       "path": "scripts/lib/auth.cjs",
-      "bytes": 5587,
-      "sha256": "fd53b85c197827efa5eeefcb21269f10026b6ba25ec73f64ce2132a7932ec3a8"
+      "bytes": 2448,
+      "sha256": "1cb3071f93bf1c6ca9bab704ad021f001aa31ec19f24c2a7ae938f7c4874a7cb"
     },
     {
       "path": "scripts/lib/common.cjs",
       "bytes": 2332,
       "sha256": "9c39e17d33dd9ea432d882ca0926d7059afbde4e8bcbbe3a24c9341100ea533d"
-    },
-    {
-      "path": "scripts/lib/login-worker.cjs",
-      "bytes": 575,
-      "sha256": "b897dfe2ca787960f2078c1412fdb6fa328700308dde7084d902f8fd1cce3a83"
     },
     {
       "path": "scripts/lib/native-attachment.cjs",
@@ -69,8 +74,8 @@
     },
     {
       "path": "scripts/lib/official-cli.cjs",
-      "bytes": 6613,
-      "sha256": "c9d21912d851c65933db665091571a925825f6c2e922845422bc248c24924bf4"
+      "bytes": 6750,
+      "sha256": "12533b825f3e5f001595300c9eeb1fea98533b0f0b8424c12f3f8511ec226e1d"
     },
     {
       "path": "scripts/lib/policy.cjs",
@@ -79,63 +84,68 @@
     },
     {
       "path": "scripts/lib/process.cjs",
-      "bytes": 12519,
-      "sha256": "956d521c53e583cc40a0a82b5adad6a268f708f9a88ee4407b70522e4a361484"
+      "bytes": 12894,
+      "sha256": "4be972b4c858852c1173628adfa18a2523727f6d266894edf024c55c0e649709"
     },
     {
       "path": "scripts/lib/runtime.cjs",
-      "bytes": 11668,
-      "sha256": "7586aab5d74b5c4adc5288fd3980d63ca3b9cdf499cdf5ddf688031eaa3478b3"
+      "bytes": 15252,
+      "sha256": "3d67c52d5f0d8da13510bcfcf5097543900ebe92536f153e7ed0ba62fbefddca"
+    },
+    {
+      "path": "scripts/lib/support.cjs",
+      "bytes": 2968,
+      "sha256": "383966186af67b9f5e1e06f98e00e6811688fbb2b35af64840def5a1e9c1b26a"
     },
     {
       "path": "scripts/lib/verification.cjs",
-      "bytes": 6801,
-      "sha256": "c21a12ba5d8d3845b3086bd80e171ae3b69f92bcc32a3c4fe3f4088621e2c918"
+      "bytes": 11447,
+      "sha256": "2dec095e70e9946382cf7be6b7378e6018ddc5beeb5ed9b0470a629a2fdca69a"
     },
     {
       "path": "scripts/setup.cjs",
-      "bytes": 5376,
-      "sha256": "2ed1385a0dc8f2b97416b24ddf0e974bedb1000be17e01ad09ca4a2f05465151"
+      "bytes": 4880,
+      "sha256": "87fb31686450c91854001f8265ff5b7bd49e12d73e25b457227b422885676052"
     },
     {
       "path": "skills/annual-leave/SKILL.md",
-      "bytes": 2649,
-      "sha256": "8b7658e0bb557c5156f08b20bf5f433a2a9ebb33a1898ddee1cedc4a0f5e7098"
+      "bytes": 3442,
+      "sha256": "064d39e3177dcad624a4c4e20a742c067e2d8ceab5d49daa10b2015784064d0c"
     },
     {
       "path": "skills/business-trip/SKILL.md",
-      "bytes": 3129,
-      "sha256": "3c6c7ff8dcb7bd936d87b52f5e825c31f72877cf445cf6b2a1b3c3dee4b93df8"
+      "bytes": 4052,
+      "sha256": "d595d11897899df1cf327ea32e6e4f3f0b8c0dfad5a906dc5053cd8a5ade5873"
     },
     {
       "path": "skills/external-expense-request/SKILL.md",
-      "bytes": 3889,
-      "sha256": "cf8e3064396eabeabed90a029b6dd807b380857ceb375d9be35dd97cdb48b31b"
+      "bytes": 4800,
+      "sha256": "f626e3b360292b1a2f510ee9c9c07c803260a2b6ac829836b15ef85bbd338a7e"
     },
     {
       "path": "skills/procurement-request/SKILL.md",
-      "bytes": 3535,
-      "sha256": "e21b51b502ccf9a14581c46047ce5bb37e626e1207498431d019bb2e7af8deeb"
+      "bytes": 4543,
+      "sha256": "1d94ee3c86418bc33f9c6f5d493fb3b3565bd565315203c852f8615d4b625778"
     },
     {
       "path": "workflows/annual-leave.cjs",
-      "bytes": 9418,
-      "sha256": "4f989041354993e6a5de64798b1071f340a753f2ce0f8b9eb4a3197b768f0631"
+      "bytes": 9363,
+      "sha256": "f6c63b084121aede85d00cc3a2f00f8910f2b14a0ec6321f7a8c5b45bf45bdcf"
     },
     {
       "path": "workflows/business-trip.cjs",
-      "bytes": 13832,
-      "sha256": "212e2172f22c9b9be32b7305a3006b87c85baede803a4a660d83f75d64cadf62"
+      "bytes": 13568,
+      "sha256": "e421453d4164fb090c9ff76b2bdafb1f65590aaed5cccd5a194d2a8c478e792b"
     },
     {
       "path": "workflows/external-expense-request.cjs",
-      "bytes": 11501,
-      "sha256": "139425c74f97e7e5739bcbe3ad2130768d82a56d49d22d91e14192b6a6a1e884"
+      "bytes": 10783,
+      "sha256": "d153cd1095d83e901b8d9026c30d4e013fdb021882a64117f11c2b1c72983fb4"
     },
     {
       "path": "workflows/leave-trip-common.cjs",
-      "bytes": 10140,
-      "sha256": "ffef56f1dd92dc416d361c6f857a742d92ee98da3c51b6f4908edfd5ab47a268"
+      "bytes": 10246,
+      "sha256": "33ad4c56abe2c078063e4e0de8c526438a96591d26bee918e5e577051a95a77e"
     },
     {
       "path": "workflows/payment-core.cjs",
@@ -144,13 +154,13 @@
     },
     {
       "path": "workflows/payment-sources.cjs",
-      "bytes": 6644,
-      "sha256": "a6c9a33a6085f66aec1c91063813dbbc040943afda0022fcca6f6be0ea0d0d51"
+      "bytes": 7659,
+      "sha256": "e3dfd891cce01deebcfca7fd4b8ce6b53c8c44c4181c8ccb9eab7ede5d593db0"
     },
     {
       "path": "workflows/procurement-request.cjs",
-      "bytes": 14042,
-      "sha256": "5e206c6a039377cbe8dbb885b734bbe4dea933e8127639f8d2579dcfe5c67ac3"
+      "bytes": 14209,
+      "sha256": "0a593f1b3a43947e5586a4dba0b17c4bd6b2fc9c947f2a6da532aa5a9a54f83d"
     }
   ]
 }

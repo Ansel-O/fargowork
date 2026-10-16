@@ -12,7 +12,7 @@ const METHODS = ['采购后报销','公司采购'];
 const TYPES = ['行政采购','商务事务','IT采购','其他'];
 const policy = Object.freeze({
   dataForms:[CURRENCY,RATE,OFFICE],
-  rosterFields:['sys00-name','sys00-workPlace','sys00-mainDeptId','sys00-deptIds'],
+  rosterFields:['sys00-name','sys00-workPlace','sys00-mainDeptId','sys00-deptIds','sys00-mainDept','sys00-dept'],
   connectors:{roster:{connectorId:'Http_5c72b42d47f14a1983767932f6c1d4f1',actionId:'getUserMessage',type:'httpConnector',connection:15597}},
 });
 const requirements = {
@@ -126,7 +126,8 @@ async function prepare(input,ctx) {
   const departmentId=missing(requested.department_id)?main:String(requested.department_id);
   check(departments.includes(departmentId),'PROCUREMENT_DEPARTMENT_NOT_ASSIGNED');
   const catalog=await ctx.query(CURRENCY,null,['textField_m3lrdomv']);
-  check(Array.isArray(catalog)&&catalog.length>0&&catalog.every(r=>clean(r.textField_m3lrdomv,80)),'PROCUREMENT_CURRENCY_SOURCE_INVALID');
+  check(Array.isArray(catalog)&&catalog.every(r=>isObject(r)&&clean(r.textField_m3lrdomv,80)),'PROCUREMENT_CURRENCY_SOURCE_INVALID');
+  check(catalog.length>0,'PROCUREMENT_CURRENCY_SOURCE_EMPTY');
   const normalized=v=>v.normalize('NFKC').trim().toLowerCase();
   const options=catalog.map(r=>r.textField_m3lrdomv);
   check(new Set(options.map(normalized)).size===options.length,'PROCUREMENT_CURRENCY_SOURCE_AMBIGUOUS');
@@ -153,16 +154,17 @@ async function prepare(input,ctx) {
   if(!missing(requested.remarks))formData[F.remarks]=requested.remarks;
   if(delivery!==undefined)formData[F.delivery]=delivery;
   formData[F.admin]=admin.map(x=>x.id);formData[F.it]=it.map(x=>x.id);
-  const warnings=[];
-  if(departments.length>1)warnings.push(`本人有多个任职部门，本次使用${departmentId===main?'主':''}部门 ${departmentId}；如需更换，请在确认前说明。`);
-  if(!admin.length)warnings.push('公司办公场所表未配置完全匹配的行政联系人，本次留空；审批沿用宜搭配置。');
-  if(!it.length)warnings.push('公司办公场所表未配置完全匹配的 IT 联系人，本次留空；审批沿用宜搭配置。');
+  // Department display names are official roster labels; raw department IDs
+  // remain internal if a legacy roster does not supply a name.
+  const labelValues=code=>(self.field_data_list.find(f=>f.field_code===code)?.field_value_list||[]).flatMap(v=>String(v.label||v.value||'').split(/[,|，]/u).map(x=>x.trim()).filter(Boolean));
+  const mainNames=labelValues('sys00-mainDept'),departmentNames=labelValues('sys00-dept');
+  const departmentName=departmentId===main&&mainNames.length===1?mainNames[0]:departmentNames.length===departments.length?departmentNames[departments.indexOf(departmentId)]:'';
   return {formData,departmentId,attachmentField:F.attachment,
+    verification:{optionalEmptyFields:[...(!admin.length ? [F.admin] : []),...(!it.length ? [F.it] : [])]},
     resolvedInputs:{...requested,currency,department_id:departmentId},
-    preview:{title:'采购申请预览',applicant:name,office,department_id:departmentId,application_date:ctx.today,
+    preview:{title:'采购申请预览',applicant:name,...(departmentName&&!/^\d+$/.test(departmentName)?{department:departmentName}:{}),application_date:ctx.today,
       reason:requested.reason,purchase_method:requested.purchase_method,purchase_type:requested.purchase_type,currency,items:itemPreview,
       total,exchange_rate:rate.value,total_hkd:hkd,other_description:requested.other_description||'',remarks:requested.remarks||'',
-      expected_delivery_date:requested.expected_delivery_date||'',office_admin:admin.map(x=>x.name),office_it:it.map(x=>x.name),warnings,
-      rounding:'数量和单价保留原值；逐行小计四舍五入两位后合计，港币金额四舍五入两位。'}};
+      expected_delivery_date:requested.expected_delivery_date||''}};
 }
 module.exports={key,title,formUuid,policy,requirements,prepare};

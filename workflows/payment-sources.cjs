@@ -1,5 +1,13 @@
 'use strict';
 const {APP,TABLES,RELATIONS,F,fail,text,required,unique,same,choose,rows,memberIds}=require('./payment-core.cjs');
+const C=require('./leave-trip-common.cjs');
+
+async function targetRequired(ctx,fieldId){
+  const field=C.fields(await ctx.schema()).get(fieldId);
+  if(!field?.props)fail('FW-PAY-TARGET-SCHEMA');
+  const p=field.props;
+  return p.required===true||p.behavior==='REQUIRED'||(Array.isArray(p.validation)&&p.validation.some(v=>v?.type==='required'||v?.required===true||v?.rule==='required'));
+}
 
 async function department(ctx, id, managerField=F.manager) {
   const response=await ctx.invoke('department',{'Content-Type':'application/json',Body:{dept_id:id}});
@@ -13,26 +21,27 @@ async function department(ctx, id, managerField=F.manager) {
   if(!manager&&managerField){
     // The native page leaves this field empty when its successful department
     // lookup contains no manager. Only a real schema requirement can block it.
-    const schema=await ctx.schema();let field;
-    function walk(v){if(!v||typeof v!=='object')return;if(v.props?.fieldId===managerField)field=v;for(const x of Object.values(v))if(x&&typeof x==='object')walk(x);}
-    walk(schema);if(!field)fail('FW-PAY-MANAGER-FIELD');
-    const p=field.props;if(p.required===true||(Array.isArray(p.validation)&&p.validation.some(v=>v?.type==='required')))fail('FW-PAY-MANAGER-REQUIRED','此表要求部门主管，但部门连接器未返回主管信息。');
+    if(await targetRequired(ctx,managerField))fail('FW-PAY-MANAGER-REQUIRED','办理所需的部门主管资料缺失，请联系 HR 核查。');
   }
   return {id,name,manager};
 }
 
-async function structure(ctx, input, prefix, id, needs) {
-  const [,idField,...fields]=TABLES.structures;
+async function structure(ctx, prefix, id) {
+  const [,idField,...sourceFields]=TABLES.structures;
+  const targetFields=prefix==='application'?F.applicationStructure:F.projectStructure;
+  const requiredFields=await Promise.all(targetFields.map(field=>targetRequired(ctx,field)));
   const source=await rows(ctx,'structures',{[idField]:id});
-  let candidates=source.filter(r=>text(r[idField])===id).map(r=>fields.map(f=>required(r[f],'FW-PAY-STRUCTURE')));
-  if (!candidates.length) fail('FW-PAY-STRUCTURE');
-  const keys=['business_architecture','business_line','sub_business_line'], selected=[];
-  for(let i=0;i<keys.length;i++) {
-    const value=choose(needs,prefix+'_'+keys[i],input[prefix+'_'+keys[i]],candidates.map(r=>r[i]));
-    if(!value)return null;
-    selected.push(value);candidates=candidates.filter(r=>r[i]===value);
-  }
-  return selected;
+  const candidates=source.filter(r=>text(r[idField])===id).map(row=>sourceFields.map(field=>{
+    const raw=row[field];
+    if(raw===undefined||raw===null||raw===''||(Array.isArray(raw)&&raw.length===0))return '';
+    // A multi-value/malformed source is not an optional blank.
+    const value=text(raw);if(!value)fail('FW-PAY-STRUCTURE-FORMAT');return value;
+  }));
+  const distinct=[...new Map(candidates.map(values=>[JSON.stringify(values),values])).values()];
+  if(distinct.length>1)fail('FW-PAY-STRUCTURE-AMBIGUOUS','部门的业务归属资料不唯一，请联系 Finance 核查。');
+  const selected=distinct[0]||['','',''];
+  if(selected.some((value,i)=>!value&&requiredFields[i]))fail('FW-PAY-STRUCTURE-MISSING','办理所需的业务归属资料缺失，请联系 Finance 补充。');
+  return {values:selected,optionalEmptyFields:targetFields.filter((field,i)=>!selected[i]&&!requiredFields[i])};
 }
 
 async function project(ctx,input,needs) {
@@ -63,8 +72,13 @@ async function project(ctx,input,needs) {
 async function contacts(ctx,company) {
   const [,companyField,finance,cashier]=TABLES.contacts;
   const raw=await rows(ctx,'contacts',{[companyField]:company},[companyField,finance,finance+'_id',cashier,cashier+'_id']);
-  const row=unique(raw,r=>same(r[companyField],company),'FW-PAY-CONTACTS');
-  return {finance:memberIds(row,finance),cashier:memberIds(row,cashier)};
+  const matching=raw.filter(r=>same(r[companyField],company));
+  if(matching.length>1)fail('FW-PAY-CONTACTS','支付公司的财务联系人配置不唯一，请联系 Finance 核查。');
+  const row=matching[0]||{},result={finance:memberIds(row,finance),cashier:memberIds(row,cashier)};
+  for(const [role,field]of[['finance',F.finance],['cashier',F.cashier]]){
+    if(!result[role].length&&await targetRequired(ctx,field))fail('FW-PAY-CONTACTS-REQUIRED','办理所需的财务联系人资料缺失，请联系 Finance 补充。');
+  }
+  return result;
 }
 
 async function relations(ctx,input,needs) {

@@ -12,8 +12,7 @@ const requirements={
   attachments:{required:true,input:'attachments: [绝对文件路径]',maxFiles:9,maxFileSizeMiB:20,extensions:['.pdf','.png','.jpg','.docx','.xlsx']},
   note:'公司、币种、供应商、科目、项目和关联流程由当前维护数据提供候选。合同公司及主部门可作为预览中的默认建议；不自动替换员工明确提供的选择。',
 };
-const allowed=new Set([...requirements.required,...requirements.choices,...requirements.optional,...requirements.project,
-  ...['application','project'].flatMap(p=>['business_architecture','business_line','sub_business_line'].map(k=>p+'_'+k))]);
+const allowed=new Set([...requirements.required,...requirements.choices,...requirements.optional,...requirements.project]);
 function validate(input){
   if(!input||typeof input!=='object'||Array.isArray(input))fail('FW-PAY-INPUT','付款输入须为对象。');
   for(const [k,v]of Object.entries(input)){
@@ -89,15 +88,13 @@ async function prepare(input,ctx){
   }
   if(needs.length)return {needsInput:needs};
   const contexts=[['application',departmentId,F.applicationStructure],...(project?[['project',project.department.id,F.projectStructure]]:[])];
-  const structures={};
-  for(const [prefix,id,fields]of contexts){const s=await sources.structure(ctx,input,prefix,id,needs);if(s){fields.forEach((field,i)=>{formData[field]=s[i];});structures[prefix]=s;['business_architecture','business_line','sub_business_line'].forEach((k,i)=>{resolved[prefix+'_'+k]=s[i];});}}
+  const optionalEmptyFields=[];
+  for(const [prefix,id,fields]of contexts){const structure=await sources.structure(ctx,prefix,id);fields.forEach((field,i)=>{formData[field]=structure.values[i];});optionalEmptyFields.push(...structure.optionalEmptyFields);}
   const associated=await sources.relations(ctx,input,needs);
   if(needs.length)return {needsInput:needs};
   Object.assign(formData,associated.formData);
-  const contacts=await sources.contacts(ctx,company),warnings=[];
-  if(!dept.manager)warnings.push('申请部门连接器未返回主管，按当前表单规则保持为空。');
-  if(project&&!project.department.manager)warnings.push('项目部门连接器未返回主管，按当前表单规则保持为空。');
-  for(const [role,field,label]of[['finance',F.finance,'财务'],['cashier',F.cashier,'出纳']]){if(contacts[role].length)formData[field]=contacts[role];else warnings.push(`该支付公司未配置${label}，本次未填。`);}
+  const contacts=await sources.contacts(ctx,company);
+  for(const [role,field]of[['finance',F.finance],['cashier',F.cashier]]){if(contacts[role].length)formData[field]=contacts[role];}
   const [,from,to,value]=TABLES.rates;
   const rate=unique(await rows(ctx,'rates',{[from]:currency,[to]:'HKD'}),r=>same(r[from],currency)&&text(r[to])==='HKD','FW-PAY-RATE-AMBIGUOUS');
   const calc=calculations(input.items.map(r=>r.amount),rate[value]);
@@ -109,12 +106,12 @@ async function prepare(input,ctx){
   });
   formData[F.total]=calc.total;formData[F.hkdTotal]=calc.hkdTotal;
   resolved.items=input.items.map((r,i)=>({...r,expense_category:itemPairs[i][0],account:itemPairs[i][1]}));
-  return {formData,departmentId,attachmentField:F.attachment,resolvedInputs:resolved,preview:{
-    流程:'对外付款申请',申请人:ctx.actor.name||ctx.actor.userid,申请日期:ctx.today,发起部门:dept.name,办公场所:workplace,
-    支付公司:company,承担公司:company,币种:currency,供应商:supplier,银行账户:formData[F.bankAccount]||'',开户行:formData[F.bankName]||'',供应商费用类别:formData[F.supplierCategory],供应商科目:formData[F.supplierAccount],
+  return {formData,departmentId,attachmentField:F.attachment,verification:{optionalEmptyFields},resolvedInputs:resolved,preview:{
+    流程:'对外付款申请',申请人:ctx.actor.name||'本人',申请日期:ctx.today,发起部门:dept.name,
+    支付公司:company,币种:currency,供应商:supplier,银行账户:formData[F.bankAccount]||'',开户行:formData[F.bankName]||'',供应商费用类别:formData[F.supplierCategory],供应商科目:formData[F.supplierAccount],
     是否项目:input.is_project,项目:project?{名称:project.name,部门:project.department.name,费用类别:project.category}:null,
     最晚付款日期:input.latest_payment_date,付款说明:input.description||'',明细:resolved.items.map((r,i)=>({...r,amount:calc.amounts[i],amount_hkd:calc.converted[i]})),原币合计:calc.total,港币合计:calc.hkdTotal,汇率:calc.rate,
-    业务架构:structures,关联流程:associated.preview,提示:warnings,计算方式:'每行港币金额按金额×汇率四舍五入至两位，再汇总；原币金额汇总后保留两位。',
+    关联流程:associated.preview,
   }};
 }
 module.exports={key:'external_expense_request',title:'对外付款申请',formUuid:FORM,policy,requirements,prepare};

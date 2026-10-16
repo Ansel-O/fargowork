@@ -9,13 +9,18 @@ description: 使用 FargoWork 的 OpenYida 技能包为当前登录员工办理�
 
 ```text
 node scripts/fargowork.cjs status
-node scripts/fargowork.cjs login
 node scripts/fargowork.cjs requirements external_expense_request
 node scripts/fargowork.cjs prepare external_expense_request --input <绝对路径的UTF-8业务JSON>
 node scripts/fargowork.cjs preview <draftId>
-node scripts/fargowork.cjs submit <draftId> --confirm <draftSha256>
-node scripts/fargowork.cjs result <draftId>
 ```
+
+`login` 不属于常规办理序列。只有 `status` 明确要求登录时，才单独执行 `node scripts/fargowork.cjs login`，由员工完成官方授权。
+
+**读取最终预览后必须停住，等待员工下一条明确确认。** 起初要求办理或提交，不代替看完预览后的确认。收到新确认后，才执行 `node scripts/fargowork.cjs submit <draftId> --confirm <本次preview返回的draftSha256>` 一次；需要回读时执行 `result <draftId>`。不要把准备、预览、提交合在一次命令里。
+
+正常时仅展示脚本 `preview` 的用户业务内容，不展开隐藏字段、人员映射或可空提示。仅确实阻塞时按[资料检查](../../references/CHECKS.md)协助处理。附件统一按[原生附件](../../references/ATTACHMENTS.md)办理。
+
+部门选择只向员工展示脚本提供的名称候选；`department_id`、`project_department_id` 等内部值由 Agent 从可信候选中对应填写，不要求员工提供或确认内部 ID。脚本没有候选时不猜值、不另查隐藏数据，按资料检查处理。
 
 先检查状态，仅在需要时引导本人登录。读取 `requirements`，收集是否项目付款、最晚付款日期、供应商、支付币种、付款明细和用户提供的附件。日期使用 `YYYY-MM-DD`，以状态中的 Asia/Shanghai 业务日期解释相对日期。每行明细包含 `description`、`amount`，可提供 `expense_category`、`account`、`remarks`；说明使用顶层 `description`。不编造付款事由、金额或附件。
 
@@ -27,6 +32,6 @@ node scripts/fargowork.cjs result <draftId>
 
 已有草稿补充资料、调整候选或附件时，使用 `prepare external_expense_request --input <文件> --draft <draftId>` 复用同一草稿。上传结果未知时停止，不自动重传。账号切换、跨日或业务内容改变后，必须重新核对预览；已提交或结果未知的草稿不能重新起草来重复提交。
 
-准备成功后展示完整业务预览：付款公司、供应商、银行、币种、明细及合计、汇率、最晚付款日期、项目和部门、关联流程、附件文件名，以及脚本提示。取得一次明确确认后，使用该草稿的 `draftId` 和 `draftSha256` 提交。成功时只报告结果与流程编号；结果未知时先查 `result`，不要再次提交。
+准备成功后展示完整业务预览：付款公司、供应商、银行、币种、明细及合计、汇率、最晚付款日期、项目、关联流程、附件文件名。取得一次明确确认后，使用该草稿的 `draftId` 和 `draftSha256` 提交。成功时只报告结果与流程编号；结果未知时先查 `result`，不要再次提交。
 
 日常只向用户输出必要提问、最终业务预览、结果和必要错误说明，不输出执行日志、鉴权过程或分阶段测试报告。只使用本包脚本及固定对外付款流程；禁止通过 OpenYida 通用发现命令检索其他应用、隐藏表或测试流程，禁止自行编写 HTTP 调用、任意连接器或修改固定目标。权限和来源不足时停止，按 [DEBUG](../../references/DEBUG.md) 提供简短支持信息，不索取凭据。

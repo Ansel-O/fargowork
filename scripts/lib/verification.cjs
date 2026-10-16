@@ -5,6 +5,16 @@ const plain = value => value !== null && typeof value === 'object'
   && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
 const nonempty = value => typeof value === 'string' && value.length > 0;
 const clone = value => JSON.parse(JSON.stringify(value));
+// These labels are scoped to the checked payment form. The two fields use
+// opposite codes, so HIDDEN/NORMAL must never be translated globally.
+const PAYMENT_FORM = 'FORM-AEE70BC941234A97B25DE3D5340B7DA7IXT3';
+const PAYMENT_ENUMS = Object.freeze({
+  radioField_m41da53k: Object.freeze({ HIDDEN: '否', NORMAL: '是' }),
+  radioField_m88g5767: Object.freeze({ HIDDEN: '是', NORMAL: '否' }),
+});
+const absent = value => value === undefined || value === null;
+const emptyDisplay = value => absent(value) || value === '' || (Array.isArray(value) && value.length === 0);
+const emptyIdentifiers = value => absent(value) || (Array.isArray(value) && value.length === 0);
 
 function unpack(value, expected) {
   if (typeof value === 'string') {
@@ -59,6 +69,48 @@ function scalarFieldEqual(field, actual, expected) {
   return false;
 }
 
+function radioComparison(field, actual, expected, target) {
+  const map = target.appType === 'APP_GITLRTH76PM6J4M29F5D' && target.formUuid === PAYMENT_FORM
+    ? PAYMENT_ENUMS[field] : undefined;
+  if (!map) return actual === expected ? 'verified'
+    : ['HIDDEN', 'NORMAL'].includes(actual) && ['HIDDEN', 'NORMAL'].includes(expected) ? 'mismatch' : 'partial';
+  const code = value => Object.hasOwn(map, value) ? value
+    : Object.keys(map).find(key => map[key] === value);
+  const left = code(actual), right = code(expected);
+  return left && right ? left === right ? 'verified' : 'mismatch' : 'partial';
+}
+
+function fieldComparison(field, data, expected, target, optional) {
+  const actual = data[field];
+  if (/^(employeeField|departmentSelectField)_/.test(field)) {
+    const ids = data[field + '_id'];
+    if (Array.isArray(expected) && expected.length === 0) {
+      // A nonempty display without identifiers is not an empty person field.
+      if (!emptyDisplay(actual)) return 'mismatch';
+      if (optional && emptyIdentifiers(ids)) return 'verified';
+    }
+    if (absent(ids)) return 'partial';
+    return identifierSetEqual(ids, expected) ? 'verified' : 'mismatch';
+  }
+  if (optional && expected === '' && /^(textField|textareaField|selectField|serialNumberField|radioField)_/.test(field)
+      && (absent(actual) || actual === '')) return 'verified';
+  // An explicitly frozen empty attachment list means no file was selected.
+  // Yida can omit that empty component; any returned file must still fail.
+  if (/^attachmentField_/.test(field) && Array.isArray(expected) && expected.length === 0) {
+    return absent(actual) || unpack(actual, 'array')?.length === 0 ? 'verified' : 'mismatch';
+  }
+  if (absent(actual)) return 'partial';
+  if (/^radioField_/.test(field)) {
+    if (typeof actual !== 'string' || typeof expected !== 'string') return 'mismatch';
+    return radioComparison(field, actual, expected, target);
+  }
+  if (/^tableField_/.test(field)) return tableEqual(actual, expected) ? 'verified' : 'mismatch';
+  if (/^attachmentField_/.test(field)) return attachmentsEqual(actual, expected) ? 'verified' : 'mismatch';
+  if (/^associationFormField_/.test(field)) return associationsEqual(actual, expected) ? 'verified' : 'mismatch';
+  if (!/^(numberField|dateField|textField|textareaField|selectField|serialNumberField)_/.test(field)) return 'partial';
+  return scalarFieldEqual(field, actual, expected) ? 'verified' : 'mismatch';
+}
+
 function tableEqual(actual, expected) {
   actual = unpack(actual, 'array');
   if (!actual || !Array.isArray(expected) || actual.length !== expected.length) return false;
@@ -92,7 +144,13 @@ function validateInstance({ instance, snapshot, expectedInstanceId } = {}) {
   const checks = { instanceShape: plain(instance), snapshotShape: plain(snapshot)
     && plain(snapshot.target) && plain(snapshot.actor) && plain(snapshot.formData)
     && Object.keys(snapshot.formData).length > 0 };
-  if (!checks.instanceShape || !checks.snapshotShape) return { checks, allPassed: false };
+  const unavailable = () => ({ checks, allPassed: false, status: 'unavailable', attachmentStatus: 'unavailable' });
+  if (!checks.instanceShape || !checks.snapshotShape) return unavailable();
+  const optional = snapshot.verification?.optionalEmptyFields === undefined ? [] : snapshot.verification.optionalEmptyFields;
+  checks.verificationContract = (snapshot.verification === undefined || plain(snapshot.verification))
+    && Array.isArray(optional) && optional.every(field => nonempty(field) && Object.hasOwn(snapshot.formData, field))
+    && optional.length === new Set(optional).size;
+  if (!checks.verificationContract) return unavailable();
   checks.instanceId = nonempty(expectedInstanceId) && instance.processInstanceId === expectedInstanceId;
   checks.formTarget = nonempty(snapshot.target.formUuid) && instance.formUuid === snapshot.target.formUuid;
   checks.processTarget = nonempty(snapshot.target.processCode) && instance.processCode === snapshot.target.processCode;
@@ -100,23 +158,25 @@ function validateInstance({ instance, snapshot, expectedInstanceId } = {}) {
     && instance.originator.userId === snapshot.actor.userid;
   checks.originatorCompany = nonempty(snapshot.actor.corp_id) && instance.originatorCorpId === snapshot.actor.corp_id;
   if (instance.appType !== undefined) checks.applicationTarget = instance.appType === snapshot.target.appType;
+  const identityVerified = Object.values(checks).every(value => value === true);
+  const identityMismatch = [
+    [instance.processInstanceId, expectedInstanceId], [instance.formUuid, snapshot.target.formUuid],
+    [instance.processCode, snapshot.target.processCode], [instance.originator?.userId, snapshot.actor.userid],
+    [instance.originatorCorpId, snapshot.actor.corp_id], [instance.appType, snapshot.target.appType],
+  ].some(([actual, expected]) => !absent(actual) && actual !== expected);
   const data = readData(instance);
   checks.formDataShape = data !== null;
-  if (!data) return { checks, allPassed: false };
+  if (!data) return { ...unavailable(), ...(identityMismatch ? { status: 'mismatch', attachmentStatus: 'mismatch' } : {}) };
   const references = [];
+  const fieldStatuses = {};
+  const attachmentStatuses = [];
   for (const [field, expected] of Object.entries(snapshot.formData)) {
-    let passed = false;
-    if (/^(employeeField|departmentSelectField)_/.test(field)) {
-      passed = identifierSetEqual(data[field + '_id'], expected);
-    } else if (/^tableField_/.test(field)) {
-      passed = tableEqual(data[field], expected);
-    } else if (/^attachmentField_/.test(field)) {
-      passed = attachmentsEqual(data[field], expected);
-      if (passed) references.push(...unpack(data[field], 'array'));
-    } else if (/^associationFormField_/.test(field)) {
-      passed=associationsEqual(data[field],expected);
-    } else {
-      passed = scalarFieldEqual(field, data[field], expected);
+    const status = fieldComparison(field, data, expected, snapshot.target, optional.includes(field));
+    const passed = status === 'verified';
+    fieldStatuses['field:' + field] = status;
+    if (/^attachmentField_/.test(field)) {
+      attachmentStatuses.push(status);
+      if (passed) references.push(...(unpack(data[field], 'array') || []));
     }
     checks['field:' + field] = passed;
   }
@@ -125,7 +185,15 @@ function validateInstance({ instance, snapshot, expectedInstanceId } = {}) {
   checks.nativeAttachmentCount=references.length===expectedAttachments;
   checks.nativeAttachmentUnique=references.length===new Set(references.map(x=>x.fileUuid)).size;
   const allPassed = Object.values(checks).every(value => value === true);
-  return { checks, allPassed, ...(allPassed ? {attachmentReferences:clone(references),
+  const attachmentStatus = !identityVerified ? identityMismatch ? 'mismatch' : 'unavailable'
+    : attachmentStatuses.includes('mismatch') || !checks.nativeAttachmentUnique ? 'mismatch'
+    : attachmentStatuses.includes('partial') ? 'unavailable'
+    : checks.nativeAttachmentCount ? 'verified' : 'mismatch';
+  const status = allPassed ? 'verified'
+    : identityMismatch || Object.values(fieldStatuses).includes('mismatch') || attachmentStatus === 'mismatch' ? 'mismatch'
+    : !identityVerified ? 'unavailable' : 'partial';
+  return { checks, allPassed, status, attachmentStatus, fieldStatuses,
+    ...(attachmentStatus === 'verified' ? {attachmentReferences:clone(references),
     ...(references.length===1?{attachmentReference:clone(references[0])}:{})} : {}) };
 }
 

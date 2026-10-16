@@ -1,30 +1,22 @@
 # DEBUG
 
-正常办理不输出日志或阶段报告。只有失败需要协助时，提供这三项即可：
+正常办理只输出必要问题、最终草稿和办理结果。仅失败求助时，提供时间（Asia/Shanghai）、阶段、脚本实际错误码；提交后可补充已有实例编号。不要发送完整日志、业务 JSON、附件内容、员工资料、登录地址栏、二维码、凭据、Cookie、授权码或签名。
 
-```text
-时间：YYYY-MM-DD HH:mm（Asia/Shanghai）
-阶段：安装 / 登录 / 准备草稿 / 附件 / 提交 / 查询结果
-错误码：复制脚本实际返回的 code
-```
-
-不要发送完整终端日志、请求或响应、登录地址栏、二维码、员工资料、业务 JSON、附件内容、token、Cookie、授权码、签名或密钥。Agent 也不应打开凭据文件排查。
-
-| 错误类别 | 处理方式 |
+| 情况 | 处理 |
 | --- | --- |
-| `NODE_22_REQUIRED`、`NPM_REQUIRED` | 需要 Windows 上的 Node.js 22 或以上及 npm；按公司 IT 规范安装，不提权或修改系统策略。 |
-| `OPENYIDA_CLI_REQUIRED` | 按[官方说明](https://github.com/openyida/openyida)使用 `npm install -g openyida` 安装官方 CLI，再运行本包安装器。 |
-| `SETUP_REQUIRED` | 按[入口 Skill](../SKILL.md#首次安装)先准备官方 OpenYida CLI，再从完整包根运行 `node scripts/setup.cjs`。 |
-| `OPENYIDA_VERSION_UNSUPPORTED` | 当前已核验 `2026.7.14-2` 和 `2026.10.16` 的接入合同。记录已装官方 CLI 版本，交由维护者核对兼容性；不要跳过检查、静默降级或在本包内安装副本。 |
-| `OPENYIDA_PROVIDER_UNAVAILABLE` | 官方 CLI 不可用，请维护者检查安装；不要猜凭据位置或复制登录文件。 |
-| `OPENYIDA_WORKSPACE_UNAVAILABLE` | 默认停止。仅确认原绑定目录已经丢失时，从完整包根执行 `node scripts/setup.cjs --rebind-workspace --no-login` 显式恢复，核对返回的 `officialWorkingDirectory`、`workspaceRebound` 和 `identityReviewRequired`；随后运行本包 `status`，必要时本人登录，并由本人核对当前公司和账号后再办理新申请。不迁移旧草稿、不复制凭据；普通安装不要添加此恢复参数。 |
-| `OPENYIDA_PROFILE_REQUIRED` | 仅在支持多账号配置的新版官方 CLI 返回此错误时处理；旧版 `2026.7.14-2` 不执行这些命令。运行 `node scripts/setup.cjs --no-login` 获取 `officialWorkingDirectory`，在该目录用官方 `openyida auth profiles --json` 查看已有账号配置，让本人选择后执行 `openyida auth profile switch <auth_profile>`，再重新运行本包命令。不猜账号、不展示完整认证输出。 |
-| `OPENYIDA_LOGIN_REQUIRED`、`LOGIN_NOT_COMPLETED`、`BROWSER_OPEN_FAILED` | 运行本包 `login`，由本人完成登录；失败时提供时间、阶段和错误码。不要复制登录链接中的参数。 |
-| `COMPANY_MISMATCH`、`ROSTER_IDENTITY_MISMATCH` | 停止本次办理，确认使用了正确公司的账号。不要修改身份或继续使用旧草稿。 |
-| `UPSTREAM_ACCESS_DENIED` | 让管理员核对当前账号及既有数据源权限。不要换账号试探、扩大权限或改用其他入口。 |
-| `WORKFLOW_SCHEMA_CHANGED`、`WORKFLOW_OPTIONS_CHANGED`、`DEPARTMENT_DETAIL_MISMATCH` | 流程或资料与包内规则不一致，交由维护者更新；不要跳过校验。 |
-| `ANNUAL_BALANCE_NOT_UNIQUE`、`CONTACTS_NOT_FOUND`、`DEPARTMENT_MANAGER_MISSING` | 请 HR 或管理员核对相关配置，不能由用户手填内部结果。 |
-| `INSUFFICIENT_BALANCE`、`NONPOSITIVE_LEAVE` | 按实际业务情况调整请假日期或时段，再重新预览确认。 |
-| `ATTACHMENT_EXTENSION_NOT_SUPPORTED`、`ATTACHMENT_LOCAL_ABSOLUTE_PATH_REQUIRED` | 检查文件格式和本地绝对路径。支持 PDF、PNG、JPEG、GIF、WebP、TXT、DOCX、XLSX、PPTX；最多 9 件，单件 20 MiB。 |
-| 提交或附件上传结果不确定 | 停止写操作，用现有草稿运行 `node scripts/fargowork.cjs result <draftId>`。不要重新提交、另建草稿或自动重传。 |
-| 其他错误码 | 保留实际错误码和上述三项信息交给维护者，不打印完整响应来猜原因。 |
+| `NODE_22_REQUIRED`、`OPENYIDA_CLI_REQUIRED`、`SETUP_REQUIRED` | 按[入口 Skill](../SKILL.md)安装 Node.js 和官方 OpenYida，再从完整包根运行安装器。遵循公司 IT 规范，不提权或修改系统策略。 |
+| `OPENYIDA_VERSION_UNSUPPORTED` | 本版适配官方 `2026.10.16`。记录现有版本，请维护者判断升级或兼容；不跳过检查或静默降级。 |
+| `OPENYIDA_PROFILE_REQUIRED` | 用官方 `openyida auth profiles --json` 查看已有账号配置，由本人选择并执行 `openyida auth profile switch <auth_profile>`。不猜选账号、不复制凭据。 |
+| `OPENYIDA_LOGIN_REQUIRED`、`LOGIN_NOT_COMPLETED` | 通过本包 `login` 调用官方登录，由本人授权；已有有效登录时直接复用。不要循环重试扫码。 |
+| `OPENYIDA_ENVIRONMENT_UNSUPPORTED`、`COMPANY_MISMATCH`、`IDENTITY_CHANGED` | 停止当前操作，核对官方选定的公司和账号。本包接受官方根域名或本公司的已知租户域名，不允许任意配置目标地址。切换账号后不能沿用原账号草稿。 |
+| `OPENYIDA_COMMAND_FAILED`、`OPENYIDA_PROVIDER_UNAVAILABLE`、权限或格式错误 | 联系 IT，附阶段、版本和错误码。不打印完整响应、翻凭据文件、换身份试探或扩大权限。 |
+| `PROCESS_PREVIEW_REQUIRED`、确认摘要不符 | 读取并展示当前草稿预览，停止操作，等本人下一条明确确认。旧授权、旧草稿和脚本读过预览都不代表本人已同意。 |
+| `DRAFT_VERSION_CHANGED`、`DRAFT_REVISION_INCOMPLETE`、`PROCESS_DRAFT_EXPIRED`、`BUSINESS_FACTS_CHANGED_REPREPARE` | 对尚未提交的草稿重新准备并展示预览。升级前已经提交或结果未知的申请先查询原结果，不能另建申请重提。 |
+| `OPENYIDA_TARGET_UNVERIFIED` | 官方写前校验未通过，本次未发送业务提交。请 IT 核对固定目标；不得搜索其他表单代替。 |
+| 组织或财务资料阻断 | 按[检查与求助](CHECKS.md)联系 HR、Finance 或 IT。正常可空字段不向员工提示。 |
+| 附件失败 | 按[原生附件说明](ATTACHMENTS.md)处理；结果未知时禁止自动重传。 |
+| 提交结果未知 | 保留草稿，执行 `node scripts/fargowork.cjs result <draftId>` 并核对宜搭已有申请。禁止自动重提或另建草稿规避。 |
+
+`status: submitted` 表示已经取得明确的成功回执。`verificationStatus` 单独说明回读：`verified` 已核对、`partial` 部分字段未能判断、`unavailable` 暂时无法核对、`mismatch` 存在实际差异。后三者不撤销提交成功，也不允许重提。`attachmentVerification` 单独表示附件引用的核对结果，不代表当前下载及各端预览都已验收。
+
+状态保存在当前用户的 `%LOCALAPPDATA%/FargoWorkOpenYida`。其中草稿包含个人业务信息，不属于可公开诊断日志；不要整目录上传或清空来重试。登录凭据仍由官方 OpenYida 管理，本包不另存凭据。旧版工作目录关联不再使用，不要复制或修改它来恢复身份。

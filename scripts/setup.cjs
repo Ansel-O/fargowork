@@ -10,13 +10,13 @@ const {
   read,
   safeCode
 } = require('./lib/common.cjs');
-const {bindWorkspace} = require('./lib/official-cli.cjs');
+const {official} = require('./lib/official-cli.cjs');
 function hash(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
 function verify(root, manifest) {
-  check(manifest.name === 'fargowork-openyida-skills' && manifest.version === '2.0.0' && Array.isArray(manifest.files) && manifest.files.length > 10, 'PACKAGE_MANIFEST_INVALID');
-  const required = ['README.md', 'SKILL.md', 'LICENSE', 'package.json', 'package-lock.json', 'scripts/setup.cjs', 'scripts/fargowork.cjs', 'scripts/lib/common.cjs', 'scripts/lib/auth.cjs', 'scripts/lib/login-worker.cjs', 'scripts/lib/official-cli.cjs', 'scripts/lib/policy.cjs', 'scripts/lib/runtime.cjs', 'scripts/lib/process.cjs', 'scripts/lib/native-attachment.cjs', 'scripts/lib/verification.cjs', 'references/CONNECTORS.md', 'references/DEBUG.md', ...['annual-leave', 'business-trip', 'procurement-request', 'external-expense-request'].flatMap(w => ['skills/' + w + '/SKILL.md', 'workflows/' + w + '.cjs']), 'workflows/leave-trip-common.cjs', 'workflows/payment-core.cjs', 'workflows/payment-sources.cjs'];
+  check(manifest.name === 'fargowork-openyida-skills' && manifest.version === '2.1.0' && Array.isArray(manifest.files) && manifest.files.length > 10, 'PACKAGE_MANIFEST_INVALID');
+  const required = ['README.md', 'SKILL.md', 'LICENSE', 'package.json', 'package-lock.json', 'scripts/setup.cjs', 'scripts/fargowork.cjs', 'scripts/lib/common.cjs', 'scripts/lib/auth.cjs', 'scripts/lib/official-cli.cjs', 'scripts/lib/policy.cjs', 'scripts/lib/runtime.cjs', 'scripts/lib/process.cjs', 'scripts/lib/native-attachment.cjs', 'scripts/lib/verification.cjs', 'scripts/lib/support.cjs', 'references/ATTACHMENTS.md', 'references/CHECKS.md', 'references/CONNECTORS.md', 'references/DEBUG.md', ...['annual-leave', 'business-trip', 'procurement-request', 'external-expense-request'].flatMap(w => ['skills/' + w + '/SKILL.md', 'workflows/' + w + '.cjs']), 'workflows/leave-trip-common.cjs', 'workflows/payment-core.cjs', 'workflows/payment-sources.cjs'];
   const seen = new Set(),
     realRoot = fs.realpathSync(root) + path.sep;
   for (const f of manifest.files) {
@@ -31,8 +31,7 @@ function verify(root, manifest) {
 async function setup(args) {
   check(Number(process.versions.node.split('.')[0]) >= 22, 'NODE_22_REQUIRED');
   check(process.platform === 'win32', 'WINDOWS_REQUIRED');
-  check(args.length <= 2 && new Set(args).size === args.length
-    && args.every(arg => ['--no-login', '--rebind-workspace'].includes(arg)), 'ARGUMENT_INVALID');
+  check(args.length <= 1 && args.every(arg => arg === '--no-login'), 'ARGUMENT_INVALID');
   const source = path.resolve(__dirname, '..'),
     manifest = read(path.join(source, 'manifest.json'));
   verify(source, manifest);
@@ -48,8 +47,7 @@ async function setup(args) {
     check(false, 'INSTALL_BUSY_OR_INTERRUPTED');
   }
   try {
-    officialInfo = bindWorkspace({sourceRoot: source, fallbackRoot: path.join(base, 'official-workspace'),
-      rebind: args.includes('--rebind-workspace')});
+    officialInfo = {openyidaVersion: official().version};
     fs.mkdirSync(dest, {
       recursive: true,
       mode: 0o700
@@ -74,8 +72,7 @@ async function setup(args) {
     status: 'not_requested'
   };
   if (!args.includes('--no-login')) {
-    try { identity = await require(path.join(dest, 'scripts', 'lib', 'auth.cjs')).login(); }
-    catch (error) { error.officialWorkingDirectory = officialInfo.officialWorkingDirectory; throw error; }
+    identity = await require(path.join(dest, 'scripts', 'lib', 'auth.cjs')).login();
   }
   return {
     installed: true,
@@ -85,15 +82,13 @@ async function setup(args) {
     skillEntry: path.join(dest, 'SKILL.md'),
     skills: ['annual-leave', 'business-trip', 'procurement-request', 'external-expense-request'].map(s => path.join(dest, 'skills', s, 'SKILL.md')),
     command: [process.execPath, path.join(dest, 'scripts', 'fargowork.cjs')],
-    message: officialInfo.workspaceRebound ? '官方工作目录已重新绑定。请核对当前账号后继续；既有草稿仍保持原账号约束。'
-      : identity.status === 'ready' ? '已安装并登录，可以办理四个已支持的流程。' : '安装完成，办理前需要登录。'
+    message: identity.status === 'ready' ? '已安装并登录，可以办理四个已支持的流程。' : '安装完成，办理前需要登录。'
   };
 }
 if (require.main === module) setup(process.argv.slice(2)).then(r => process.stdout.write(JSON.stringify(r, null, 2) + '\n')).catch(e => {
   process.stdout.write(JSON.stringify({
     installed: false,
     code: safeCode(e),
-    ...(e.officialWorkingDirectory ? {officialWorkingDirectory: e.officialWorkingDirectory} : {}),
     message: '安装未完成，请按错误码处理，不要尝试其他安装入口。'
   }) + '\n');
   process.exitCode = 1;

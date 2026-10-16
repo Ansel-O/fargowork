@@ -9,13 +9,18 @@ description: 使用 FargoWork 的 OpenYida 技能包为当前登录员工办理�
 
 ```text
 node scripts/fargowork.cjs status
-node scripts/fargowork.cjs login
 node scripts/fargowork.cjs requirements business_trip
 node scripts/fargowork.cjs prepare business_trip --input <绝对路径的UTF-8业务JSON>
 node scripts/fargowork.cjs preview <draftId>
-node scripts/fargowork.cjs submit <draftId> --confirm <draftSha256>
-node scripts/fargowork.cjs result <draftId>
 ```
+
+`login` 不属于常规办理序列。只有 `status` 明确要求登录时，才单独执行 `node scripts/fargowork.cjs login`，由员工完成官方授权。
+
+**读取最终预览后必须停住，等待员工下一条明确确认。** 起初要求办理或提交，不代替看完预览后的确认。收到新确认后，才执行 `node scripts/fargowork.cjs submit <draftId> --confirm <本次preview返回的draftSha256>` 一次；需要回读时执行 `result <draftId>`。不要把准备、预览、提交合在一次命令里。
+
+正常时仅展示脚本 `preview` 的用户业务内容，不展开隐藏字段、人员映射或可空提示。仅确实阻塞时按[资料检查](../../references/CHECKS.md)协助处理。附件统一按[原生附件](../../references/ATTACHMENTS.md)办理。
+
+部门选择只向员工展示脚本提供的名称候选；`department_id`、`project_department` 等内部值由 Agent 从可信候选中对应填写，不要求员工提供或确认内部 ID。脚本没有候选时不猜值、不另查隐藏数据，按资料检查处理。
 
 先检查状态，只有需要时引导本人登录。用 `requirements business_trip` 读取当前输入要求：地点、目的、起止日期、港币预算、内容、是否项目出差。日期按状态返回的 Asia/Shanghai 业务日期解释，写成 `YYYY-MM-DD`；`is_project` 使用 JSON 布尔值。出差目的只能采用返回的选项。
 
@@ -23,7 +28,7 @@ node scripts/fargowork.cjs result <draftId>
 
 将业务输入保存为本地 UTF-8 JSON，再运行 `prepare`。如用户提供附件，使用顶层 `attachments` 数组列出真实文件的绝对路径；统一脚本负责原生附件上传与绑定，不复制其他申请的附件引用。缺信息时合并询问 `needsInput`，更新输入后重新准备；已有草稿修改内容或补附件时，在命令追加 `--draft <draftId>`，复用同一草稿及已知附件，不因修改内容新建一套上传。
 
-准备成功后展示最终业务预览：日期、地点、目的、预算、排程、项目及部门、发起部门和附件。用户明确确认该预览后，使用该草稿的 `draftId` 和 `draftSha256` 提交一次。改动内容、跨日或切换账号后须重新准备并确认。成功后只报告结果与流程编号；不确定时先查 `result`，不能新建草稿重提或自动重传未知结果的文件。
+准备成功后展示最终业务预览：日期、地点、目的、预算、排程、项目及部门和附件。用户明确确认该预览后，使用该草稿的 `draftId` 和 `draftSha256` 提交一次。改动内容、跨日或切换账号后须重新准备并确认。成功后只报告结果与流程编号；不确定时先查 `result`，不能新建草稿重提或自动重传未知结果的文件。
 
 日常只向用户输出待补充问题、最终预览、结果和必要错误说明，不播报命令、阶段日志、鉴权细节或测试报告。
 

@@ -3,8 +3,8 @@
 // Resolve an already installed official CLI; no bundled dependency or install.
 const fs = require('node:fs'), path = require('node:path');
 const {spawnSync} = require('node:child_process');
-const {check, dataRoot, read, write} = require('./common.cjs');
-const SUPPORTED = Object.freeze(['2026.7.14-2', '2026.10.16']);
+const {check, dataRoot, read} = require('./common.cjs');
+const SUPPORTED = Object.freeze(['2026.10.16']);
 let cached;
 function commandPaths(name) {
   const result = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [name], {
@@ -33,17 +33,12 @@ function validatePackage(root) {
   const real = fs.realpathSync(root), pkg = read(path.join(real, 'package.json'));
   check(pkg.name === 'openyida' && pkg.bin?.openyida === 'bin/yida.js', 'OPENYIDA_PROVIDER_UNAVAILABLE');
   check(SUPPORTED.includes(pkg.version), 'OPENYIDA_VERSION_UNSUPPORTED');
-  for (const file of ['bin/yida.js', 'lib/auth/token-auth.js', 'lib/core/utils.js']) {
-    const full = path.join(real, file);
-    check(fs.existsSync(full) && fs.statSync(full).isFile()
-      && fs.realpathSync(full).startsWith(real + path.sep), 'OPENYIDA_PROVIDER_UNAVAILABLE');
-  }
-  const provider = require(path.join(real, 'lib/auth/token-auth.js'));
-  const utils = require(path.join(real, 'lib/core/utils.js'));
-  check(['tokenLogin', 'tokenStatus', 'tokenRefresh', 'tokenLogout', 'getAccessToken'].every(k => typeof provider[k] === 'function')
-    && typeof utils.findProjectRoot === 'function', 'OPENYIDA_PROVIDER_UNAVAILABLE');
-  return {packageRoot: real, version: pkg.version, provider, findProjectRoot: utils.findProjectRoot};
+  const entry = path.join(real, 'bin/yida.js');
+  check(fs.existsSync(entry) && fs.statSync(entry).isFile()
+    && fs.realpathSync(entry).startsWith(real + path.sep), 'OPENYIDA_PROVIDER_UNAVAILABLE');
+  return {packageRoot: real, entry, version: pkg.version};
 }
+
 function official() {
   if (cached) return cached;
   const roots = [];
@@ -64,61 +59,70 @@ function official() {
   }
   check(false, 'OPENYIDA_CLI_REQUIRED');
 }
-function bindingData(file) {
-  const binding = read(file);
-  check(binding.schema === 1 && typeof binding.projectRoot === 'string' && path.isAbsolute(binding.projectRoot), 'OPENYIDA_WORKSPACE_UNAVAILABLE');
-  return binding;
+// The public CLI owns profiles, project selection, login, refresh and endpoints.
+// No FargoWork auth directory or workspace pointer is created.
+function parseJson(text) {
+  try { return JSON.parse(String(text || '').trim()); } catch { return null; }
 }
-function directoryExists(dir) {
-  return fs.existsSync(dir) && fs.statSync(dir).isDirectory();
+function targetFailure() {
+  const error = Object.assign(new Error('OPENYIDA_TARGET_UNVERIFIED'), {
+    code: 'OPENYIDA_TARGET_UNVERIFIED', sideEffectState: 'none', retrySafe: true});
+  throw error;
 }
-function workspace() {
-  const file = path.join(dataRoot(), 'official-openyida.json');
-  check(fs.existsSync(file), 'SETUP_REQUIRED');
-  const binding = bindingData(file);
-  if (!directoryExists(binding.projectRoot)) {
-    try { check(false, 'OPENYIDA_WORKSPACE_UNAVAILABLE'); }
-    catch (error) { error.officialWorkingDirectory = binding.projectRoot; throw error; }
-  }
-  return binding.projectRoot;
-}
-function bindWorkspace({sourceRoot, fallbackRoot, rebind = false} = {}) {
-  const cli = official(), file = path.join(dataRoot(), 'official-openyida.json');
-  const existing = fs.existsSync(file) ? bindingData(file) : null;
-  if (rebind) check(existing && !fs.existsSync(existing.projectRoot), 'OPENYIDA_REBIND_NOT_NEEDED');
-  if (!existing || rebind) {
-    const found = cli.findProjectRoot();
-    check(typeof found === 'string' && path.isAbsolute(found) && directoryExists(found), 'OPENYIDA_WORKSPACE_UNAVAILABLE');
-    let projectRoot = fs.realpathSync(found);
-    let createdFallback = false;
-    const samePath = (a, b) => process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
-    // Check presence only. The official provider alone owns the contents of
-    // project credentials and profile pointers, including legacy migration.
-    const hasOfficialWorkspace = ['config.json', '.cache/auth-token-public.json',
-      '.cache/openyida/auth-profile-public.json'].some(name => fs.existsSync(path.join(projectRoot, name)));
-    if (sourceRoot && samePath(projectRoot, fs.realpathSync(sourceRoot)) && !hasOfficialWorkspace) {
-      check(typeof fallbackRoot === 'string' && path.isAbsolute(fallbackRoot), 'OPENYIDA_WORKSPACE_UNAVAILABLE');
-      createdFallback = !fs.existsSync(fallbackRoot);
-      fs.mkdirSync(fallbackRoot, {recursive: true, mode: 0o700});
-      projectRoot = fs.realpathSync(fallbackRoot);
+function run(args, {mutation = false, login = false, identity, input} = {}) {
+  const cli = official();
+  const argv = [...args, '--json'];
+  let temporary;
+  try {
+    if (input !== undefined) {
+      temporary = fs.mkdtempSync(path.join(dataRoot(), 'command-'));
+      const file = path.join(temporary, 'input.json');
+      fs.writeFileSync(file, typeof input === 'string' ? input : JSON.stringify(input), {mode: 0o600, flag: 'wx'});
+      const index = argv.indexOf('__FARGOWORK_INPUT__');
+      check(index > 0 && ['--data-file', '--search-file'].includes(argv[index - 1]), 'OFFICIAL_ARGUMENT_INVALID');
+      argv[index] = file;
     }
-    const binding = {schema: 1, projectRoot};
-    if (rebind) {
-      // Setup holds install.lock. A valid existing workspace is never replaced.
-      check(bindingData(file).projectRoot === existing.projectRoot
-        && (!fs.existsSync(existing.projectRoot) || createdFallback && samePath(projectRoot, existing.projectRoot)), 'OPENYIDA_WORKSPACE_CHANGED');
-      write(file, binding);
-    } else {
-      let fd;
-      try { fd = fs.openSync(file, 'wx', 0o600); }
-      catch (error) { if (error.code !== 'EEXIST') throw error; }
-      if (fd !== undefined) {
-        try { fs.writeFileSync(fd, JSON.stringify(binding) + '\n'); fs.fsyncSync(fd); }
-        finally { fs.closeSync(fd); }
-      }
+    const env = {...process.env, YIDA_QUIET: '1', OPENYIDA_NO_AUTO_UPDATE: '1'};
+    if (identity) {
+      // Select the exact already observed official profile for this command.
+      // This is a process-local selector, never a persisted FargoWork binding.
+      env.OPENYIDA_AUTH_CORP_ID = identity.corp_id;
+      env.OPENYIDA_AUTH_USER_ID = identity.user_id;
+      if (identity.auth_profile) env.OPENYIDA_AUTH_PROFILE = identity.auth_profile;
+    }
+    const result = spawnSync(process.execPath, [cli.entry, ...argv], {
+      cwd: process.cwd(), env, encoding: 'utf8', windowsHide: true, shell: false,
+      timeout: login ? 600000 : 120000, maxBuffer: 8 * 1024 * 1024});
+    const value = parseJson(result.stdout);
+    if (result.status === 0 && !result.error && value !== null) return value;
+    const error = parseJson(result.stderr);
+    // These official errors occur before createProcess calls sendPostOnce.
+    if (mutation && ['DATA_TARGET_IDENTITY_UNVERIFIED', 'DATA_TARGET_IDENTITY_MISMATCH',
+      'DATA_FORM_MODE_UNVERIFIED', 'DATA_TARGET_EXPECTATION_INVALID', 'DATA_INVALID_ARGUMENTS'].includes(error?.errorCode)) targetFailure();
+    const rejected = error?.errorCode === 'DATA_API_ERROR' ? error.details : null;
+    const upstreamCode = rejected?.errorCode;
+    if (mutation && rejected?.success === false && !Object.keys(rejected).some(k => k.startsWith('__'))
+      && (typeof upstreamCode === 'string' || Number.isSafeInteger(upstreamCode))
+      && /^[A-Za-z0-9_.-]{1,100}$/.test(String(upstreamCode))
+      && !['TOKEN_AUTH_REQUIRED', 'TOKEN_REFRESH_FAILED', 'NON_IDEMPOTENT_RESULT_UNKNOWN', 'AUTH_IDENTITY_CHANGED'].includes(String(upstreamCode))) {
+      return {success: false, errorCode: upstreamCode};
+    }
+    check(false, mutation ? 'WRITE_OUTCOME_UNKNOWN' : login ? 'LOGIN_NOT_COMPLETED' : 'OPENYIDA_COMMAND_FAILED');
+  } finally {
+    if (temporary) {
+      const file = path.join(temporary, 'input.json');
+      if (fs.existsSync(file)) fs.unlinkSync(file);
+      fs.rmdirSync(temporary);
     }
   }
-  return {officialWorkingDirectory: workspace(), openyidaVersion: cli.version,
-    ...(rebind ? {workspaceRebound: true, identityReviewRequired: true} : {})};
 }
-module.exports = {SUPPORTED, official, bindWorkspace, workspace};
+// Only native attachments and existing page connector actions need this gap
+// adapter. The upstream module is not a public SDK; keep the tested CLI pin.
+function gapProvider() {
+  const cli = official(), file = path.join(cli.packageRoot, 'lib/auth/token-auth.js');
+  check(fs.existsSync(file) && fs.realpathSync(file).startsWith(cli.packageRoot + path.sep), 'OPENYIDA_PROVIDER_UNAVAILABLE');
+  const provider = require(file);
+  check(typeof provider.getAccessToken === 'function', 'OPENYIDA_PROVIDER_UNAVAILABLE');
+  return provider;
+}
+module.exports = {SUPPORTED, official, run, gapProvider, targetFailure};

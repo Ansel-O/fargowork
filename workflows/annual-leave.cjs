@@ -84,7 +84,10 @@ async function prepare(input, ctx) {
   const roster = C.rosterFields(await ctx.roster(policy.rosterFields), actor);
   const name = C.rosterValue(roster, C.ROSTER.name, 'value'), office = C.rosterValue(roster, C.ROSTER.office, 'value');
   const company = C.rosterValue(roster, C.ROSTER.company, 'value'), group = C.rosterValue(roster, C.ROSTER.group);
-  const status = C.rosterValue(roster, C.ROSTER.status);
+  const statusEntries=roster.get(C.ROSTER.status);
+  const statusPresent=Array.isArray(statusEntries)&&statusEntries.some(entry=>C.values(!C.absent(entry.label) ? entry.label : entry.value).length);
+  const status=statusPresent?C.rosterValue(roster,C.ROSTER.status):'';
+  C.check(status || !C.required(schema,F.status),'ROSTER_FIELD_MISSING','办理所需的任职资料缺失，请联系 HR 核查。');
   const dep = C.department(roster, input.department_id);
   const officeAdmin = await C.contacts(ctx, C.OFFICE, office, {required:C.required(schema,F.officeAdmin)});
   const attendanceAdmin = await C.contacts(ctx, C.COMPANY, company, {required:C.required(schema,F.attendanceAdmin)});
@@ -113,10 +116,8 @@ async function prepare(input, ctx) {
     formData, departmentId:dep.id,
     preview:{流程:title, 申请人:name, 申请日期:ctx.today, 开始:`${input.start_date} ${startPeriod}`, 结束:`${input.end_date} ${endPeriod}`, 请假事由:reason,
       请假天数:days, 剩余年假:quota.remaining, 年假年份:year, 年假有效期:C.dateText(quota.validUntil),
-      工作日基础天数:workdays, 调整天数:calendarResult.sum, 日历调整:calendarResult.adjustments,
-      发起部门:dep.id, 其他任职部门:dep.alternatives, 默认主部门:dep.defaulted,
-      签约公司:company, 办公场所:office, 假勤组:group, 员工状态:status, 办公室行政:officeAdmin.names, 考勤管理员:attendanceAdmin.names,
-      提示:[...(!officeAdmin.ids.length ? ['办公室行政未匹配到配置，按原流程保留为空。'] : []),...(!attendanceAdmin.ids.length ? ['考勤管理员未匹配到配置，按原流程保留为空。'] : [])]},
+      },
+    verification:{optionalEmptyFields:[...(!officeAdmin.ids.length ? [F.officeAdmin] : []),...(!attendanceAdmin.ids.length ? [F.attendanceAdmin] : []),...(!status ? [F.status] : [])]},
     resolvedInputs:{...input, reason, start_period:startPeriod, end_period:endPeriod, department_id:dep.id}
   };
 }
