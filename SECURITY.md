@@ -1,9 +1,7 @@
-# Security
+# 安全问题反馈
 
-Do not report credentials, tokens, authorization headers, real workflow data,
-or employee information in a public issue.
+请通过公司提供的内部支持渠道联系 FargoWork 维护者，说明版本、发生时间、错误码及脱敏后的复现步骤。
 
-For a suspected vulnerability, contact the FargoWork maintainers privately
-through the organization channel that provided the office pilot. Include the
-affected client version and a redacted reproduction. Do not include Server
-configuration or production endpoint secrets.
+不要在公开 Issue 中上传员工资料、付款信息、附件、完整请求或响应、登录地址、token、Cookie、授权码或密钥。
+
+本包只能约束自身的调用范围，不能代替宜搭服务端权限。管理员仍需管理流程、资料表和连接器的访问范围。相关边界见 [连接器说明](references/CONNECTORS.md)。

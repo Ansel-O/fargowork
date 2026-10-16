@@ -1,11 +1,9 @@
-name: FargoWork public delivery integrity
+name: FargoWork add-on delivery integrity
 
 on:
   push:
-    branches:
-      - main
-    tags:
-      - "v*.*.*"
+    branches: [main]
+    tags: ['v*.*.*']
   pull_request:
   workflow_dispatch:
 
@@ -14,123 +12,101 @@ permissions:
 
 jobs:
   delivery-integrity:
-    name: Validate public installation contents
     if: github.repository == 'Ansel-O/fargowork'
     runs-on: ubuntu-22.04
     steps:
-      - name: Check out source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Verify the employee delivery tree
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Verify published contents and links
         shell: bash
         run: |
           python3 - <<'PY'
-          import json
-          import re
-          from pathlib import Path, PurePosixPath
-
-          root = Path.cwd()
-          required = {
-              "README.md",
-              "INSTALL.md",
-              "LICENSE",
-              "SECURITY.md",
-              "DEBUG.md",
-              "public/bootstrap.ps1",
-              "public/install.ps1",
-              "public/install.sh",
-              "public/EMPLOYEE-README.md",
-              "public/EMPLOYEE-DATA-NOTE.md",
-              "public/cli/fargowork_cli.py",
-              "public/cli/client_diagnostics.py",
-              "public/cli/employee_profile.py",
-              "public/cli/employee_attachments.py",
-              "public/release/version.json",
-              "public/release/windows-trial.json",
-              "public/agent-plugin/fargowork/LICENSE",
-              "public/agent-plugin/fargowork/README.md",
-              "public/agent-plugin/fargowork/plugin.json",
+          import hashlib, json, re, subprocess
+          from pathlib import Path
+          PRODUCT_FILES = {
+              '.gitignore',
+              'LICENSE',
+              'README.md',
+              'SKILL.md',
+              'package-lock.json',
+              'package.json',
+              'references/CONNECTORS.md',
+              'references/DEBUG.md',
+              'scripts/fargowork.cjs',
+              'scripts/lib/auth.cjs',
+              'scripts/lib/common.cjs',
+              'scripts/lib/login-worker.cjs',
+              'scripts/lib/native-attachment.cjs',
+              'scripts/lib/official-cli.cjs',
+              'scripts/lib/policy.cjs',
+              'scripts/lib/process.cjs',
+              'scripts/lib/runtime.cjs',
+              'scripts/lib/verification.cjs',
+              'scripts/setup.cjs',
+              'skills/annual-leave/SKILL.md',
+              'skills/business-trip/SKILL.md',
+              'skills/external-expense-request/SKILL.md',
+              'skills/procurement-request/SKILL.md',
+              'workflows/annual-leave.cjs',
+              'workflows/business-trip.cjs',
+              'workflows/external-expense-request.cjs',
+              'workflows/leave-trip-common.cjs',
+              'workflows/payment-core.cjs',
+              'workflows/payment-sources.cjs',
+              'workflows/procurement-request.cjs',
           }
-          skill_names = {
-              "fargowork-employee",
-              "fargowork-business-trip",
-              "fargowork-annual-leave",
-              "fargowork-procurement-request",
-              "fargowork-external-expense-request",
+          PUBLIC_METADATA = {
+              'manifest.json', 'CHANGELOG.md', 'SECURITY.md',
+              '.github/workflows/delivery-integrity.yml',
+              '.gitattributes', 'EXPORT-MANIFEST.json',
           }
-          skill_root = Path("public/agent-plugin/fargowork/skills")
-          actual_skills = {
-              path.parent.name for path in skill_root.glob("*/SKILL.md")
-          }
-          if actual_skills != skill_names:
-              raise SystemExit(f"unexpected employee Skill set: {sorted(actual_skills)}")
-          required.update(
-              (skill_root / name / "SKILL.md").as_posix() for name in skill_names
-          )
-          missing = sorted(path for path in required if not (root / path).is_file())
-          if missing:
-              raise SystemExit(f"public employee files are missing: {missing}")
-          if Path("tests").exists() or Path("tools/release").exists():
-              raise SystemExit("public source must not contain tests or release tooling")
-          if Path("public/release/public-export.json").exists():
-              raise SystemExit("public source must not include the maintainer export allowlist")
-
-          version = json.loads(Path("public/release/version.json").read_text(encoding="utf-8"))
-          trial = json.loads(Path("public/release/windows-trial.json").read_text(encoding="utf-8"))
-          plugin = json.loads(Path("public/agent-plugin/fargowork/plugin.json").read_text(encoding="utf-8"))
-          if version.get("version") != plugin.get("version"):
-              raise SystemExit("plugin and public client versions differ")
-          if trial.get("version") != version.get("version") or trial.get("tag") != f"v{version['version']}":
-              raise SystemExit("bootstrap metadata does not match the public client version")
-          archive = trial.get("archive", {})
-          if not re.fullmatch(r"fargowork-employee-v[0-9]+\.[0-9]+\.[0-9]+-windows-x64\.zip", archive.get("name", "")):
-              raise SystemExit("bootstrap metadata has an invalid employee archive name")
-          if not re.fullmatch(r"[0-9a-f]{64}", archive.get("sha256", "")) or not isinstance(archive.get("size"), int) or archive["size"] <= 0:
-              raise SystemExit("bootstrap metadata lacks a valid archive checksum and size")
-          if set(trial) & {"acceptance", "business_submission", "candidate", "ci_provenance", "signing", "stage"}:
-              raise SystemExit("bootstrap metadata contains maintainer acceptance or candidate state")
-
-          readme = Path("README.md").read_text(encoding="utf-8")
-          if "https://github.com/Ansel-O/fargowork" not in readme:
-              raise SystemExit("README is missing the one-line employee installation entry")
-          if "[安装说明](INSTALL.md)" not in readme or "[排障说明](DEBUG.md)" not in readme:
-              raise SystemExit("README is missing its short installation or troubleshooting link")
-          if any(marker in readme.lower() for marker in (".zip", "tools/release", "mcp.json", "tests/")):
-              raise SystemExit("README contains maintainer or manual package instructions")
-
-          install_doc = Path("INSTALL.md").read_text(encoding="utf-8")
-          if (
-              f"/v{version['version']}/public/bootstrap.ps1" not in install_doc
-              or "-Login" not in install_doc
-              or "-OpenBrowser always" not in install_doc
-              or "-Target" in install_doc
-              or "-OutputJsonl" in install_doc
-              or "skill_paths" not in install_doc
-              or "DEBUG.md" not in install_doc
-          ):
-              raise SystemExit("INSTALL.md does not match the fixed bootstrap and Skill-loading contract")
-          employee_doc = Path("public/EMPLOYEE-README.md").read_text(encoding="utf-8")
-          if (
-              "./install.ps1" not in employee_doc
-              or "-ServiceIssuer" not in employee_doc
-              or "-LocalArtifactDir ." not in employee_doc
-              or "-Login" not in employee_doc
-              or "-OpenBrowser always" not in employee_doc
-              or "-Target" in employee_doc
-              or "-OutputJsonl" in employee_doc
-              or "skill_paths" not in employee_doc
-              or "DEBUG.md" not in employee_doc
-              or "EMPLOYEE-DATA-NOTE.md" not in employee_doc
-          ):
-              raise SystemExit("employee package README is missing its local installer or support links")
-
-          markdown_files = list(Path("public/agent-plugin/fargowork/skills").rglob("*.md"))
-          link_pattern = re.compile(r"\]\((?!https?://|mailto:|#)([^)#]+)(?:#[^)]+)?\)")
-          for source in markdown_files:
-              text = source.read_text(encoding="utf-8")
-              for target in link_pattern.findall(text):
-                  resolved = (source.parent / PurePosixPath(target)).resolve()
-                  if not resolved.is_relative_to(root.resolve()) or not resolved.is_file():
-                      raise SystemExit(f"broken or unsafe Skill reference in {source}: {target}")
-
-          print("Public employee delivery files, versions, archive metadata, and Skill references are complete.")
+          root = Path.cwd().resolve()
+          expected = PRODUCT_FILES | PUBLIC_METADATA
+          export = json.loads(Path('EXPORT-MANIFEST.json').read_text(encoding='utf-8'))
+          package = json.loads(Path('manifest.json').read_text(encoding='utf-8'))
+          metadata = json.loads(Path('package.json').read_text(encoding='utf-8'))
+          lock = json.loads(Path('package-lock.json').read_text(encoding='utf-8'))
+          assert metadata['name'] == package['name'] == 'fargowork-openyida-skills'
+          assert export['name'] == 'fargowork'
+          assert export['version'] == package['version'] == metadata['version'] == lock['version']
+          assert re.fullmatch(r'\d+\.\d+\.\d+', metadata['version'])
+          assert not any(metadata.get(k) for k in ('dependencies', 'devDependencies', 'optionalDependencies')), 'CLI must be installed separately'
+          assert set(lock.get('packages', {})) <= {''}, 'No bundled dependency lock entries'
+          tracked = set(subprocess.check_output(['git', 'ls-files', '-z']).decode().split('\0')) - {''}
+          assert tracked == expected, 'Unexpected or missing public files'
+          for manifest, required in [(package, PRODUCT_FILES), (export, expected - {'EXPORT-MANIFEST.json'})]:
+              assert set(manifest) == {'name', 'version', 'files'}
+              assert isinstance(manifest['files'], list) and len(manifest['files']) == len(required)
+              assert {f['path'] for f in manifest['files']} == required, 'Manifest differs from static allowlist'
+              names = set()
+              for item in manifest['files']:
+                  assert set(item) == {'path', 'bytes', 'sha256'}
+                  p = root / item['path']
+                  assert item['path'] not in names and p.is_file() and not p.is_symlink()
+                  names.add(item['path'])
+                  assert p.resolve().is_relative_to(root)
+                  assert type(item['bytes']) is int and item['bytes'] >= 0
+                  assert isinstance(item['sha256'], str) and re.fullmatch(r'[a-f0-9]{64}', item['sha256'])
+                  body = p.read_bytes()
+                  assert len(body) == item['bytes'] and hashlib.sha256(body).hexdigest() == item['sha256']
+          assert {p.parent.name for p in Path('skills').glob('*/SKILL.md')} == {'annual-leave', 'business-trip', 'procurement-request', 'external-expense-request'}
+          readme = Path('README.md').read_text(encoding='utf-8')
+          assert 'https://github.com/Ansel-O/fargowork' in readme
+          assert 'https://github.com/openyida/openyida' in readme and 'npm install -g openyida' in readme
+          assert '.zip' not in readme.lower()
+          for name in tracked:
+              if not name.endswith('.md'):
+                  continue
+              source = Path(name)
+              for link in re.findall(r'\]\((?!https?://|mailto:|#)([^)#]+)(?:#[^)]+)?\)', source.read_text(encoding='utf-8')):
+                  target = (source.parent / link).resolve()
+                  assert target.is_relative_to(root) and target.is_file(), (name, link)
+          print('Public add-on contents, versions, checksums and links verified.')
           PY
+      - name: Check JavaScript syntax and fixed workflow entry
+        shell: bash
+        run: |
+          find scripts workflows -name '*.cjs' -print0 | xargs -0 -n1 node --check
+          node scripts/fargowork.cjs workflows

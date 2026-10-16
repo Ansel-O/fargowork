@@ -1,2 +1,2 @@
-# Preserve reviewed export bytes so EXPORT-MANIFEST hashes survive Git staging.
+# Preserve reviewed package bytes and SHA-256 values.
 * -text

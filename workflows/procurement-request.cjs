@@ -1,0 +1,168 @@
+'use strict';
+
+// Fixed procurement contract. This module never discovers other process forms.
+const key = 'procurement_request';
+const title = '采购申请';
+const formUuid = 'FORM-4E378FADE81F40F8A520A47251D804E6MT1K';
+const CURRENCY = 'FORM-BC161CE5E6BE401EA7A221C3E1B59D3F39LH';
+const RATE = 'FORM-0E81A1BBF9C24779B3087C10A32489E26UDW';
+const OFFICE = 'FORM-644A41735FC1422394A3C8197FADD2ACZ7UA';
+const F = Object.freeze({applicant:'employeeField_m0emcku2',dept:'departmentSelectField_m0emcku3',date:'dateField_m0emcku4',reason:'textareaField_m0emcku7',method:'selectField_m0emckuc',type:'selectField_m0emckue',currency:'selectField_m0emckul',total:'numberField_m0emckum',description:'textField_m0emckuf',remarks:'textField_m0emckup',delivery:'dateField_m0emckuk',items:'tableField_m0emckuq',name:'textField_m0emckur',spec:'textField_m0emckus',quantity:'numberField_m0emckut',price:'numberField_m0emckuu',subtotal:'numberField_m0emckuv',attachment:'attachmentField_m0emckuw',office:'textField_m0emckuy',rate:'numberField_m0emckun',admin:'employeeField_m0emckuz',hkd:'numberField_m0emckuo',it:'employeeField_m0emckv1',target:'textField_m4podi40'});
+const METHODS = ['采购后报销','公司采购'];
+const TYPES = ['行政采购','商务事务','IT采购','其他'];
+const policy = Object.freeze({
+  dataForms:[CURRENCY,RATE,OFFICE],
+  rosterFields:['sys00-name','sys00-workPlace','sys00-mainDeptId','sys00-deptIds'],
+  connectors:{roster:{connectorId:'Http_5c72b42d47f14a1983767932f6c1d4f1',actionId:'getUserMessage',type:'httpConnector',connection:15597}},
+});
+const requirements = {
+  required:['reason','purchase_method','purchase_type','currency','items'],
+  optional:['other_description','remarks','expected_delivery_date','department_id'],
+  choices:{purchase_method:METHODS,purchase_type:TYPES},
+  item:{required:['name','quantity','unit_price'],optional:['specification'],maximumRows:50},
+  attachments:{optional:true,maximumCount:9,maximumBytes:20*1024*1024},
+  notes:['申请人、任职部门和办公地点从当前登录账号核实。','币种、兑港币汇率与联系人使用公司维护的固定数据源。','金额按明细逐行四舍五入两位后汇总。'],
+};
+function check(value, code) { if (!value) { const e = new Error(code); e.code = code; throw e; } }
+function isObject(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
+function clean(value, max=4000) { return typeof value==='string' && value.trim().length>0 && value.trim().length<=max && !/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(value); }
+function missing(value) { return value===undefined || value===null || value==='' || (typeof value==='string'&&!value.trim()); }
+function decimal(value) {
+  check((typeof value==='string'||typeof value==='number') && typeof value!=='boolean','PROCUREMENT_NUMBER_INVALID');
+  const s=String(value).trim();
+  check(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,8})?$/.test(s),'PROCUREMENT_NUMBER_INVALID');
+  const [integer,fraction='']=s.split('.');
+  const n=BigInt(integer+fraction),numberValue=Number(s);
+  const rendered=String(numberValue);check(/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(rendered),'PROCUREMENT_NUMBER_NOT_REPRESENTABLE');
+  const [ri,rf='']=rendered.split('.');
+  check(BigInt(ri+rf)*10n**BigInt(fraction.length)===n*10n**BigInt(rf.length),'PROCUREMENT_NUMBER_NOT_REPRESENTABLE');
+  return {n,scale:fraction.length,value:numberValue};
+}
+function cents(a,b) {
+  const n=a.n*b.n,scale=a.scale+b.scale;
+  const out=scale<=2?n*10n**BigInt(2-scale):(n+5n*10n**BigInt(scale-3))/(10n**BigInt(scale-2));
+  check(out<=9007199254740991n,'PROCUREMENT_AMOUNT_TOO_LARGE');
+  return out;
+}
+function money(n) { check(n<=9007199254740991n,'PROCUREMENT_AMOUNT_TOO_LARGE'); const value=Number(n)/100; check(BigInt(Math.round(value*100))===n,'PROCUREMENT_AMOUNT_NOT_REPRESENTABLE'); return value; }
+function dateMs(value) {
+  check(typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value),'PROCUREMENT_DELIVERY_DATE_INVALID');
+  const ms=Date.parse(value+'T00:00:00+08:00');
+  check(Number.isFinite(ms)&&new Date(ms+8*3600000).toISOString().slice(0,10)===value,'PROCUREMENT_DELIVERY_DATE_INVALID');
+  return ms;
+}
+function schemaFields(schema) {
+  const out={};
+  function visit(node){if(!node||typeof node!=='object')return;if(node.props?.fieldId){check(!out[node.props.fieldId],'PROCUREMENT_SCHEMA_DUPLICATE_FIELD');out[node.props.fieldId]=node;}for(const child of Object.values(node))visit(child);}
+  visit(schema); return out;
+}
+function rosterValues(row,code,labelFirst=false) {
+  const fields=row.field_data_list?.filter(f=>f.field_code===code);
+  check(fields?.length===1&&Array.isArray(fields[0].field_value_list),'PROCUREMENT_PROFILE_INCOMPLETE');
+  return fields[0].field_value_list.map(x=>labelFirst?(!missing(x.label)?x.label:x.value):(!missing(x.value)?x.value:x.label)).flatMap(x=>Array.isArray(x)?x:[x]);
+}
+function contacts(rows,key) {
+  const found=new Map();
+  for(const row of rows){
+    const ids=row[key+'_id']??[],names=row[key]??[];
+    check(Array.isArray(ids)&&Array.isArray(names)&&ids.length===names.length,'PROCUREMENT_CONTACTS_INVALID');
+    for(let i=0;i<ids.length;i++){
+      check(clean(ids[i],160)&&clean(names[i],160),'PROCUREMENT_CONTACTS_INVALID');
+      check(!found.has(ids[i])||found.get(ids[i])===names[i],'PROCUREMENT_CONTACTS_CONFLICT');found.set(ids[i],names[i]);
+    }
+  }
+  return [...found].map(([id,name])=>({id,name}));
+}
+function optionalContact(node) {
+  const p=node?.props;
+  check(node?.componentName==='EmployeeField'&&p&&Array.isArray(p.validation),'PROCUREMENT_CONTACT_SCHEMA_INVALID');
+  check(p.validation.every(rule=>isObject(rule)),'PROCUREMENT_CONTACT_SCHEMA_INVALID');
+  return p.required!==true&&p.behavior!=='REQUIRED'&&!p.validation.some(rule=>rule.type==='required'||rule.required===true||rule.rule==='required');
+}
+async function prepare(input,ctx) {
+  check(isObject(input),'PROCUREMENT_INPUT_INVALID');
+  const allowed=new Set([...requirements.required,...requirements.optional]);
+  check(Object.keys(input).every(k=>allowed.has(k)),'PROCUREMENT_UNKNOWN_INPUT');
+  const needsInput=[];
+  const labels={reason:'申请事由',purchase_method:'采购方式',purchase_type:'采购类型',currency:'付款币种',items:'采购明细'};
+  for(const name of requirements.required){if(missing(input[name])||(name==='items'&&Array.isArray(input.items)&&!input.items.length))needsInput.push({field:name,message:'请补充'+labels[name]+'。',...(requirements.choices[name]?{choices:requirements.choices[name]}:{})});}
+  if(needsInput.length)return {needsInput};
+  for(const name of ['reason','purchase_method','purchase_type','currency','other_description','remarks'])if(!missing(input[name]))check(clean(input[name]),'PROCUREMENT_TEXT_INVALID');
+  const requested={...input};for(const name of Object.keys(requested))if(typeof requested[name]==='string')requested[name]=requested[name].trim();
+  check(METHODS.includes(requested.purchase_method)&&TYPES.includes(requested.purchase_type),'PROCUREMENT_OPTION_INVALID');
+  check(Array.isArray(input.items)&&input.items.length>0&&input.items.length<=50,'PROCUREMENT_ITEMS_INVALID');
+  let totalCents=0n;
+  const rows=[];const itemPreview=[];
+  input.items.forEach((item,index)=>{
+    check(isObject(item)&&Object.keys(item).every(k=>['name','specification','quantity','unit_price'].includes(k)),'PROCUREMENT_ITEM_INVALID');
+    for(const field of ['name','quantity','unit_price'])if(missing(item[field]))needsInput.push({field:`items[${index}].${field}`,message:'请补充第 '+(index+1)+' 项的名称、数量和单价。'});
+    if(['name','quantity','unit_price'].some(k=>missing(item[k])))return;
+    check(clean(item.name,500)&&(missing(item.specification)||clean(item.specification,1000)),'PROCUREMENT_ITEM_TEXT_INVALID');
+    const quantity=decimal(item.quantity),price=decimal(item.unit_price);check(quantity.n>0n,'PROCUREMENT_QUANTITY_INVALID');
+    const subtotal=cents(quantity,price);totalCents+=subtotal;
+    const row={[F.name]:item.name.trim(),[F.quantity]:quantity.value,[F.price]:price.value,[F.subtotal]:money(subtotal)};
+    if(!missing(item.specification))row[F.spec]=item.specification.trim();rows.push(row);
+    itemPreview.push({name:row[F.name],specification:row[F.spec]||'',quantity:quantity.value,unit_price:price.value,subtotal:money(subtotal)});
+  });
+  if(needsInput.length)return {needsInput};
+  const total=money(totalCents);
+  const delivery=missing(requested.expected_delivery_date)?undefined:dateMs(requested.expected_delivery_date);
+  check(ctx&&clean(ctx.actor?.userid,160)&&clean(ctx.actor?.corp_id,160)&&dateMs(ctx.today)===ctx.todayMs,'PROCUREMENT_IDENTITY_OR_DATE_INVALID');
+  const fields=schemaFields(await ctx.schema());
+  for(const id of Object.values(F))check(fields[id],'PROCUREMENT_SCHEMA_FIELD_MISSING');
+  check(fields[F.attachment].componentName==='AttachmentField','PROCUREMENT_NATIVE_ATTACHMENT_UNAVAILABLE');
+  for(const [id,values] of [[F.method,METHODS],[F.type,TYPES]]){
+    const live=fields[id].props.dataSource?.map(x=>x.value);
+    check(Array.isArray(live)&&live.length===values.length&&values.every(v=>live.includes(v)),'PROCUREMENT_SCHEMA_OPTIONS_CHANGED');
+  }
+  check(fields[F.items].props.maxItems>=input.items.length,'PROCUREMENT_ITEM_COUNT_EXCEEDED');
+  const self=await ctx.roster(policy.rosterFields);
+  check(self?.userid===ctx.actor.userid,'PROCUREMENT_PROFILE_IDENTITY_MISMATCH');
+  const name=rosterValues(self,'sys00-name')[0];
+  const office=rosterValues(self,'sys00-workPlace',true)[0];
+  const main=String(rosterValues(self,'sys00-mainDeptId')[0]??'');
+  const departments=[...new Set(rosterValues(self,'sys00-deptIds').flatMap(x=>String(x).split(',')).map(x=>x.trim()))];
+  check(clean(name,160)&&clean(office,160)&&/^\d+$/.test(main)&&departments.every(x=>/^\d+$/.test(x))&&departments.includes(main),'PROCUREMENT_PROFILE_INCOMPLETE');
+  const departmentId=missing(requested.department_id)?main:String(requested.department_id);
+  check(departments.includes(departmentId),'PROCUREMENT_DEPARTMENT_NOT_ASSIGNED');
+  const catalog=await ctx.query(CURRENCY,null,['textField_m3lrdomv']);
+  check(Array.isArray(catalog)&&catalog.length>0&&catalog.every(r=>clean(r.textField_m3lrdomv,80)),'PROCUREMENT_CURRENCY_SOURCE_INVALID');
+  const normalized=v=>v.normalize('NFKC').trim().toLowerCase();
+  const options=catalog.map(r=>r.textField_m3lrdomv);
+  check(new Set(options.map(normalized)).size===options.length,'PROCUREMENT_CURRENCY_SOURCE_AMBIGUOUS');
+  const currency=options.find(v=>normalized(v)===normalized(requested.currency));
+  if(!currency)return {needsInput:[{field:'currency',message:'请选择公司目录中的付款币种。',choices:options}]};
+  const rateRows=await ctx.query(RATE,{textField_m3lpjlno:currency,selectField_m3lpjlnt:'HKD'},['textField_m3lpjlno','selectField_m3lpjlnt','numberField_m3lpjlnu']);
+  check(Array.isArray(rateRows)&&rateRows.length===1&&rateRows[0].textField_m3lpjlno===currency&&rateRows[0].selectField_m3lpjlnt==='HKD','PROCUREMENT_RATE_NOT_UNIQUE');
+  const rate=decimal(rateRows[0].numberField_m3lpjlnu);check(rate.n>0n,'PROCUREMENT_RATE_INVALID');
+  const hkd=money(cents({n:totalCents,scale:2},rate));
+  const officeRows=await ctx.query(OFFICE,{selectField_m0aq0jqm:office},['selectField_m0aq0jqm','employeeField_m0aq0jqo','employeeField_m0aq0jqo_id','employeeField_m0aq0jqq','employeeField_m0aq0jqq_id']);
+  check(Array.isArray(officeRows)&&officeRows.every(r=>isObject(r)&&clean(r.selectField_m0aq0jqm,160)),'PROCUREMENT_OFFICE_SOURCE_INVALID');
+  // The form's linkage uses QUERYEQ. The REST search can return approximate
+  // matches; keep only the exact office and never borrow another office's staff.
+  const exactOfficeRows=officeRows.filter(r=>r.selectField_m0aq0jqm===office);
+  const admin=contacts(exactOfficeRows,'employeeField_m0aq0jqo'),it=contacts(exactOfficeRows,'employeeField_m0aq0jqq');
+  if(!admin.length)check(optionalContact(fields[F.admin]),'PROCUREMENT_REQUIRED_CONTACT_MISSING');
+  if(!it.length)check(optionalContact(fields[F.it]),'PROCUREMENT_REQUIRED_CONTACT_MISSING');
+  const formData={
+    [F.applicant]:[ctx.actor.userid],[F.dept]:[departmentId],[F.date]:ctx.todayMs,[F.reason]:requested.reason,
+    [F.method]:requested.purchase_method,[F.type]:requested.purchase_type,[F.currency]:currency,[F.items]:rows,
+    [F.total]:total,[F.rate]:rate.value,[F.hkd]:hkd,[F.target]:'HKD',[F.office]:office,
+  };
+  if(!missing(requested.other_description))formData[F.description]=requested.other_description;
+  if(!missing(requested.remarks))formData[F.remarks]=requested.remarks;
+  if(delivery!==undefined)formData[F.delivery]=delivery;
+  formData[F.admin]=admin.map(x=>x.id);formData[F.it]=it.map(x=>x.id);
+  const warnings=[];
+  if(departments.length>1)warnings.push(`本人有多个任职部门，本次使用${departmentId===main?'主':''}部门 ${departmentId}；如需更换，请在确认前说明。`);
+  if(!admin.length)warnings.push('公司办公场所表未配置完全匹配的行政联系人，本次留空；审批沿用宜搭配置。');
+  if(!it.length)warnings.push('公司办公场所表未配置完全匹配的 IT 联系人，本次留空；审批沿用宜搭配置。');
+  return {formData,departmentId,attachmentField:F.attachment,
+    resolvedInputs:{...requested,currency,department_id:departmentId},
+    preview:{title:'采购申请预览',applicant:name,office,department_id:departmentId,application_date:ctx.today,
+      reason:requested.reason,purchase_method:requested.purchase_method,purchase_type:requested.purchase_type,currency,items:itemPreview,
+      total,exchange_rate:rate.value,total_hkd:hkd,other_description:requested.other_description||'',remarks:requested.remarks||'',
+      expected_delivery_date:requested.expected_delivery_date||'',office_admin:admin.map(x=>x.name),office_it:it.map(x=>x.name),warnings,
+      rounding:'数量和单价保留原值；逐行小计四舍五入两位后合计，港币金额四舍五入两位。'}};
+}
+module.exports={key,title,formUuid,policy,requirements,prepare};
