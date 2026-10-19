@@ -1,0 +1,99 @@
+{
+  "key": "unpaid_sick_leave",
+  "title": "无薪病假申请",
+  "mode": "formal",
+  "availability": {
+    "status": "migrated",
+    "message": "假期流程已迁移，该流程不可发起，请转至 HR 应用 Moka。"
+  },
+  "orchestration": "retained",
+  "target": {
+    "formUuid": "FORM-4CCD84CC2803464797286902B07131F6R535",
+    "processCode": "TPROC--FBD66571LYCOEFZ6ET1VH4YB6WFG3IRWA3W0MB"
+  },
+  "fields": {
+    "applicant": "employeeField_m0m0xxmy",
+    "applicantId": "textField_m0n7mvdm",
+    "application": "dateField_m0m0xxn4",
+    "start": "dateField_m0m0xxne",
+    "startPeriod": "selectField_m0m0xxnf",
+    "end": "dateField_m0m0xxnh",
+    "endPeriod": "selectField_m0m0xxng",
+    "year": "textField_m0vv112d",
+    "days": "numberField_m0m0xxnr",
+    "workdays": "numberField_m0m0xxnz",
+    "officeAdmin": "employeeField_m0m0xxo4",
+    "company": "textField_m0m0xxo0",
+    "attendanceAdmin": "employeeField_m0m0xxo5",
+    "status": "textField_m0m0xxoa",
+    "group": "textField_m0m0xxo1",
+    "office": "textField_m0m0xxo3",
+    "calendarAdjustment": "numberField_m0m0xxo7",
+    "workdayTrigger": "numberField_m0m0xxob",
+    "reason": "textField_m984t22i",
+    "attachment": "attachmentField_m9tbppay",
+    "hongKongYear": "textField_mkc328qv",
+    "calendarYear": "textField_mkc328qw",
+    "attendanceEnd": "dateField_mmbmyyb4"
+  },
+  "sources": {
+    "office": "officeAdministrators",
+    "company": "companyExecutors",
+    "calendar": "leaveCalendar"
+  },
+  "policy": {
+    "rosterFields": [
+      "sys00-name",
+      "sys05-contractCompanyName",
+      "sys01-employeeStatus",
+      "78cd4e42-794a-4c1d-9f8a-8c3be8803e55",
+      "sys00-workPlace",
+      "sys00-mainDeptId",
+      "sys00-deptIds"
+    ],
+    "dataForms": [
+      "FORM-644A41735FC1422394A3C8197FADD2ACZ7UA",
+      "FORM-CD63264343264CA9ADB92306F442CCE9NOZ0",
+      "FORM-3F61EBF8217141A78D2D48342E7B1A19XNH0"
+    ],
+    "connectors": {
+      "roster": {
+        "connectorId": "Http_5c72b42d47f14a1983767932f6c1d4f1",
+        "actionId": "getUserMessage",
+        "type": "httpConnector",
+        "connection": 15597
+      }
+    }
+  },
+  "rules": {
+    "kind": "request",
+    "dayMode": "workdays",
+    "yearMode": "company",
+    "reasonRequired": false,
+    "reasonMaxLength": 200,
+    "formulas": {
+      "textField_m0n7mvdm": "USERFIELD(#{employeeField_m0m0xxmy},\"userId\")",
+      "dateField_m0m0xxnh": "#{dateField_m0m0xxne}",
+      "textField_m0vv112d": "IF(OR(EQ(#{textField_m0m0xxo0},\"华港咨询（深圳）有限公司\"),EQ(#{textField_m0m0xxo0},\"一壶科技（深圳）有限公司\"),EQ(#{textField_m0m0xxo0},\"华港咨询(深圳)有限公司上海分公司\"),EQ(#{textField_m0m0xxo0},\"Fargo Wealth Management (Singapore) Pte. Ltd.\"),EQ(#{textField_m0m0xxo0},\"Printrust Company (Singapore) Limited\"),EQ(#{textField_m0m0xxo0},\"Goldhorse Financial Pte. Ltd.\")),#{textField_mkc328qw},#{textField_mkc328qv})",
+      "numberField_m0m0xxnr": "#{numberField_m0m0xxnz}-#{numberField_m0m0xxo7}+IF(EQ(#{selectField_m0m0xxnf},\"上午\"),0,-0.5)+IF(EQ(#{selectField_m0m0xxng},\"下午\"),0,-0.5)",
+      "numberField_m0m0xxob": "NETWORKDAYS(#{dateField_m0m0xxne},#{dateField_m0m0xxnh})",
+      "textField_mkc328qv": "VALUE(TEXT(DATE(DATEDELTA(DATE(#{dateField_m0m0xxne}),-90)),\"yyyy\"))",
+      "textField_mkc328qw": "TEXT(DATE(#{dateField_m0m0xxne}),\"yyyy\")",
+      "dateField_mmbmyyb4": "IF(EQ(#{selectField_m0m0xxng},\"下午\"),((#{dateField_m0m0xxnh}-1*60*60*1000)+24*60*60*1000),((#{dateField_m0m0xxnh}-1*60*60*1000)+12*60*60*1000))"
+    },
+    "calendarYearCompanies": [
+      "华港咨询（深圳）有限公司",
+      "一壶科技（深圳）有限公司",
+      "华港咨询(深圳)有限公司上海分公司",
+      "Fargo Wealth Management (Singapore) Pte. Ltd.",
+      "Printrust Company (Singapore) Limited",
+      "Goldhorse Financial Pte. Ltd."
+    ],
+    "attachmentRequired": false
+  },
+  "attachments": {
+    "field": "attachmentField_m9tbppay",
+    "maximumCount": 9,
+    "maximumMiB": 100
+  }
+}

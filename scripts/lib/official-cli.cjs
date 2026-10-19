@@ -4,7 +4,7 @@
 const fs = require('node:fs'), path = require('node:path');
 const {spawnSync} = require('node:child_process');
 const {check, dataRoot, read} = require('./common.cjs');
-const SUPPORTED = Object.freeze(['2026.10.16']);
+const SUPPORTED = Object.freeze(['2026.10.16', '2026.10.19']);
 let cached;
 function commandPaths(name) {
   const result = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [name], {
@@ -117,7 +117,7 @@ function run(args, {mutation = false, login = false, identity, input} = {}) {
   }
 }
 // Only native attachments and existing page connector actions need this gap
-// adapter. The upstream module is not a public SDK; keep the tested CLI pin.
+// adapter. The upstream module is not a public SDK; keep the tested versions.
 function gapProvider() {
   const cli = official(), file = path.join(cli.packageRoot, 'lib/auth/token-auth.js');
   check(fs.existsSync(file) && fs.realpathSync(file).startsWith(cli.packageRoot + path.sep), 'OPENYIDA_PROVIDER_UNAVAILABLE');

@@ -1,0 +1,55 @@
+{
+  "key": "default_bank_change",
+  "title": "默认银行卡变更申请",
+  "mode": "formal",
+  "target": {
+    "formUuid": "FORM-119A5B3BC5034DFEB609977A41F2EBE576IB",
+    "processCode": "TPROC--Z7D66ZB1RXURQLULD9WE4DA2IWN237D3HGN5M0"
+  },
+  "fields": {
+    "applicant": "employeeField_m5ngpxnk",
+    "applicationDate": "dateField_m5ngpxnl",
+    "applicantId": "textField_m5njo1o5",
+    "oldBankAccount": "textField_m5ngpxnt",
+    "oldBankName": "textField_m5ngpxnu",
+    "oldBankCity": "textField_m5ngpxnv",
+    "oldBankBranch": "textField_m5ngpxnw",
+    "oldAccountName": "textField_m5ngpxnx",
+    "newBankAccount": "textField_m5ngpxny",
+    "newBankName": "textField_m5ngpxo1",
+    "newBankCity": "textField_m5ngpxo4",
+    "newBankBranch": "textField_m5ngpxnz",
+    "newAccountName": "textField_m5ngpxo2",
+    "contractCompany": "textField_m6w09yf6",
+    "cashier": "employeeField_m6w09yf7"
+  },
+  "roster": {
+    "mainDepartment": "sys00-mainDeptId",
+    "departments": "sys00-deptIds",
+    "contractCompany": "sys05-contractCompanyName",
+    "bankAccount": "sys04-bankAccountNo",
+    "bankName": "c25a949b-1c28-4ad0-803b-4ce1ba8c7148",
+    "bankCity": "59b7514e-5d01-4a63-b236-e2566cf3e0e6",
+    "bankBranch": "eec62388-645f-4fa0-8ab5-42351a623c0b",
+    "accountName": "eb1f9d44-a245-42f8-b11a-7b616b56bfcb"
+  },
+  "cashierSource": "paymentContacts",
+  "rules": {
+    "applicantFormula": "USER()",
+    "applicationDateFormula": "TIMESTAMP(TODAY())",
+    "applicantIdFormula": "USERFIELD(#{employeeField_m5ngpxnk},\"userId\")"
+  },
+  "policy": {
+    "rosterFields": [
+      "sys04-bankAccountNo",
+      "c25a949b-1c28-4ad0-803b-4ce1ba8c7148",
+      "59b7514e-5d01-4a63-b236-e2566cf3e0e6",
+      "eec62388-645f-4fa0-8ab5-42351a623c0b",
+      "eb1f9d44-a245-42f8-b11a-7b616b56bfcb",
+      "sys05-contractCompanyName",
+      "sys00-mainDeptId",
+      "sys00-deptIds"
+    ],
+    "dataForms": ["FORM-70411F65EF7B412C84FD5A61760DF4BCZU6C"]
+  }
+}

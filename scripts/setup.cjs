@@ -15,8 +15,35 @@ function hash(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
 function verify(root, manifest) {
-  check(manifest.name === 'fargowork-openyida-skills' && manifest.version === '2.1.0' && Array.isArray(manifest.files) && manifest.files.length > 10, 'PACKAGE_MANIFEST_INVALID');
-  const required = ['README.md', 'SKILL.md', 'LICENSE', 'package.json', 'package-lock.json', 'scripts/setup.cjs', 'scripts/fargowork.cjs', 'scripts/lib/common.cjs', 'scripts/lib/auth.cjs', 'scripts/lib/official-cli.cjs', 'scripts/lib/policy.cjs', 'scripts/lib/runtime.cjs', 'scripts/lib/process.cjs', 'scripts/lib/native-attachment.cjs', 'scripts/lib/verification.cjs', 'scripts/lib/support.cjs', 'references/ATTACHMENTS.md', 'references/CHECKS.md', 'references/CONNECTORS.md', 'references/DEBUG.md', ...['annual-leave', 'business-trip', 'procurement-request', 'external-expense-request'].flatMap(w => ['skills/' + w + '/SKILL.md', 'workflows/' + w + '.cjs']), 'workflows/leave-trip-common.cjs', 'workflows/payment-core.cjs', 'workflows/payment-sources.cjs'];
+  const pkg = read(path.join(root,'package.json'));
+  check(manifest.name === 'fargowork-openyida-skills' && manifest.version === pkg.version && Array.isArray(manifest.files) && manifest.files.length > 10, 'PACKAGE_MANIFEST_INVALID');
+  const workflows = read(path.join(root, 'config/workflow-index.json'));
+  const categories = new Set(['finance','leave','assets','business','hr']);
+  check(Array.isArray(workflows) && workflows.length > 0
+    && workflows.every(item => item && typeof item === 'object' && !Array.isArray(item)
+      && Object.keys(item).length === 2 && typeof item.key === 'string'
+      && /^[a-z][a-z0-9_]*$/.test(item.key) && categories.has(item.category))
+    && new Set(workflows.map(item => item.key)).size === workflows.length, 'PACKAGE_MANIFEST_INVALID');
+  const required = ['README.md','SKILL.md','LICENSE','package.json','package-lock.json','scripts/setup.cjs','scripts/fargowork.cjs',
+    'scripts/lib/common.cjs','scripts/lib/auth.cjs','scripts/lib/official-cli.cjs','scripts/lib/policy.cjs','scripts/lib/runtime.cjs',
+    'scripts/lib/process.cjs','scripts/lib/native-attachment.cjs','scripts/lib/verification.cjs','scripts/lib/support.cjs',
+    'shared/local-datetime.cjs','shared/scoped-catalog.cjs','shared/account-recommendation.cjs','shared/finance-catalog.cjs',
+    'shared/finance-details.cjs','shared/detail-review.cjs','shared/exchange-rates.cjs','shared/leave-calendar.cjs',
+    'shared/reimbursement-info.cjs','shared/employee-selection.cjs','shared/workflow-subject.cjs','shared/travel-allowance.cjs',
+    'shared/department-hierarchy.cjs',
+    'shared/department-details.cjs',
+    'shared/decimal-arithmetic.cjs',
+    'shared/employee-roster.cjs',
+    'shared/initial-values.cjs',
+    'shared/process-association.cjs',
+    'shared/workflow-attachments.cjs',
+    'references/ATTACHMENTS.md','references/CHECKS.md','references/CONNECTORS.md','references/DEBUG.md','references/FINANCE-DETAILS.md',
+    'config/company.json','config/sources.json','config/workflow-index.json',
+    ...workflows.map(({key,category})=>'config/workflows/'+category+'/'+key+'.json'),
+    ...workflows.map(({key,category})=>'skills/'+category+'/'+key.replaceAll('_','-')+'/SKILL.md'),
+    ...workflows.map(({key,category})=>'workflows/'+category+'/'+key.replaceAll('_','-')+'.cjs'),
+    'workflows/business-trip-common.cjs','workflows/leave-trip-common.cjs','workflows/payment-core.cjs','workflows/payment-sources.cjs',
+    'workflows/procurement-common.cjs','workflows/asset-common.cjs','workflows/hr-common.cjs','workflows/leave-common.cjs'];
   const seen = new Set(),
     realRoot = fs.realpathSync(root) + path.sep;
   for (const f of manifest.files) {
@@ -80,9 +107,10 @@ async function setup(args) {
     ...officialInfo,
     identity: identity.status,
     skillEntry: path.join(dest, 'SKILL.md'),
-    skills: ['annual-leave', 'business-trip', 'procurement-request', 'external-expense-request'].map(s => path.join(dest, 'skills', s, 'SKILL.md')),
+    skills: manifest.files.filter(f => /^skills\/(finance|leave|assets|business|hr)\/[^/]+\/SKILL\.md$/.test(f.path))
+      .map(f => path.join(dest,f.path)),
     command: [process.execPath, path.join(dest, 'scripts', 'fargowork.cjs')],
-    message: identity.status === 'ready' ? '已安装并登录，可以办理四个已支持的流程。' : '安装完成，办理前需要登录。'
+    message: identity.status === 'ready' ? '已安装并登录，可以办理包内固定流程。' : '安装完成，办理前需要登录。'
   };
 }
 if (require.main === module) setup(process.argv.slice(2)).then(r => process.stdout.write(JSON.stringify(r, null, 2) + '\n')).catch(e => {

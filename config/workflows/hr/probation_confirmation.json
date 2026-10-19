@@ -1,0 +1,88 @@
+{
+  "key": "probation_confirmation",
+  "title": "试用期转正申请",
+  "mode": "formal",
+  "availability": {
+    "status": "migrated",
+    "message": "该流程不可发起，请转至 HR 应用 Moka。"
+  },
+  "orchestration": "retained",
+  "target": {
+    "formUuid": "FORM-8755554C11894075839F687714DD8498OI2G",
+    "processCode": "TPROC--ZKC66Y61QRJO0IPC76LD0DRZ0J5N2T834EE1MI"
+  },
+  "policy": {
+    "dataForms": [
+      "FORM-CD63264343264CA9ADB92306F442CCE9NOZ0"
+    ],
+    "rosterFields": [
+      "sys00-name",
+      "sys00-mainDeptId",
+      "sys00-deptIds",
+      "sys05-contractCompanyName",
+      "sys00-confirmJoinTime",
+      "sys01-planRegularTime",
+      "sys01-employeeStatus",
+      "sys01-positionLevel"
+    ],
+    "relatedSources": {
+      "probation_plan": {
+        "form": "FORM-984A32AE6AD2415E893A8BD7C0E9F210K9WE",
+        "title": "serialNumberField_m0ul2g5u",
+        "subtitle": "",
+        "scope": "applicant",
+        "applicantField": "employeeField_m0ul2g5r"
+      }
+    }
+  },
+  "fields": {
+    "applicant": "employeeField_m0ul2g5r",
+    "department": "departmentSelectField_m0ul2g5s",
+    "applicationDate": "dateField_m0ul2g5t",
+    "joinDate": "dateField_m1ecrtpy",
+    "plannedRegularDate": "dateField_m1ecrtq0",
+    "actualRegularDate": "dateField_m2o3airv",
+    "status": "textField_m1ecrtqd",
+    "positionLevel": "textField_m1eefuji",
+    "selfReview": "textareaField_m1ecrtq1",
+    "achievements": "textareaField_m1ecrtq2",
+    "weaknesses": "textareaField_m1eefujj",
+    "improvements": "textareaField_m1eefujk",
+    "relatedPlan": "associationFormField_m1eefujn",
+    "attachments": "attachmentField_m1eefujm",
+    "applicantId": "textField_m2o3airt",
+    "contractCompany": "textField_m49fthfh",
+    "hr": "employeeField_m49fthfi"
+  },
+  "roster": {
+    "name": "sys00-name",
+    "mainDepartment": "sys00-mainDeptId",
+    "departments": "sys00-deptIds",
+    "contractCompany": "sys05-contractCompanyName",
+    "joinDate": "sys00-confirmJoinTime",
+    "plannedRegularDate": "sys01-planRegularTime",
+    "status": "sys01-employeeStatus",
+    "positionLevel": "sys01-positionLevel"
+  },
+  "hrSource": {
+    "source": "companyExecutors",
+    "roleField": "employeeRelationsField"
+  },
+  "attachments": {
+    "field": "attachmentField_m1eefujm",
+    "inputField": "attachments",
+    "maximumCount": 9,
+    "maximumMiB": 100
+  },
+  "relatedPlan": {
+    "formUuid": "FORM-984A32AE6AD2415E893A8BD7C0E9F210K9WE",
+    "applicantField": "employeeField_m0ul2g5r",
+    "titleField": "serialNumberField_m0ul2g5u",
+    "allowCreate": false
+  },
+  "schemaFormulas": {
+    "departmentSelectField_m0ul2g5s": "DeptBuilder(#{employeeField_m0ul2g5r})",
+    "dateField_m2o3airv": "#{dateField_m1ecrtq0}",
+    "textField_m2o3airt": "USERFIELD(#{employeeField_m0ul2g5r},\"userId\")"
+  }
+}

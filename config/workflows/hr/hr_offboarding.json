@@ -1,0 +1,20 @@
+{
+  "key": "hr_offboarding",
+  "title": "HR操作离职流程",
+  "mode": "formal",
+  "availability": {
+    "status": "migrated",
+    "message": "该流程不可发起，请转至 HR 应用 Moka。此流程涉及重要人事变更，不建议通过 Agent 编排发起，请本人按 HR 指引办理。"
+  },
+  "orchestration": "manual-only",
+  "target": {
+    "formUuid": "FORM-4F370F9D61C4404CA605CFAB322F89D3IVPU",
+    "processCode": "TPROC--YJ966581LBQQ6GWFDVOOPCP3BQCA3CNUSR54M2"
+  },
+  "policy": {
+    "dataForms": [],
+    "rosterFields": [
+      "sys00-name"
+    ]
+  }
+}

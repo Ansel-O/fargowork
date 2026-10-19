@@ -1,0 +1,20 @@
+{
+  "key": "onboarding",
+  "title": "新员工入职流程",
+  "mode": "formal",
+  "availability": {
+    "status": "migrated",
+    "message": "该流程不可发起，请转至 HR 应用 Moka。此流程涉及重要人事变更，不建议通过 Agent 编排发起，请本人按 HR 指引办理。"
+  },
+  "orchestration": "manual-only",
+  "target": {
+    "formUuid": "FORM-C6B0DF61A0114A43A233C5D92539C2B5FSIZ",
+    "processCode": "TPROC--2PA669C1BH1OBM0HBL19DC8M89183RFDIMA0M3"
+  },
+  "policy": {
+    "dataForms": [],
+    "rosterFields": [
+      "sys00-name"
+    ]
+  }
+}

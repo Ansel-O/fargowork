@@ -6,10 +6,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const APP = 'APP_GITLRTH76PM6J4M29F5D';
-const FORMS = new Set(['FORM-E0E2F1E273B7400F8CDEC9EF505B960EGPYE',
-  'FORM-188915A63185430D9A57AD9114129887TVCT', 'FORM-4E378FADE81F40F8A520A47251D804E6MT1K',
-  'FORM-AEE70BC941234A97B25DE3D5340B7DA7IXT3']);
+const {registeredTarget, assertTargetStartAllowed} = require('./policy.cjs');
 
 function fail(code) {
   const error = new Error(code);
@@ -90,7 +87,7 @@ function createProcessTrial({ client, appType, formUuid, processCode, stateDir,
   if (!client || typeof client.postFormOnce !== 'function' || typeof client.get !== 'function'
       || typeof currentActorResolver !== 'function' || ![appType, formUuid, processCode].every(validId)
       || typeof stateDir !== 'string' || !stateDir) fail('PROCESS_CONFIGURATION_INVALID');
-  if(appType!==APP||!FORMS.has(formUuid)||!/^TPROC[-_][A-Za-z0-9_-]+$/.test(processCode))fail('PROCESS_TARGET_NOT_ALLOWED');
+  if(!registeredTarget(appType,formUuid,processCode))fail('PROCESS_TARGET_NOT_ALLOWED');
   const target = Object.freeze({ appType, formUuid, processCode });
   const root = path.resolve(stateDir);
   fs.mkdirSync(root, { recursive: true, mode: 0o700 });
@@ -156,6 +153,7 @@ function createProcessTrial({ client, appType, formUuid, processCode, stateDir,
   }
 
   async function prepare({ formData, deptId, preview, verification = {}, validBusinessDate } = {}) {
+    assertTargetStartAllowed(appType, formUuid, processCode);
     return locked(async () => {
       const prior = loadState();
       if (prior && prior.status !== 'prepared') fail('PROCESS_ATTEMPT_ALREADY_SENT');
@@ -186,6 +184,7 @@ function createProcessTrial({ client, appType, formUuid, processCode, stateDir,
   }
 
   async function submit({ draftSha256, confirm } = {}) {
+    assertTargetStartAllowed(appType, formUuid, processCode);
     if (confirm !== true) fail('PROCESS_EXPLICIT_CONFIRMATION_REQUIRED');
     return locked(async () => {
       const state = loadState();
@@ -199,6 +198,7 @@ function createProcessTrial({ client, appType, formUuid, processCode, stateDir,
       if (state.status === 'unknown') fail('PROCESS_SUBMISSION_UNKNOWN_DO_NOT_RETRY');
       if (state.status === 'rejected') rejectPreviouslySent(state);
       if (snapshot.businessDate !== businessDate(now())) fail('PROCESS_DRAFT_EXPIRED');
+      assertTargetStartAllowed(appType, formUuid, processCode);
       // Durable unknown marker precedes the network call. A crash, timeout,
       // malformed response or local receipt failure must never trigger a repost.
       const attempted = { ...state, status: 'unknown', attemptedAt: now().toISOString() };

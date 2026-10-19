@@ -1,7 +1,7 @@
 'use strict';
 
 const APP = 'APP_GITLRTH76PM6J4M29F5D';
-const FORM = 'FORM-AEE70BC941234A97B25DE3D5340B7DA7IXT3';
+const FORM = require('../config/workflows/finance/external_expense_request.json').target.formUuid;
 const TABLES = Object.freeze({
   companies: ['FORM-FB1F218B6F6B4BB4AA54B60087F8265DIB6X', 'textField_m0apuch7', 'radioField_m8g0bxo6'],
   currencies: ['FORM-7D97B6BF8C88482ABECE6D1AA9C2454B21S8', 'selectField_m0g613r7', 'selectField_m0g613r8'],

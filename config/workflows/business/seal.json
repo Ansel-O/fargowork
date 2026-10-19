@@ -1,0 +1,62 @@
+{
+  "key": "seal",
+  "title": "用印申请",
+  "mode": "formal",
+  "target": {
+    "formUuid": "FORM-ABF68B75000543F4A34EFCB284AC13FAZL8E",
+    "processCode": "TPROC--OSC66DA1P3BORQQKE750W6PCTUO42FO7ZVY0MK"
+  },
+  "fields": {
+    "applicant": "employeeField_m0yw02lf",
+    "department": "departmentSelectField_m0yw02lg",
+    "applicationDate": "dateField_m0yw02lh",
+    "serial": "serialNumberField_m0yw02li",
+    "relatedContract": "associationFormField_m0yw02lq",
+    "relatedContractText": "textField_m8wqnam6",
+    "company": "selectField_m0yw02m8",
+    "reason": "textareaField_m0yw02lr",
+    "recipient": "textField_m0yw02ly",
+    "recipientPhone": "textField_m0yw02m0",
+    "recipientAddress": "textareaField_m0yw02m1",
+    "items": "tableField_m0yw02mj",
+    "itemAttachment": "attachmentField_m0yw02mk",
+    "itemCopies": "numberField_m0yw02ml",
+    "itemSeals": "multiSelectField_m9gm05q7",
+    "legacyItemSeal": "selectField_m0yw02mm",
+    "itemRemark": "textField_m0yw02mn",
+    "postSealAttachment": "attachmentField_m9116wy0",
+    "unboundApprover": "employeeField_m0yw02mg",
+    "executor": "employeeField_m0yw02mh",
+    "legacyContractSerial": "textField_m9ur9e79"
+  },
+  "options": {
+    "sealTypes": ["公章", "法人章", "合同章", "其他章"]
+  },
+  "sources": {
+    "companyDirectory": "companyDirectory",
+    "companyExecutors": "companyExecutors",
+    "relatedProcesses": "relatedProcesses"
+  },
+  "relatedSources": {
+    "contract": "contract"
+  },
+  "attachments": {
+    "rowArrayField": "items",
+    "rowFileInputField": "attachments",
+    "tableField": "tableField_m0yw02mj",
+    "rowAttachmentField": "attachmentField_m0yw02mk",
+    "perFieldLimit": 9
+  },
+  "policy": {
+    "rosterFields": ["sys00-name", "sys00-mainDeptId"],
+    "dataForms": ["FORM-50D35E66794F4B2F9C1B52C7F2208999S95G", "FORM-CD63264343264CA9ADB92306F442CCE9NOZ0"],
+    "connectors": {},
+    "relatedSources": {
+      "contract": {
+        "form": "FORM-3DB996CA240D4F3FAB0CC8C9E72A092BUJGU",
+        "title": "serialNumberField_m0ewp8f9",
+        "subtitle": "employeeField_m0ewp8f6"
+      }
+    }
+  }
+}

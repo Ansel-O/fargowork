@@ -1,0 +1,116 @@
+{
+  "key": "referral_reward",
+  "title": "推荐候选人奖励申请",
+  "mode": "formal",
+  "availability": {
+    "status": "migrated",
+    "message": "该流程不可发起，请转至 HR 应用 Moka。"
+  },
+  "orchestration": "retained",
+  "target": {
+    "formUuid": "FORM-FE5A7F07335E43388A6ACEC8B839AFD936A9",
+    "processCode": "TPROC--1Y966G81LLBOVN207DJU06OC0FEZ1KHHCNU0MD"
+  },
+  "policy": {
+    "dataForms": [],
+    "rosterFields": [
+      "sys00-name",
+      "sys00-mainDeptId",
+      "sys00-deptIds",
+      "sys05-contractCompanyName",
+      "sys01-regularTime",
+      "sys01-positionLevel",
+      "sys01-employeeStatus",
+      "sys00-reportManagerId"
+    ],
+    "employeeSelection": true,
+    "selectedEmployeeRosterFields": [
+      "sys00-name",
+      "sys05-contractCompanyName",
+      "sys01-regularTime",
+      "sys01-positionLevel",
+      "sys01-employeeStatus",
+      "sys00-mainDeptId",
+      "sys00-reportManagerId"
+    ],
+    "connectors": {
+      "departmentDetails": {
+        "connectorId": "Http_75b8f8aef03c4b40815462052ba21a13",
+        "actionId": "operation-1",
+        "type": "httpConnector",
+        "connection": 15624
+      }
+    },
+    "relatedSources": {
+      "referral_onboarding": {
+        "form": "FORM-C6B0DF61A0114A43A233C5D92539C2B5FSIZ",
+        "title": "textField_m0amip3g",
+        "subtitle": "departmentSelectField_m0amip3l",
+        "scope": "visible",
+        "statuses": [
+          "COMPLETED"
+        ],
+        "approvedResults": [
+          "agree"
+        ]
+      }
+    }
+  },
+  "fields": {
+    "applicant": "employeeField_m0unhitv",
+    "applicationDate": "dateField_m0unhitw",
+    "candidate": "employeeField_m0unhiu5",
+    "contractCompany": "textField_m0unhiu9",
+    "reward": "numberField_m2oaphgg",
+    "regularDate": "dateField_m0unhiu6",
+    "positionLevel": "selectField_m2o6r87n",
+    "status": "textField_m0unhiu7",
+    "candidateDepartment": "departmentSelectField_m2oaphgb",
+    "reportManagerId": "textField_m2o6r87p",
+    "departmentManager": "employeeField_m2oaphge",
+    "relatedOnboarding": "associationFormField_m0xmj0bp",
+    "candidateId": "textField_m2oaphgn"
+  },
+  "roster": {
+    "name": "sys00-name",
+    "mainDepartment": "sys00-mainDeptId",
+    "departments": "sys00-deptIds",
+    "contractCompany": "sys05-contractCompanyName",
+    "regularDate": "sys01-regularTime",
+    "positionLevel": "sys01-positionLevel",
+    "status": "sys01-employeeStatus",
+    "reportManagerId": "sys00-reportManagerId"
+  },
+  "applicantRosterFields": [
+    "sys00-name",
+    "sys00-mainDeptId",
+    "sys00-deptIds"
+  ],
+  "candidateRosterFields": [
+    "sys00-name",
+    "sys05-contractCompanyName",
+    "sys01-regularTime",
+    "sys01-positionLevel",
+    "sys01-employeeStatus",
+    "sys00-mainDeptId",
+    "sys00-reportManagerId"
+  ],
+  "rules": {
+    "departmentManagerIndex": 0,
+    "rewardByLevel": {
+      "Senior Associate": 5000,
+      "Assistant Vice President": 5000,
+      "Vice President": 10000,
+      "Director": 10000,
+      "Executive Director": 20000,
+      "Managing Director": 20000
+    },
+    "defaultReward": 2000
+  },
+  "schemaFormulas": {
+    "numberField_m2oaphgg": "IF(OR(EQ(#{selectField_m2o6r87n},\"Senior Associate\"),EQ(#{selectField_m2o6r87n},\"Assistant Vice President\")),5000,IF(OR(EQ(#{selectField_m2o6r87n},\"Vice President\"),EQ(#{selectField_m2o6r87n},\"Director\")),10000,IF(OR(EQ(#{selectField_m2o6r87n},\"Executive Director\"),EQ(#{selectField_m2o6r87n},\"Managing Director\")),20000,2000)))",
+    "departmentSelectField_m2oaphgb": "DeptBuilder(#{employeeField_m0unhiu5})",
+    "textField_m2o6r87p": "USERFIELD(#{employeeField_m0unhiu5},\"userId\")",
+    "textField_m2oaphgn": "USERFIELD(#{employeeField_m0unhiu5},\"userId\")"
+  }
+}

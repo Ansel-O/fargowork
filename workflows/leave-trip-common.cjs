@@ -4,10 +4,13 @@
 // this module never accepts a URL, form UUID, token, or query subject as input.
 const DAY = 86400000;
 const OFFSET = 8 * 3600000;
-const OFFICE = Object.freeze({form: 'FORM-644A41735FC1422394A3C8197FADD2ACZ7UA', key: 'selectField_m0aq0jqm', admin: 'employeeField_m0aq0jqo'});
-const COMPANY = Object.freeze({form: 'FORM-CD63264343264CA9ADB92306F442CCE9NOZ0', key: 'selectField_m0aqkj9x', admin: 'employeeField_m2jtwu7t'});
-const ROSTER = Object.freeze({name: 'sys00-name', office: 'sys00-workPlace', main: 'sys00-mainDeptId', departments: 'sys00-deptIds', company: 'sys05-contractCompanyName', status: 'sys01-employeeStatus', group: '78cd4e42-794a-4c1d-9f8a-8c3be8803e55'});
-const ROSTER_CONNECTOR = Object.freeze({connectorId: 'Http_5c72b42d47f14a1983767932f6c1d4f1', actionId: 'getUserMessage', type: 'httpConnector', connection: 15597});
+const SOURCES = require('../config/sources.json');
+const COMPANY_CONFIG = require('../config/company.json');
+const OFFICE = Object.freeze({form: SOURCES.officeAdministrators.formUuid, key: SOURCES.officeAdministrators.officeField, admin: SOURCES.officeAdministrators.administratorsField});
+const COMPANY = Object.freeze({form: SOURCES.companyExecutors.formUuid, key: SOURCES.companyExecutors.companyField, admin: SOURCES.companyExecutors.annualLeaveAdministratorField});
+const R = SOURCES.rosterFields;
+const ROSTER = Object.freeze({name: R.name, office: R.office, main: R.mainDepartment, departments: R.departments, company: R.contractCompany, status: 'sys01-employeeStatus', group: '78cd4e42-794a-4c1d-9f8a-8c3be8803e55'});
+const ROSTER_CONNECTOR = Object.freeze({...COMPANY_CONFIG.roster});
 
 function fail(code, message) { throw Object.assign(new Error(message || code), {code}); }
 function check(condition, code, message) { if (!condition) fail(code, message); }
@@ -163,4 +166,4 @@ async function contacts(ctx, source, sourceValue, {required = false} = {}) {
   check(!required || byId.size > 0, 'CONTACTS_NOT_FOUND', '办理所需的人员资料缺失，请联系 HR 核查。');
   return {ids: [...byId.keys()], names: [...byId.values()]};
 }
-module.exports = {DAY, OFFSET, OFFICE, COMPANY, ROSTER, ROSTER_CONNECTOR, fail, check, object, inputKeys, absent, text, optionalText, normalized, values, exact, single, number, date, sourceDate, dateText, dayOfWeek, inputRange, identity, fields, assertFields, option, rosterFields, rosterValue, department, required, contacts};
+module.exports = {DAY, OFFSET, OFFICE, COMPANY, ROSTER, ROSTER_CONNECTOR, fail, check, object, inputKeys, absent, text, optionalText, normalized, values, exact, single, number, date, sourceDate, dateText, dayOfWeek, inputRange, identity, fields, assertFields, option, rosterFields, rosterValue, rosterDepartmentIds, department, required, contacts};

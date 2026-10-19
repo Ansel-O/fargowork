@@ -1,0 +1,92 @@
+{
+  "key": "other_leave",
+  "title": "其他（婚产等假期申请）",
+  "mode": "formal",
+  "availability": {
+    "status": "migrated",
+    "message": "假期流程已迁移，该流程不可发起，请转至 HR 应用 Moka。"
+  },
+  "orchestration": "retained",
+  "target": {
+    "formUuid": "FORM-4761AC8BEDE245239779990A2DA0D238P0C3",
+    "processCode": "TPROC--H2A666D1AOBO6QN8CH9H483TXFTZ2FTN24W0M9"
+  },
+  "fields": {
+    "applicant": "employeeField_m0m0xxmy",
+    "applicantId": "textField_m0n7mvdm",
+    "application": "dateField_m0m0xxn4",
+    "start": "dateField_m0m0xxne",
+    "startPeriod": "selectField_m0m0xxnf",
+    "end": "dateField_m0m0xxnh",
+    "endPeriod": "selectField_m0m0xxng",
+    "year": "textField_m0vv112d",
+    "days": "numberField_m0m0xxnr",
+    "workdays": "numberField_m0m0xxnz",
+    "officeAdmin": "employeeField_m0m0xxo4",
+    "company": "textField_m0m0xxo0",
+    "attendanceAdmin": "employeeField_m0m0xxo5",
+    "status": "textField_m0m0xxoa",
+    "group": "textField_m0m0xxo1",
+    "office": "textField_m0m0xxo3",
+    "reason": "textareaField_m98577ut",
+    "leaveType": "selectField_m0w44ewb",
+    "attachment": "attachmentField_mgzyxyb1"
+  },
+  "sources": {
+    "office": "officeAdministrators",
+    "company": "companyExecutors",
+    "calendar": "leaveCalendar"
+  },
+  "policy": {
+    "rosterFields": [
+      "sys00-name",
+      "sys05-contractCompanyName",
+      "sys01-employeeStatus",
+      "78cd4e42-794a-4c1d-9f8a-8c3be8803e55",
+      "sys00-workPlace",
+      "sys00-mainDeptId",
+      "sys00-deptIds"
+    ],
+    "dataForms": [
+      "FORM-644A41735FC1422394A3C8197FADD2ACZ7UA",
+      "FORM-CD63264343264CA9ADB92306F442CCE9NOZ0"
+    ],
+    "connectors": {
+      "roster": {
+        "connectorId": "Http_5c72b42d47f14a1983767932f6c1d4f1",
+        "actionId": "getUserMessage",
+        "type": "httpConnector",
+        "connection": 15597
+      }
+    }
+  },
+  "rules": {
+    "kind": "request",
+    "dayMode": "calendar",
+    "yearMode": "calendar",
+    "reasonRequired": false,
+    "reasonMaxLength": 0,
+    "formulas": {
+      "textField_m0n7mvdm": "USERFIELD(#{employeeField_m0m0xxmy},\"userId\")",
+      "dateField_m0m0xxnh": "#{dateField_m0m0xxne}",
+      "textField_m0vv112d": "TEXT(DATE(#{dateField_m0m0xxne}),\"yyyy\")",
+      "numberField_m0m0xxnr": "DAYS(DATE(#{dateField_m0m0xxnh}),DATE(#{dateField_m0m0xxne}))+1+IF(EQ(#{selectField_m0m0xxnf},\"上午\"),0,-0.5)+IF(EQ(#{selectField_m0m0xxng},\"下午\"),0,-0.5)"
+    },
+    "attachmentRequired": true
+  },
+  "attachments": {
+    "field": "attachmentField_mgzyxyb1",
+    "maximumCount": 9,
+    "maximumMiB": 100
+  },
+  "options": {
+    "leaveTypes": [
+      "婚假",
+      "丧假",
+      "产假",
+      "育儿假",
+      "陪产假 ",
+      "其他（请说明）"
+    ]
+  }
+}

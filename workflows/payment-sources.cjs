@@ -1,6 +1,7 @@
 'use strict';
 const {APP,TABLES,RELATIONS,F,fail,text,required,unique,same,choose,rows,memberIds}=require('./payment-core.cjs');
 const C=require('./leave-trip-common.cjs');
+const {validateCandidates,processReference}=require('../shared/process-association.cjs');
 
 async function targetRequired(ctx,fieldId){
   const field=C.fields(await ctx.schema()).get(fieldId);
@@ -88,16 +89,11 @@ async function relations(ctx,input,needs) {
     if(include===false&&selected)fail('FW-PAY-RELATION-CONFLICT','取消关联与关联实例选择冲突。');
     if(!selected&&include!==true)continue;
     if(typeof ctx.related!=='function')fail('FW-PAY-RELATION-UNAVAILABLE','当前环境暂不能核验本人关联流程，请取消本次关联或联系维护人员。');
-    const candidates=await ctx.related(key);
-    if(!Array.isArray(candidates))fail('FW-PAY-RELATION-SHAPE');
-    const ids=new Set();
-    for(const c of candidates){
-      if(!c||c.app_type!==APP||c.form_uuid!==config.form||c.form_type!=='process'||c.originator_userid!==ctx.actor.userid||!['RUNNING','COMPLETED'].includes(c.instance_status)||typeof c.instance_id!=='string'||!c.instance_id||ids.has(c.instance_id)||typeof c.title!=='string'||typeof c.sub_title!=='string')fail('FW-PAY-RELATION-BOUNDARY');
-      ids.add(c.instance_id);
-    }
+    const candidates=validateCandidates(await ctx.related(key),{appType:APP,formUuid:config.form,actorId:ctx.actor.userid,
+      shapeCode:'FW-PAY-RELATION-SHAPE',boundaryCode:'FW-PAY-RELATION-BOUNDARY'});
     const found=candidates.find(c=>c.instance_id===selected);
     if(!found){needs.push({field:key+'_instance_id',message:candidates.length?'请选择本人可用的关联流程，或取消关联。':'本人当前没有可用的关联流程，请取消本次关联。',choices:candidates.map(c=>({value:c.instance_id,label:c.title||c.sub_title||'关联审批',subtitle:c.sub_title,status:c.instance_status}))});continue;}
-    formData[config.field]=[{appType:APP,formUuid:config.form,formType:'process',instanceId:found.instance_id,title:found.title,subTitle:found.sub_title}];
+    formData[config.field]=[processReference(found)];
     preview[key]={title:found.title,subtitle:found.sub_title,status:found.instance_status};
   }
   return {formData,preview};

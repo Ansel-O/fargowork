@@ -1,0 +1,193 @@
+{
+  "key": "external_expense_application",
+  "title": "对外费用支出申请表",
+  "mode": "formal",
+  "target": {
+    "formUuid": "FORM-0AE7D3E4C01D45AC97D8C68DF7FF6B6CH3LQ",
+    "processCode": "TPROC--A8966WA1XN3REP53BS2Y3CK9KN713GC2Z9L4M1"
+  },
+  "fields": {
+    "applicant": "employeeField_m41da53i",
+    "departmentName": "textField_m6speeqq",
+    "departmentId": "selectField_m4labieb",
+    "applicationDate": "dateField_m41cj93y",
+    "paymentCompany": "selectField_m41cj946",
+    "sameBearing": "radioField_m88g5767",
+    "bearingCompany": "selectField_m8g46rue",
+    "structure": "selectField_m8ln5a2o",
+    "line": "selectField_m8ln5a2q",
+    "subline": "selectField_m8ln5a2r",
+    "contractCompany": "textField_m453obgi",
+    "currency": "selectField_m453obgj",
+    "isProject": "radioField_m41da53k",
+    "bankName": "textField_m41cj948",
+    "bankAccount": "textField_m41cj949",
+    "total": "numberField_m41cj94a",
+    "hkdTotal": "numberField_m41cj95d",
+    "project": "selectField_m41da53l",
+    "projectCategory": "selectField_m8oc9psq",
+    "latestDate": "dateField_m453obgk",
+    "description": "textareaField_m41cj94b",
+    "items": "tableField_m41cj94c",
+    "projectDepartmentName": "selectField_m41cj94d",
+    "projectDepartmentId": "textField_m41cj94e",
+    "projectStructure": "selectField_m8ln5a2s",
+    "projectLine": "selectField_m8ln5a2t",
+    "projectSubline": "selectField_m8ln5a2u",
+    "projectAccount": "selectField_m8oc9psr",
+    "expenseCategory": "selectField_m41cj94f",
+    "account": "selectField_m4aq5ht9",
+    "itemDescription": "textField_m41cj94g",
+    "amount": "numberField_m41cj94j",
+    "remarks": "textField_m41cj94q",
+    "hkd": "textField_m41cj958",
+    "rate": "numberField_m41cj959",
+    "hkdAmount": "numberField_m41cj94o",
+    "attachment": "attachmentField_m41cj94r",
+    "contract": "associationFormField_m7a8veso",
+    "seal": "associationFormField_ma3cqw2z",
+    "expense": "associationFormField_mj2b3and",
+    "paymentCompanyMirror": "textField_m41cj956",
+    "positionLevel": "textField_m41cj95a",
+    "projectDepartmentAggregate": "textField_m41cj95e",
+    "latestDateText": "textField_m52173tq",
+    "office": "textField_m41cj957",
+    "applicantId": "textField_m41cj95b",
+    "projectManagers": "employeeField_m41cj95f",
+    "bankFlag": "textField_m8g2zuug",
+    "finance": "employeeField_m453obgl",
+    "manager": "employeeField_m4labied",
+    "projectActive": "textField_ml7uhv85",
+    "cashier": "employeeField_m453obgn",
+    "departmentTransition": "textField_m8ln5a2e",
+    "businessDepartment": "textField_m8ln5a2f"
+  },
+  "roster": {
+    "office": "sys00-workPlace",
+    "positionLevel": "sys01-positionLevel",
+    "mainDepartment": "sys00-mainDeptId",
+    "departments": "sys00-deptIds",
+    "departmentNames": "sys00-dept"
+  },
+  "sources": {
+    "companies": "costBearingCompanies",
+    "currencies": "externalPaymentCurrencies",
+    "businessLines": "departmentBusinessLines",
+    "projects": "activeProjects",
+    "projectDepartments": "projectDepartments",
+    "accounts": "expenseAccounts",
+    "rates": "exchangeRates",
+    "contacts": "paymentContacts"
+  },
+  "attachments": {
+    "field": "attachmentField_m41cj94r",
+    "required": true
+  },
+  "detailReview": {
+    "currencyPreviewKey": "币种",
+    "rowsPreviewKey": "付款明细",
+    "columns": [
+      ["category", "费用类别", true],
+      ["account", "会计科目", true],
+      ["description", "付款内容", true],
+      ["amount", "本次付款金额", true],
+      ["remarks", "备注", false]
+    ],
+    "projectColumns": [
+      ["projectDepartment", "项目部门", true],
+      ["structure", "业务总架构", false],
+      ["line", "业务线", false],
+      ["subline", "子业务线", true]
+    ]
+  },
+  "rules": {
+    "managerIndex": 0,
+    "precision": 2,
+    "defaultIsProject": false,
+    "defaultSameBearingCompany": true,
+    "defaults": {
+      "textField_m8g2zuug": "是",
+      "textField_ml7uhv85": "生效",
+      "textField_m41cj958": "HKD"
+    },
+    "formulas": {
+      "numberField_m41cj94a": "ROUND(SUM(#{numberField_m41cj94j}),2)",
+      "numberField_m41cj95d": "ROUND(SUM(#{numberField_m41cj94o}),2)",
+      "numberField_m41cj94o": "ROUND(#{numberField_m41cj94j}*#{numberField_m41cj959},2)",
+      "textField_m41cj956": "#{selectField_m41cj946}",
+      "textField_m41cj95e": "#{textField_m41cj94e}",
+      "textField_m52173tq": "TEXT(DATE(#{dateField_m453obgk}),\"yyyy-MM-dd\")",
+      "textField_m41cj95b": "USERFIELD(#{employeeField_m41da53i},\"userId\")",
+      "textField_m8ln5a2f": "#{textField_m8ln5a2e}"
+    }
+  },
+  "policy": {
+    "rosterFields": [
+      "sys00-workPlace",
+      "sys01-positionLevel",
+      "sys00-mainDeptId",
+      "sys00-deptIds",
+      "sys00-dept"
+    ],
+    "dataForms": [
+      "FORM-FB1F218B6F6B4BB4AA54B60087F8265DIB6X",
+      "FORM-7D97B6BF8C88482ABECE6D1AA9C2454B21S8",
+      "FORM-5902374F6C2C462AB826C0EB5B6F73CB9JBQ",
+      "FORM-B33628F4E05E47FBACD7EF29902BE12EPJKR",
+      "FORM-C702478E872E41C6B35993ABD41B1B90H6O6",
+      "FORM-09190A7BD4FA473383608B2784A409A8WH1S",
+      "FORM-0E81A1BBF9C24779B3087C10A32489E26UDW",
+      "FORM-70411F65EF7B412C84FD5A61760DF4BCZU6C"
+    ],
+    "connectors": {
+      "departmentDetails": {
+        "connectorId": "Http_75b8f8aef03c4b40815462052ba21a13",
+        "actionId": "operation-1",
+        "type": "httpConnector",
+        "connection": 15624
+      }
+    },
+    "relatedSources": {
+      "payment_history": {
+        "form": "FORM-0AE7D3E4C01D45AC97D8C68DF7FF6B6CH3LQ",
+        "title": "serialNumberField_m41cj93z",
+        "subtitle": "textField_m453obgi",
+        "scope": "applicant",
+        "applicantField": "employeeField_m41da53i",
+        "fields": ["textField_m453obgi", "textField_m41cj948", "textField_m41cj949"]
+      },
+      "contract": {
+        "form": "FORM-3DB996CA240D4F3FAB0CC8C9E72A092BUJGU",
+        "title": "textField_m0ezwbjl",
+        "subtitle": "serialNumberField_m0ewp8f9",
+        "scope": "applicant",
+        "applicantField": "employeeField_m0ewp8f6",
+        "statuses": [
+          "RUNNING",
+          "COMPLETED"
+        ]
+      },
+      "seal": {
+        "form": "FORM-ABF68B75000543F4A34EFCB284AC13FAZL8E",
+        "title": "serialNumberField_m0yw02li",
+        "subtitle": "selectField_m9ur9e78",
+        "scope": "applicant",
+        "applicantField": "employeeField_m0yw02lf",
+        "statuses": [
+          "RUNNING",
+          "COMPLETED"
+        ]
+      },
+      "expense": {
+        "form": "FORM-0AE7D3E4C01D45AC97D8C68DF7FF6B6CH3LQ",
+        "title": "serialNumberField_m41cj93z",
+        "subtitle": "textField_m453obgi",
+        "scope": "applicant",
+        "applicantField": "employeeField_m41da53i",
+        "statuses": [
+          "COMPLETED"
+        ]
+      }
+    }
+  }
+}

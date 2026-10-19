@@ -1,0 +1,180 @@
+{
+  "key": "meal_transport",
+  "title": "餐費與交通補貼",
+  "mode": "formal",
+  "target": {
+    "formUuid": "FORM-37E345438F1344298217640B2437B76AJ2LU",
+    "processCode": "TPROC--NNC669C17BQ5O982M2TCO6DN6LKA3PED14MPMI"
+  },
+  "fields": {
+    "applicant": "employeeField_m41da53i",
+    "departmentName": "textField_m6so5pht",
+    "departmentId": "selectField_m4lf0x1o",
+    "applicationDate": "dateField_m41cj93y",
+    "bankAccount": "textField_m41cj949",
+    "bankName": "textField_m41cj948",
+    "bankCity": "textField_m4vmcrx5",
+    "bankBranch": "textField_m4vmcrx6",
+    "accountName": "textField_m4vmcrx7",
+    "paymentCompany": "selectField_m41cj946",
+    "sameBearing": "radioField_m8lq9x6j",
+    "bearingCompany": "selectField_m8lq9x6l",
+    "structure": "selectField_m8lq9x6m",
+    "line": "selectField_m8lq9x6s",
+    "subline": "selectField_m8lq9x6t",
+    "currency": "textField_m41cj947",
+    "mealTotal": "numberField_mpm44hzi",
+    "transportTotal": "numberField_m41cj94a",
+    "mealHkdTotal": "numberField_m41cj95d",
+    "transportHkdTotal": "numberField_mpp79zjh",
+    "description": "textareaField_m41cj94b",
+    "items": "tableField_m41cj94c",
+    "startTime": "dateField_mpm4hvui",
+    "endTime": "dateField_mpm4hvuj",
+    "reason": "textField_m41cj94g",
+    "mealAmount": "numberField_m41cj94p",
+    "transportAmount": "numberField_mpm44hzg",
+    "remark": "textField_m41cj94q",
+    "mealHkd": "numberField_m41cj94o",
+    "transportHkd": "numberField_mpp79zjg",
+    "attendance": "attachmentField_mpm44hzd",
+    "expenses": "attachmentField_m41cj94r",
+    "paymentCompanyMirror": "textField_m41cj956",
+    "contractCompany": "textField_mpp8lm2n",
+    "positionLevel": "textField_m41cj95a",
+    "hasBankAccount": "textField_m8omfh8q",
+    "rate": "numberField_m41cj959",
+    "hr": "employeeField_mpp8lm2m",
+    "office": "textField_m41cj957",
+    "applicantId": "textField_m41cj95b",
+    "manager": "employeeField_m4lf0x1p",
+    "hkd": "textField_m41cj958",
+    "initiatorId": "textField_m41cj95c",
+    "finance": "employeeField_m45931x3",
+    "cashier": "employeeField_m45931x4",
+    "departmentTransition": "textField_m8lq9x6n",
+    "businessDepartment": "textField_m8lq9x6o",
+    "applicantIsManager": "textField_mam99rbr",
+    "hrCategory": "textField_mpp79zjj",
+    "hrAccount": "textField_mpp79zjk",
+    "financeCategory": "textField_mpp79zjl",
+    "financeAccount": "textField_mpp79zjm"
+  },
+  "roster": {
+    "name": "sys00-name",
+    "office": "sys00-workPlace",
+    "mainDepartment": "sys00-mainDeptId",
+    "departments": "sys00-deptIds",
+    "departmentNames": "sys00-dept",
+    "contractCompany": "sys05-contractCompanyName",
+    "positionLevel": "sys01-positionLevel",
+    "bankAccount": "sys04-bankAccountNo",
+    "bankName": "c25a949b-1c28-4ad0-803b-4ce1ba8c7148",
+    "bankCity": "59b7514e-5d01-4a63-b236-e2566cf3e0e6",
+    "bankBranch": "eec62388-645f-4fa0-8ab5-42351a623c0b",
+    "accountName": "eb1f9d44-a245-42f8-b11a-7b616b56bfcb"
+  },
+  "sources": {
+    "employeePaymentCompanies": "employeePaymentCompanies",
+    "costBearingCompanies": "costBearingCompanies",
+    "departmentBusinessLines": "departmentBusinessLines",
+    "reimbursementCurrencies": "reimbursementCurrencies",
+    "exchangeRates": "exchangeRates",
+    "companyExecutors": "companyExecutors",
+    "paymentContacts": "paymentContacts"
+  },
+  "attachments": {
+    "fields": [
+      {
+        "field": "attachmentField_mpm44hzd",
+        "inputField": "attendance_attachments",
+        "previewField": "打卡证明"
+      },
+      {
+        "field": "attachmentField_m41cj94r",
+        "inputField": "expense_attachments",
+        "previewField": "报销附件"
+      }
+    ]
+  },
+  "detailReview": {
+    "columns": [
+      ["startTime", "开始时间", false],
+      ["endTime", "结束时间", true],
+      ["reason", "加班事由", true],
+      ["mealAmount", "餐费补贴", true],
+      ["transportAmount", "交通费", false],
+      ["remarks", "备注", false]
+    ],
+    "currencyPreviewKey": "报销币种",
+    "rowsPreviewKey": "加班明细",
+    "materialRoles": [
+      {"role": "attendance", "label": "打卡证明", "inputField": "attendance_attachments"},
+      {"role": "expense", "label": "报销附件", "inputField": "expense_attachments"}
+    ]
+  },
+  "rules": {
+    "offsetMinutes": 480,
+    "managerIndex": 0,
+    "mealAmounts": {
+      "HKD": 100,
+      "CNY": 40,
+      "SGD": 16
+    },
+    "otherCurrencyMealAmount": 47,
+    "precision": 2,
+    "formulas": {
+      "dateField_mpm4hvuj": "#{dateField_mpm4hvui}",
+      "numberField_m41cj94p": "IF(EQ(#{textField_m41cj947},\"HKD\"),100,IF(EQ(#{textField_m41cj947},\"CNY\"),40,IF(EQ(#{textField_m41cj947},\"SGD\"),16,47)))",
+      "numberField_m41cj94o": "ROUND(#{numberField_m41cj94p}*#{numberField_m41cj959},2)",
+      "numberField_mpp79zjg": "ROUND(#{numberField_mpm44hzg}*#{numberField_m41cj959},2)",
+      "numberField_mpm44hzi": "ROUND(SUM(#{numberField_m41cj94p}),2)",
+      "numberField_m41cj94a": "ROUND(SUM(#{numberField_mpm44hzg}),2)",
+      "numberField_m41cj95d": "ROUND(SUM(#{numberField_m41cj94o}),2)",
+      "numberField_mpp79zjh": "ROUND(SUM(#{numberField_mpp79zjg}),2)",
+      "textField_m41cj956": "#{selectField_m41cj946}",
+      "textField_mam99rbr": "EQ(#{employeeField_m41da53i},#{employeeField_m4lf0x1p})"
+    },
+    "defaults": {
+      "textField_m41cj958": "HKD",
+      "textField_m8omfh8q": "是",
+      "textField_mpp79zjj": "21 人力 HR",
+      "textField_mpp79zjk": "2101 员工薪酬福利 Compens",
+      "textField_mpp79zjl": "22 行政 Admin",
+      "textField_mpp79zjm": "2205 市内交通 Transportation"
+    }
+  },
+  "policy": {
+    "rosterFields": [
+      "sys00-name",
+      "sys00-workPlace",
+      "sys00-mainDeptId",
+      "sys00-deptIds",
+      "sys00-dept",
+      "sys05-contractCompanyName",
+      "sys01-positionLevel",
+      "sys04-bankAccountNo",
+      "c25a949b-1c28-4ad0-803b-4ce1ba8c7148",
+      "59b7514e-5d01-4a63-b236-e2566cf3e0e6",
+      "eec62388-645f-4fa0-8ab5-42351a623c0b",
+      "eb1f9d44-a245-42f8-b11a-7b616b56bfcb"
+    ],
+    "dataForms": [
+      "FORM-06EF3CD6EB534961B3E710449AF1A379WX6S",
+      "FORM-FB1F218B6F6B4BB4AA54B60087F8265DIB6X",
+      "FORM-5902374F6C2C462AB826C0EB5B6F73CB9JBQ",
+      "FORM-9F48888FD81F4382AB9B2D0D025A4ECAKZSG",
+      "FORM-0E81A1BBF9C24779B3087C10A32489E26UDW",
+      "FORM-CD63264343264CA9ADB92306F442CCE9NOZ0",
+      "FORM-70411F65EF7B412C84FD5A61760DF4BCZU6C"
+    ],
+    "connectors": {
+      "departmentDetails": {
+        "connectorId": "Http_75b8f8aef03c4b40815462052ba21a13",
+        "actionId": "operation-1",
+        "type": "httpConnector",
+        "connection": 15624
+      }
+    }
+  }
+}

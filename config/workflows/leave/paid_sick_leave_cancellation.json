@@ -1,0 +1,114 @@
+{
+  "key": "paid_sick_leave_cancellation",
+  "title": "带薪病假销假申请",
+  "mode": "formal",
+  "availability": {
+    "status": "migrated",
+    "message": "假期流程已迁移，该流程不可发起，请转至 HR 应用 Moka。"
+  },
+  "orchestration": "retained",
+  "target": {
+    "formUuid": "FORM-BB31965E366A4D5F94B0057F3BD0DB01MPM2",
+    "processCode": "TPROC--5X8662D1DZ5QR72N9WYC9BVI7PNE2OG8U9E3M6"
+  },
+  "fields": {
+    "applicant": "employeeField_m0m0xxmy",
+    "applicantId": "textField_m0n7mvdm",
+    "application": "dateField_m0m0xxn4",
+    "start": "dateField_m0m0xxne",
+    "startPeriod": "selectField_m0m0xxnf",
+    "end": "dateField_m0m0xxnh",
+    "endPeriod": "selectField_m0m0xxng",
+    "year": "textField_m0vv112d",
+    "days": "numberField_m0m0xxnr",
+    "workdays": "numberField_m0m0xxnz",
+    "officeAdmin": "employeeField_m0m0xxo4",
+    "company": "textField_m0m0xxo0",
+    "attendanceAdmin": "employeeField_m0m0xxo5",
+    "status": "textField_m0m0xxoa",
+    "group": "textField_m0m0xxo1",
+    "office": "textField_m0m0xxo3",
+    "calendarAdjustment": "numberField_m0m0xxo7",
+    "workdayTrigger": "numberField_m0m0xxob",
+    "reason": "textField_m9855bed",
+    "association": "associationFormField_m0xlcb2h",
+    "originalStart": "dateField_m0xoixah",
+    "originalEnd": "dateField_m0xoixag",
+    "originalDays": "numberField_m3eaj4qn",
+    "originalSerial": "textField_m3f788gp"
+  },
+  "sources": {
+    "office": "officeAdministrators",
+    "company": "companyExecutors",
+    "calendar": "leaveCalendar"
+  },
+  "policy": {
+    "rosterFields": [
+      "sys00-name",
+      "sys05-contractCompanyName",
+      "sys01-employeeStatus",
+      "78cd4e42-794a-4c1d-9f8a-8c3be8803e55",
+      "sys00-workPlace",
+      "sys00-mainDeptId",
+      "sys00-deptIds"
+    ],
+    "dataForms": [
+      "FORM-644A41735FC1422394A3C8197FADD2ACZ7UA",
+      "FORM-CD63264343264CA9ADB92306F442CCE9NOZ0",
+      "FORM-3F61EBF8217141A78D2D48342E7B1A19XNH0"
+    ],
+    "connectors": {
+      "roster": {
+        "connectorId": "Http_5c72b42d47f14a1983767932f6c1d4f1",
+        "actionId": "getUserMessage",
+        "type": "httpConnector",
+        "connection": 15597
+      }
+    },
+    "relatedSources": {
+      "leave": {
+        "form": "FORM-DD875E952401413099DE137DAD7DA468LSC1",
+        "title": "serialNumberField_m0m0xxn6",
+        "subtitle": "numberField_m0m0xxnr",
+        "scope": "applicant",
+        "applicantField": "employeeField_m0m0xxmy",
+        "statuses": [
+          "COMPLETED"
+        ],
+        "approvedResults": [
+          "agree"
+        ],
+        "fields": [
+          "dateField_m0m0xxne",
+          "selectField_m0m0xxnf",
+          "dateField_m0m0xxnh",
+          "selectField_m0m0xxng",
+          "textField_m0vv112d",
+          "numberField_m0m0xxnr",
+          "serialNumberField_m0m0xxn6"
+        ]
+      }
+    }
+  },
+  "rules": {
+    "kind": "cancellation",
+    "dayMode": "workdays",
+    "yearMode": "source",
+    "reasonRequired": false,
+    "reasonMaxLength": 200,
+    "formulas": {
+      "textField_m0n7mvdm": "USERFIELD(#{employeeField_m0m0xxmy},\"userId\")",
+      "numberField_m0m0xxnr": "#{numberField_m0m0xxnz}-#{numberField_m0m0xxo7}+IF(EQ(#{selectField_m0m0xxnf},\"上午\"),0,-0.5)+IF(EQ(#{selectField_m0m0xxng},\"下午\"),0,-0.5)",
+      "numberField_m0m0xxob": "NETWORKDAYS(#{dateField_m0m0xxne},#{dateField_m0m0xxnh})"
+    }
+  },
+  "relatedFields": {
+    "start": "dateField_m0m0xxne",
+    "startPeriod": "selectField_m0m0xxnf",
+    "end": "dateField_m0m0xxnh",
+    "endPeriod": "selectField_m0m0xxng",
+    "year": "textField_m0vv112d",
+    "days": "numberField_m0m0xxnr",
+    "serial": "serialNumberField_m0m0xxn6"
+  }
+}

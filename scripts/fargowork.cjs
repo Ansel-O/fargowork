@@ -20,7 +20,12 @@ const {
   ROOT,
   registry,
   workflow,
-  processCode
+  workflowAvailability,
+  workflowGroup,
+  workflowCategory,
+  assertWorkflowStartAllowed,
+  processCode,
+  attachmentAllowed
 } = require('./lib/policy.cjs');
 const {
   createRuntime
@@ -36,6 +41,17 @@ const {
   validateInstance
 } = require('./lib/verification.cjs');
 const {supportForError} = require('./lib/support.cjs');
+const DetailReview = require('../shared/detail-review.cjs');
+const {
+  attachmentJobs,
+  attachmentGroupKey,
+  attachmentRuleGroups,
+  resolveAttachmentRules,
+  attachmentCounts,
+  bindUploadedAttachments,
+  withoutAttachmentReferences,
+  referenceFor
+} = require('../shared/workflow-attachments.cjs');
 const VERSION = require('../package.json').version;
 const json = x => JSON.parse(JSON.stringify(x));
 function parse(args) {
@@ -51,6 +67,9 @@ function parse(args) {
   }
   check(positionals.length <= 1, 'ARGUMENT_INVALID');
   const accepted = {
+    details: ['input'],
+    review: ['input', 'draft'],
+    'confirm-details': ['confirm'],
     prepare: ['input', 'draft'],
     submit: ['confirm'],
     preview: [],
@@ -63,7 +82,7 @@ function parse(args) {
     doctor: []
   };
   check(Object.hasOwn(accepted, command) && Object.keys(options).every(k => accepted[command].includes(k)), 'COMMAND_NOT_ALLOWED');
-  if (['prepare', 'submit', 'preview', 'result', 'requirements'].includes(command)) check(positionals.length === 1, 'ARGUMENT_INVALID');else check(positionals.length === 0, 'ARGUMENT_INVALID');
+  if (['details', 'review', 'confirm-details', 'prepare', 'submit', 'preview', 'result', 'requirements'].includes(command)) check(positionals.length === 1, 'ARGUMENT_INVALID');else check(positionals.length === 0, 'ARGUMENT_INVALID');
   return {
     command,
     arg: positionals[0],
@@ -125,11 +144,11 @@ function attachmentRules(schema, field) {
   const n = fields(schema)[field];
   check(n?.componentName === 'AttachmentField', 'NATIVE_ATTACHMENT_UNAVAILABLE');
   const p = n.props;
-  check(Number.isFinite(Number(p.limit)) && Number(p.limit) > 0 && Number.isFinite(Number(p.maxFileSize)) && Number(p.maxFileSize) > 0, 'ATTACHMENT_SCHEMA_LIMIT_INVALID');
+  check(Number.isSafeInteger(Number(p.limit)) && Number(p.limit) > 0 && Number.isFinite(Number(p.maxFileSize)) && Number(p.maxFileSize) > 0, 'ATTACHMENT_SCHEMA_LIMIT_INVALID');
   return {
     required: p.required === true || Array.isArray(p.validation) && p.validation.some(v => v.type === 'required'),
-    maxCount: Math.min(9, Number(p.limit)),
-    maxBytes: Math.min(20, Number(p.maxFileSize)) * 1024 * 1024,
+    maxCount: Number(p.limit),
+    maxBytes: Math.min(100, Number(p.maxFileSize)) * 1024 * 1024,
     accept: typeof p.accept === 'string' ? p.accept.split(',').map(x => x.trim().toLowerCase()).filter(Boolean) : []
   };
 }
@@ -145,7 +164,7 @@ function checkFiles(files, rules) {
     if (rules.accept.length) check(rules.accept.includes(path.extname(f).toLowerCase()) || rules.accept.includes('*') || rules.accept.includes('*/*'), 'ATTACHMENT_TYPE_NOT_ALLOWED_BY_FORM');
   }
 }
-function inputData(options) {
+function inputData(options, detailReview = false) {
   check(options.input && path.isAbsolute(options.input), 'INPUT_FILE_REQUIRED');
   const raw = read(options.input);
   check(raw && typeof raw === 'object' && !Array.isArray(raw), 'INPUT_OBJECT_REQUIRED');
@@ -154,10 +173,16 @@ function inputData(options) {
   };
   const files = input.attachments ?? [];
   delete input.attachments;
+  const materials = detailReview ? input.materials : undefined;
+  const materialUploads=detailReview?input.materialUploads:undefined;
+  if (detailReview) {delete input.materials;delete input.materialUploads;}
   check(Array.isArray(files) && files.every(file => typeof file === 'string' && path.isAbsolute(file)), 'ATTACHMENT_INPUT_INVALID');
   return {
     input,
-    files
+    files,
+    filesProvided: Object.hasOwn(raw, 'attachments'),
+    ...(detailReview ? {materials, materialsProvided: Object.hasOwn(raw, 'materials'),
+      materialUploads,materialUploadsProvided:Object.hasOwn(raw,'materialUploads')} : {})
   };
 }
 function intentIdentity(key, actor, data) {
@@ -208,47 +233,190 @@ function incompleteDraft(id, revision) {
     message: '流程尚未提交，本次草稿准备未完成，旧预览和确认已经失效。若上传结果未知，先联系维护者核对，不要重传。'
   };
 }
+function reviewRequired(id) {
+  return {status:'needs_detail_review',...(id?{draftId:id}:{}),code:'DETAIL_REVIEW_REQUIRED',
+    nextAction:'review',requiresConfirmation:false,localDraftOnly:true,
+    message:'请先整理并展示本流程明细，用 review 保存草稿；员工确认明细后，再继续补齐申请信息。'};
+}
+function revisionPending(dir, workflowKey, actor) {
+  const pending={version:VERSION,status:'pending',revisionId:crypto.randomUUID(),workflow:workflowKey,
+    actor:{userid:actor.userid,corp_id:actor.corp_id}};
+  try {write(path.join(dir,'revision.json'),pending);}
+  catch(error) {error.retainDraftLock=true;throw error;}
+  return pending;
+}
+function readonlyDetailContext(rt,actor,w) {
+  check(sameActor(actor,rt.ctx.actor),'IDENTITY_CHANGED');
+  const context={actor:{...rt.ctx.actor},schema:rt.ctx.schema,query:rt.ctx.query};
+  // Only workflows with an explicit delegation policy receive native picker
+  // and subject-scoped reads. First-round details never receive roster or
+  // general connector/upload/submit capabilities from either context.
+  if(w.policy?.delegation!==undefined) {
+    check(typeof rt.ctx.searchEmployees==='function'&&typeof rt.ctx.forSubject==='function',
+      'WORKFLOW_DETAIL_CONTEXT_INVALID');
+    context.searchEmployees=rt.ctx.searchEmployees;
+    if(typeof rt.ctx.related==='function') context.related=rt.ctx.related;
+    context.forSubject=userId=>{
+      const selected=rt.ctx.forSubject(userId);
+      check(selected&&sameActor(actor,selected.actor),'IDENTITY_CHANGED');
+      return {actor:{...selected.actor},subject:{...selected.subject},schema:selected.schema,
+        query:selected.query,related:selected.related};
+    };
+  }
+  return context;
+}
+async function refreshReview(dir,w,rt,info,prior) {
+  const file=path.join(dir,'details-review.json');
+  // Failure cannot leave a previously confirmed but now unverified review live.
+  write(file,{...(prior||{}),status:'pending',confirmedSha256:null});
+  const materials=DetailReview.normalizeMaterials(info.materials||[],info.input.items?.length||0,w.materialRoles);
+  if(info.materialUploads!==undefined) DetailReview.normalizeMaterialUploads(info.materialUploads,w.materialRoles);
+  const result=json(await w.details(info.input,readonlyDetailContext(rt,info.actor,w)));
+  if(w.materialRoles!==undefined) check(digest(result.detailReviewContract?.materialRoles)===digest(w.materialRoles),
+    'WORKFLOW_DETAIL_REVIEW_CONTRACT_INVALID');
+  check(sameActor(info.actor,rt.actor()),'IDENTITY_CHANGED');
+  check(!['draftId','draftSha256','authorization','requiresConfirmation','formData','processInstanceId']
+    .some(key=>Object.hasOwn(result,key)),'WORKFLOW_DETAILS_RESULT_INVALID');
+  const review=DetailReview.checkpoint({workflow:w.key,actor:info.actor,result,materials,previous:prior});
+  write(file,review);
+  return review;
+}
+function attemptedResult(state,id) {
+  return {status:state.status,draftId:id,processInstanceId:state.processInstanceId,mayRetry:false,
+    message:'此草稿已经发出提交尝试，请用 result 查看，不能重新起草或重复提交。'};
+}
+function assertPreparedReview(dir,w,info,review,prepared) {
+  const current=DetailReview.checkpoint({workflow:w.key,actor:info.actor,previous:review,
+    result:{rows:review.rows,preview:review.preview,needsInput:review.needsInput,
+      ...(review.detailReviewContract===undefined?{}:{detailReviewContract:review.detailReviewContract})},
+    materials:DetailReview.normalizeMaterials(info.materials||[],info.input.items?.length||0,w.materialRoles)});
+  if(current.reviewSha256!==review.reviewSha256||!DetailReview.preparedMatches(review,prepared)) {
+    write(path.join(dir,'details-review.json'),{...current,status:'pending',confirmedSha256:null});
+    check(false,'DETAIL_FACTS_CHANGED_REVIEW_REQUIRED');
+  }
+}
 async function run(args, deps = {}) {
   const {
       command,
       arg,
       options
-    } = parse(args),
-    auth = deps.auth || require('./lib/auth.cjs'),
-    runtime = deps.runtime || createRuntime,
-    root = deps.root || dataRoot();
+    } = parse(args);
   if (command === 'workflows') return {
-    workflows: Object.values(registry).map(w => ({
-      key: w.key,
-      title: w.title
-    })),
-    scope: '仅这四个固定流程；不检索其他流程。'
+    workflows: Object.values(registry).map(w => {
+      const availability = workflowAvailability(w.key);
+      return {key: w.key, title: w.title, category: workflowCategory(w.key), group: workflowGroup(w.key),
+        ...(!availability.canStart ? {availability, message: availability.message} : {})};
+    }),
+    scope: `仅 ${Object.keys(registry).length} 个固定流程；不检索其他流程。`
   };
   if (command === 'requirements') {
     const w = workflow(arg);
+    const availability = workflowAvailability(w.key);
+    if (!availability.canStart) return {
+      status: 'unavailable', code: 'WORKFLOW_UNAVAILABLE', workflow: w.key, title: w.title,
+      category: workflowCategory(w.key), group: workflowGroup(w.key),
+      availability, message: availability.message, mayRetry: false, requiresConfirmation: false,
+      nextAction: 'follow_workflow_guidance'
+    };
     return {
       workflow: w.key,
       title: w.title,
+      category: workflowCategory(w.key),
+      group: workflowGroup(w.key),
       requirements: w.requirements,
-      attachments: {
-        required: arg === 'external_expense_request',
-        supported: arg !== 'annual_leave',
-        format: '绝对路径数组，顶层 attachments',
-        maximumCount: 9,
-        maximumMiB: 20
-      }
+      attachments: w.requirements.attachments || {required:false,supported:false}
     };
   }
+  if (command === 'details') {
+    // This branch deliberately finishes before dataRoot(), draft locks, intent
+    // records, attachment handling, or the process manager can be constructed.
+    assertWorkflowStartAllowed(arg);
+    const w = workflow(arg);
+    check(typeof w.details === 'function', 'WORKFLOW_DETAILS_NOT_SUPPORTED');
+    check(options.input && path.isAbsolute(options.input), 'INPUT_FILE_REQUIRED');
+    const input = read(options.input);
+    check(input && typeof input === 'object' && !Array.isArray(input), 'INPUT_OBJECT_REQUIRED');
+    check(!Object.hasOwn(input, 'attachments'), 'READ_ONLY_ATTACHMENTS_NOT_ALLOWED');
+    const detailsAuth = deps.auth || require('./lib/auth.cjs');
+    const detailsRuntime = deps.runtime || createRuntime;
+    check((await detailsAuth.status()).status === 'ready', 'OPENYIDA_LOGIN_REQUIRED');
+    const rt = detailsRuntime(arg, {auth: detailsAuth});
+    const current = rt.actor(), actor = {userid: current.userid, corp_id: current.corp_id};
+    check(sameActor(actor, rt.ctx.actor), 'IDENTITY_CHANGED');
+    // No roster, connectors, raw HTTP client, upload or submit capability is
+    // passed to a first-round details adapter.
+    const result = json(await w.details(input, readonlyDetailContext(rt,actor,w)));
+    check(sameActor(actor, rt.actor()), 'IDENTITY_CHANGED');
+    check(result && typeof result === 'object' && !Array.isArray(result)
+      && Array.isArray(result.rows)
+      && (result.needsInput === undefined || Array.isArray(result.needsInput))
+      && !['draftId', 'draftSha256', 'authorization', 'requiresConfirmation',
+        'formData', 'processInstanceId'].some(key => Object.hasOwn(result, key)),
+    'WORKFLOW_DETAILS_RESULT_INVALID');
+    const needs = result.needsInput || [];
+    return {
+      ...result, readOnly: true, status: needs.length ? 'needs_input' : 'details_ready', workflow: arg,
+      nextAction: needs.some(need => need.resolver === 'agent_recommendation')
+        ? 'agent_recommendation' : needs.length ? 'clarify_details' : 'review_details'
+    };
+  }
+  if (command === 'prepare' || command === 'review') assertWorkflowStartAllowed(arg);
+  if (command === 'review') check(workflow(arg).detailReview === true
+    && typeof workflow(arg).details === 'function','WORKFLOW_DETAIL_REVIEW_NOT_SUPPORTED');
+  // Starting this workflow at prepare must not trigger main-form reads or an
+  // upload, nor manufacture a second intent before its detail review exists.
+  if (command === 'prepare' && workflow(arg).detailReview === true && !options.draft) return reviewRequired();
+  const root = deps.root || dataRoot();
+  if (command === 'preview' || command === 'submit' || command === 'confirm-details') {
+    const info = read(path.join(draftDir(root, arg), 'input.json'));
+    assertWorkflowStartAllowed(info.workflow);
+  }
+  const auth = deps.auth || require('./lib/auth.cjs'),
+    runtime = deps.runtime || createRuntime;
   if (command === 'status' || command === 'login' || command === 'logout') return auth[command]();
   if (command === 'doctor') return {
     version: VERSION,
     node: process.versions.node,
     platform: process.platform,
     identity: (await auth.status()).status,
-    scope: 'four-fixed-workflows',
+    scope: `${Object.keys(registry).length}-fixed-workflows`,
     diagnostics: '如需支持，仅提供时间、命令名、错误码和草稿编号。'
   };
   check((await auth.status()).status === 'ready', 'OPENYIDA_LOGIN_REQUIRED');
+  if (command === 'review') {
+    const w=workflow(arg),rt=runtime(arg,{auth}),actor=rt.actor();
+    let id=options.draft,initialData;
+    if(!id) {
+      initialData=inputData(options,true);
+      id=claimIntent(intentPath(root,intentIdentity(arg,actor,initialData)),crypto.randomUUID());
+    }
+    const dir=draftDir(root,id);
+    return locked(dir,async()=>{
+      const infoFile=path.join(dir,'input.json'),previous=fs.existsSync(infoFile)?read(infoFile):null;
+      if(options.draft) check(previous,'DRAFT_NOT_FOUND');
+      if(previous) check(previous.workflow===arg&&sameActor(previous.actor,actor),'DRAFT_IDENTITY_OR_WORKFLOW_MISMATCH');
+      if(fs.existsSync(path.join(dir,'process','state.json'))) {
+        const state=await manager(rt,w,dir).inspect();
+        if(state.status!=='prepared') return attemptedResult(state,id);
+      }
+      const pending=revisionPending(dir,arg,actor);
+      const reviewFile=path.join(dir,'details-review.json'),prior=fs.existsSync(reviewFile)?read(reviewFile):null;
+      // Invalid input on a revision also revokes its old final preview.
+      write(reviewFile,{...(prior||{}),status:'pending',confirmedSha256:null});
+      const request=initialData||inputData(options,true),input={...previous?.input,...request.input};
+      const files=previous&&!request.filesProvided?previous.files:request.files;
+      const materials=request.materialsProvided?request.materials:previous?.materials||[];
+      const identity=intentIdentity(arg,actor,{input,files});
+      check(claimIntent(intentPath(root,identity),id)===id,'DRAFT_INTENT_ALREADY_BOUND');
+      const info={version:VERSION,workflow:arg,actor:{userid:actor.userid,corp_id:actor.corp_id},input,files,materials,
+        identity,revisionId:pending.revisionId,workflowState:previous?.workflowState||null};
+      if(request.materialUploadsProvided||previous?.materialUploads!==undefined)
+        info.materialUploads=request.materialUploadsProvided?request.materialUploads:previous.materialUploads;
+      write(infoFile,info);
+      const review=await refreshReview(dir,w,rt,info,prior);
+      return DetailReview.response(review,id);
+    }).catch(error=>{error.draftId=id;throw error;});
+  }
   if (command === 'prepare') {
     const w = workflow(arg);
     const rt = runtime(arg, {
@@ -258,7 +426,7 @@ async function run(args, deps = {}) {
     let id = options.draft;
     let initialData;
     if (!id) {
-      initialData = inputData(options);
+      initialData = inputData(options, w.detailReview === true);
       id = claimIntent(intentPath(root, intentIdentity(arg, actor, initialData)), crypto.randomUUID());
     }
     const dir = draftDir(root, id);
@@ -301,16 +469,17 @@ async function run(args, deps = {}) {
         throw error;
       }
       try {
-        const {
-          input,
-          files
-        } = initialData || inputData(options);
+        const request = initialData || inputData(options, w.detailReview === true);
+        const input = w.partialUpdates || w.detailReview === true ? {...previous?.input,...request.input} : request.input;
+        // Workflows with editable initial defaults also accept partial replies.
+        // Omission preserves files there; an explicit [] always clears them.
+        const files = (w.partialUpdates || w.detailReview === true) && previous && !request.filesProvided ? previous.files : request.files;
         const identity = intentIdentity(arg, actor, {
           input,
           files
         });
         check(claimIntent(intentPath(root, identity), id) === id, 'DRAFT_INTENT_ALREADY_BOUND');
-        write(infoFile, {
+        const info = {
           version: VERSION,
           workflow: arg,
           actor: {
@@ -320,10 +489,28 @@ async function run(args, deps = {}) {
           input,
           files,
           identity,
-          revisionId
-        });
-        const prepared = json(await w.prepare(input, rt.ctx));
+          revisionId,
+          workflowState: previous?.workflowState || null
+        };
+        if(w.detailReview === true) info.materials=request.materialsProvided?request.materials:previous?.materials||[];
+        if(w.detailReview===true&&(request.materialUploadsProvided||previous?.materialUploads!==undefined))
+          info.materialUploads=request.materialUploadsProvided?request.materialUploads:previous.materialUploads;
+        write(infoFile, info);
+        let detailReview;
+        if(w.detailReview === true) {
+          const file=path.join(dir,'details-review.json'),prior=fs.existsSync(file)?read(file):null;
+          if(!prior) return reviewRequired(id);
+          detailReview=await refreshReview(dir,w,rt,info,prior);
+          if(detailReview.needsInput.length||detailReview.confirmedSha256!==detailReview.reviewSha256)
+            return DetailReview.response(detailReview,id);
+        }
+        const prepared = json(await w.prepare(input, {...rt.ctx, workflowState: info.workflowState,
+          inputUpdateKeys:Object.keys(request.input)}));
         rt.actor();
+        if (Object.hasOwn(prepared, 'workflowState')) {
+          info.workflowState = prepared.workflowState;
+          write(infoFile, info);
+        }
         if (prepared.needsInput?.length) {
           write(revisionFile, {
             ...pending,
@@ -336,10 +523,17 @@ async function run(args, deps = {}) {
           };
         }
         check(prepared.formData && prepared.departmentId && prepared.preview, 'WORKFLOW_RESULT_INVALID');
-        const schema = await rt.ctx.schema(),
-          rules = attachmentRules(schema, prepared.attachmentField);
-        checkFiles(files, rules);
-        if (rules?.required && !files.length) {
+        if(detailReview) assertPreparedReview(dir,w,info,detailReview,prepared);
+        const schema = await rt.ctx.schema();
+        const jobs = attachmentJobs(input, files, prepared, field => attachmentAllowed(APP, w.formUuid, field));
+        const resolvedRules = resolveAttachmentRules(prepared, field => attachmentRules(schema, field));
+        const groups = attachmentRuleGroups(input, prepared, jobs);
+        const rulesByGroup = new Map();
+        for (const group of groups) {
+          const rules = resolvedRules.rulesByField.get(group.field);
+          rulesByGroup.set(attachmentGroupKey(group), rules);
+          checkFiles(group.jobs.map(job => job.filePath), rules);
+          if (rules.required && !group.jobs.length) {
           write(revisionFile, {
             ...pending,
             code: 'PREPARATION_NEEDS_INPUT'
@@ -348,27 +542,42 @@ async function run(args, deps = {}) {
             status: 'needs_input',
             draftId: id,
             needsInput: [{
-              field: 'attachments',
-              message: '这个流程要求附件，请提供需要随申请提交的本地文件。'
+              field: group.inputField,
+              message: group.rowIndex === undefined
+                ? group.previewField ? `请补充“${group.previewField}”要求的本地文件。` : '这个流程要求附件，请提供需要随申请提交的本地文件。'
+                : `请补充第 ${group.rowIndex + 1} 行要求的文件。`
             }]
           };
+          }
         }
+        const materialUploadScope=detailReview&&w.materialRoles!==undefined
+          ?DetailReview.assertMaterialUploadScope(detailReview,prepared,jobs,info.materialUploads||[]):null;
+        if(materialUploadScope) prepared.preview.附件来源=materialUploadScope.summary;
         const uploaded = [];
-        if (files.length) {
-          const uploader = createNativeAttachmentUploader({
-            tenantClient: rt.tenant,
-            tenantOrigin: TENANT,
-            appType: APP,
-            formUuid: w.formUuid,
-            stateDir: path.join(dir, 'attachments'),
-            actor: rt.actor(),
-            maxBytes: rules.maxBytes
-          });
-          for (const file of files) {
+        if (jobs.length) {
+          const uploaders = new Map();
+          for (const job of jobs) {
             rt.actor();
+            // Validate each field separately. Keep the content ledger shared by
+            // this draft so moving an uncertain upload to another field cannot
+            // accidentally upload it again; field placement is frozen below.
+            if (!uploaders.has(job.field)) uploaders.set(job.field, createNativeAttachmentUploader({
+              tenantClient: rt.tenant,
+              tenantOrigin: TENANT,
+              appType: APP,
+              formUuid: w.formUuid,
+              fieldId: job.field,
+              stateDir: path.join(dir, 'attachments'),
+              actor: rt.actor(),
+              maxBytes: rulesByGroup.get(attachmentGroupKey(job)).maxBytes
+            }));
+            const uploader = uploaders.get(job.field);
+            const attempt=fileAttempt(job.filePath);
+            if(materialUploadScope) check(materialUploadScope.files.some(item=>item.field===job.field
+              &&item.filePath===job.filePath&&item.sha256===attempt.expectedSha256),'DETAIL_MATERIAL_UPLOAD_SCOPE_INVALID');
             const up = await uploader.upload({
-              filePath: file,
-              ...fileAttempt(file)
+              filePath: job.filePath,
+              ...attempt
             });
             rt.actor();
             await verifyDownload({
@@ -379,26 +588,17 @@ async function run(args, deps = {}) {
               getAccessToken: rt.getAccessToken
             });
             rt.actor();
-            check(!uploaded.some(x => x.reference.fileUuid === up.reference.fileUuid), 'ATTACHMENT_DUPLICATE_CONTENT');
-            uploaded.push(up);
+            check(!uploaded.some(x => attachmentGroupKey(x) === attachmentGroupKey(job)
+              && x.reference.fileUuid === up.reference.fileUuid), 'ATTACHMENT_DUPLICATE_CONTENT');
+            uploaded.push({...job,reference:up.reference,sha256:up.sha256});
           }
         }
-        // Freeze an empty selection too, so readback detects unexpected attachments.
-        if (prepared.attachmentField) prepared.formData[prepared.attachmentField] = uploaded.map(x => x.reference);
-        const attachmentSummary = uploaded.map(x => ({
-          name: x.reference.name,
-          size: x.reference.size,
-          sha256: x.sha256
-        }));
+        const bound = bindUploadedAttachments(prepared, uploaded);
+        prepared.formData = bound.formData;
+        const attachmentSummary = bound.attachments;
         const preview = {
           流程: w.title,
-          ...prepared.preview,
-          ...(prepared.attachmentField ? {
-            附件: attachmentSummary.map(x => ({
-              名称: x.name,
-              字节数: x.size
-            }))
-          } : {})
+          ...bound.preview
         };
         const receipt = await pm.prepare({
           formData: prepared.formData,
@@ -413,16 +613,17 @@ async function run(args, deps = {}) {
           revisionId,
           identity,
           draftSha256: receipt.draftSha256,
+          workflowStateDigest: digest(info.workflowState),
+          ...(detailReview ? {detailReviewSha256:detailReview.reviewSha256} : {}),
+          ...(materialUploadScope?{materialUploadScopeDigest:materialUploadScope.digest}:{}),
           businessDigest: digest({
-            formData: json({
-              ...prepared.formData,
-              ...(prepared.attachmentField ? {
-                [prepared.attachmentField]: null
-              } : {})
-            }),
+            formData: withoutAttachmentReferences(prepared.formData,prepared.attachmentField,prepared.attachmentInputs,prepared.attachmentFields),
             departmentId: String(prepared.departmentId)
           }),
           attachmentField: prepared.attachmentField || null,
+          attachmentInputs: prepared.attachmentInputs || null,
+          attachmentFields: prepared.attachmentFields || null,
+          attachmentRequirements: resolvedRules.requirements,
           attachments: attachmentSummary
         });
         check(read(revisionFile).revisionId === revisionId, 'DRAFT_REVISION_CHANGED');
@@ -459,8 +660,9 @@ async function run(args, deps = {}) {
   }
   const dir = draftDir(root, arg);
   return locked(dir, async () => {
-    const info = read(path.join(dir, 'input.json')),
-      w = workflow(info.workflow),
+    const info = read(path.join(dir, 'input.json'));
+    if (command !== 'result') assertWorkflowStartAllowed(info.workflow);
+    const w = workflow(info.workflow),
       rt = runtime(info.workflow, {
         auth
       });
@@ -468,6 +670,36 @@ async function run(args, deps = {}) {
     const pm = manager(rt, w, dir);
     const revisionFile = path.join(dir, 'revision.json');
     const revision = fs.existsSync(revisionFile) ? read(revisionFile) : null;
+    if(command === 'confirm-details') {
+      check(w.detailReview===true,'WORKFLOW_DETAIL_REVIEW_NOT_SUPPORTED');
+      if(fs.existsSync(path.join(dir,'process','state.json'))) {
+        const state=await pm.inspect();
+        if(state.status!=='prepared') return attemptedResult(state,arg);
+      }
+      const file=path.join(dir,'details-review.json');
+      check(fs.existsSync(file),'DETAIL_REVIEW_REQUIRED');
+      const prior=read(file);
+      check(prior.status==='ready'&&options.confirm&&options.confirm===prior.reviewSha256,'DETAIL_EXPLICIT_CONFIRMATION_REQUIRED');
+      check(!prior.needsInput.length,'DETAIL_REVIEW_INCOMPLETE');
+      let current;
+      try {
+        current=DetailReview.checkpoint({workflow:w.key,actor:info.actor,previous:prior,
+          result:{rows:prior.rows,preview:prior.preview,needsInput:prior.needsInput,
+            ...(prior.detailReviewContract===undefined?{}:{detailReviewContract:prior.detailReviewContract})},
+      materials:DetailReview.normalizeMaterials(info.materials||[],info.input.items?.length||0,w.materialRoles)});
+      } catch(error) {
+        revisionPending(dir,w.key,info.actor);
+        write(file,{...prior,status:'pending',confirmedSha256:null});
+        throw error;
+      }
+      if(current.reviewSha256!==prior.reviewSha256) {
+        revisionPending(dir,w.key,info.actor);write(file,current);
+        return DetailReview.response(current,arg);
+      }
+      check(sameActor(info.actor,rt.actor()),'IDENTITY_CHANGED');
+      write(file,{...current,confirmedSha256:current.reviewSha256});
+      return DetailReview.response({...current,confirmedSha256:current.reviewSha256},arg);
+    }
     if (!fs.existsSync(path.join(dir, 'process', 'state.json'))) {
       return incompleteDraft(arg, revision);
     }
@@ -503,24 +735,65 @@ async function run(args, deps = {}) {
         check(saved.previewedDraftSha256 === state.draftSha256, 'PROCESS_PREVIEW_REQUIRED');
         check(saved.version === VERSION && info.version === VERSION, 'DRAFT_VERSION_CHANGED');
         check(state.snapshot.businessDate === today(), 'PROCESS_DRAFT_EXPIRED');
-        const fresh = json(await w.prepare(info.input, rt.ctx));
+        check(saved.workflowStateDigest === digest(info.workflowState || null), 'DRAFT_WORKFLOW_STATE_CHANGED');
+        let detailReview;
+        if(w.detailReview===true) {
+          const file=path.join(dir,'details-review.json');
+          check(fs.existsSync(file),'DETAIL_REVIEW_REQUIRED');
+          const prior=read(file);
+          check(prior.status==='ready'&&prior.confirmedSha256===prior.reviewSha256
+            &&saved.detailReviewSha256===prior.reviewSha256,'DETAIL_REVIEW_REQUIRED');
+          try {detailReview=await refreshReview(dir,w,rt,info,prior);}
+          catch(error) {revisionPending(dir,w.key,info.actor);throw error;}
+          if(detailReview.needsInput.length||detailReview.confirmedSha256!==detailReview.reviewSha256) {
+            revisionPending(dir,w.key,info.actor);
+            return DetailReview.response(detailReview,arg);
+          }
+        }
+        const fresh = json(await w.prepare(info.input, {...rt.ctx, workflowState: info.workflowState || null,inputUpdateKeys:[]}));
         check(!fresh.needsInput?.length && fresh.formData && fresh.departmentId, 'BUSINESS_FACTS_CHANGED_REPREPARE');
+        if(detailReview) {
+          try {assertPreparedReview(dir,w,info,detailReview,fresh);}
+          catch(error) {revisionPending(dir,w.key,info.actor);throw error;}
+        }
         const af = saved.attachmentField;
         const freshDigest = digest({
-          formData: json({
-            ...fresh.formData,
-            ...(af ? {
-              [af]: null
-            } : {})
-          }),
+          formData: withoutAttachmentReferences(fresh.formData,af,saved.attachmentInputs,saved.attachmentFields),
           departmentId: String(fresh.departmentId)
         });
-        check(freshDigest === saved.businessDigest && fresh.attachmentField === af || freshDigest === saved.businessDigest && !fresh.attachmentField && !af, 'BUSINESS_FACTS_CHANGED_REPREPARE');
-        const rules = attachmentRules(await rt.ctx.schema(), af);
-        check(!rules?.required || saved.attachments.length > 0, 'BUSINESS_FACTS_CHANGED_REPREPARE');
-        check(!rules || saved.attachments.length <= rules.maxCount && saved.attachments.every(x => x.size <= rules.maxBytes), 'BUSINESS_FACTS_CHANGED_REPREPARE');
+        check(freshDigest === saved.businessDigest && (fresh.attachmentField || null) === af
+          && digest(fresh.attachmentInputs || null) === digest(saved.attachmentInputs || null)
+          && digest(fresh.attachmentFields || null) === digest(saved.attachmentFields || null), 'BUSINESS_FACTS_CHANGED_REPREPARE');
+        const freshJobs = attachmentJobs(info.input,info.files,fresh,field => attachmentAllowed(APP,w.formUuid,field));
+        if(detailReview&&w.materialRoles!==undefined) {
+          try {
+            const scope=DetailReview.assertMaterialUploadScope(detailReview,fresh,freshJobs,info.materialUploads||[]);
+            check(scope.digest===saved.materialUploadScopeDigest,'BUSINESS_FACTS_CHANGED_REPREPARE');
+          } catch(error) {revisionPending(dir,w.key,info.actor);throw error;}
+        }
+        check(freshJobs.length === saved.attachments.length, 'BUSINESS_FACTS_CHANGED_REPREPARE');
+        const schema = await rt.ctx.schema();
+        const resolvedRules = resolveAttachmentRules(fresh, field => attachmentRules(schema, field));
+        check(digest(resolvedRules.requirements) === digest(saved.attachmentRequirements === undefined ? {} : saved.attachmentRequirements),
+          'BUSINESS_FACTS_CHANGED_REPREPARE');
+        const currentGroups = attachmentCounts(freshJobs);
+        for (const [key,count] of attachmentCounts(saved.attachments)) check(currentGroups.get(key) === count, 'BUSINESS_FACTS_CHANGED_REPREPARE');
+        const ruleGroups = attachmentRuleGroups(info.input,fresh,freshJobs);
+        for (const group of ruleGroups) {
+          const rules = resolvedRules.rulesByField.get(group.field);
+          check(group.jobs.length <= rules.maxCount, 'BUSINESS_FACTS_CHANGED_REPREPARE');
+          check(!rules.required || group.jobs.length > 0, 'BUSINESS_FACTS_CHANGED_REPREPARE');
+          check(group.jobs.every(job => fs.statSync(job.filePath).size <= rules.maxBytes), 'BUSINESS_FACTS_CHANGED_REPREPARE');
+          check(!rules.accept.length || group.jobs.every(job => rules.accept.includes(path.extname(job.filePath).toLowerCase())
+            || rules.accept.includes('*') || rules.accept.includes('*/*')), 'BUSINESS_FACTS_CHANGED_REPREPARE');
+        }
+        check(freshJobs.every((job,index) => {
+          const item = saved.attachments[index];
+          return item.field === job.field && (item.rowIndex ?? null) === (job.rowIndex ?? null)
+            && fileAttempt(job.filePath).expectedSha256 === item.sha256;
+        }), 'BUSINESS_FACTS_CHANGED_REPREPARE');
         for (const item of saved.attachments) {
-          const ref = (state.snapshot.formData[af] || []).find(x => x.name === item.name && Number(x.size) === Number(item.size));
+          const ref = referenceFor(state.snapshot,saved,item);
           check(ref, 'ATTACHMENT_SNAPSHOT_MISMATCH');
           await verifyDownload({
             reference: ref,
@@ -566,7 +839,6 @@ async function run(args, deps = {}) {
           verificationStatus: back.responseIdentityVerified ? verification.status : 'unavailable',
           attachmentVerification: back.responseIdentityVerified ? verification.attachmentStatus : 'unavailable',
           contentVerified: back.responseIdentityVerified && verification.allPassed,
-          failedChecks: Object.entries(verification.checks).filter(([, v]) => !v).map(([k]) => k),
           message: verification.allPassed && back.responseIdentityVerified ? '申请已提交，内容及附件已核对。' : verification.status === 'mismatch' ? '申请已提交；回读发现需核对的数据差异，请联系支持人员核查，勿重提。' : '申请已提交；部分内容暂未完成核对，勿重提。'
         };
       } catch (e) {
@@ -595,7 +867,11 @@ if (require.main === module) {
         draftId: e.draftId
       } : {}),
       mayRetry: false,
-      ...supportForError(safeCode(e))
+      ...(safeCode(e) === 'WORKFLOW_UNAVAILABLE' && e.availability ? {
+        workflow: e.workflow, availability: e.availability,
+        message: e.availability.message, requiresConfirmation: false,
+        nextAction: 'follow_workflow_guidance'
+      } : supportForError(safeCode(e)))
     }) + '\n');
     process.exitCode = 1;
   });

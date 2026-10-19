@@ -1,0 +1,225 @@
+{
+  "key": "trip_expense_reimbursement",
+  "title": "出差费用报销申请表",
+  "mode": "formal",
+  "target": {
+    "formUuid": "FORM-FF467D1C65F940C2A7A65C6EA234BB95QVO8",
+    "processCode": "TPROC--E9666S911C0RSLUAAN5Y44DAIQ912BTFIDL4M3"
+  },
+  "fields": {
+    "applicant": "employeeField_m41da53i",
+    "departmentName": "textField_m6sokzua",
+    "departmentId": "selectField_m4ldjq44",
+    "applicationDate": "dateField_m41cj93y",
+    "bankAccount": "textField_m41cj949",
+    "bankName": "textField_m41cj948",
+    "bankCity": "textField_m4viq0za",
+    "bankBranch": "textField_m4viq0zi",
+    "accountName": "textField_m4viq0z9",
+    "paymentCompany": "selectField_m41cj946",
+    "sameBearing": "radioField_m8lo3vpb",
+    "bearingCompany": "selectField_m8lo3vpc",
+    "structure": "selectField_m8lo3vpf",
+    "line": "selectField_m8lo3vpg",
+    "subline": "selectField_m8lo3vph",
+    "currency": "textField_m41cj947",
+    "description": "textareaField_m41cj94b",
+    "items": "tableField_m41cj94c",
+    "remark": "textField_m41cj94q",
+    "paymentCompanyMirror": "textField_m41cj956",
+    "positionLevel": "textField_m41cj95a",
+    "hasBankAccount": "textField_m8oli3ep",
+    "office": "textField_m41cj957",
+    "applicantId": "textField_m41cj95b",
+    "manager": "employeeField_m4ldjq45",
+    "hkd": "textField_m41cj958",
+    "initiatorId": "textField_m41cj95c",
+    "finance": "employeeField_m45931x3",
+    "cashier": "employeeField_m45931x4",
+    "departmentTransition": "textField_m8lo3vpd",
+    "businessDepartment": "textField_m8lo3vpe",
+    "applicantIsManager": "textField_mam9hi67",
+    "isProject": "radioField_m41da53k",
+    "project": "selectField_m41da53l",
+    "projectCategory": "selectField_m8oli3en",
+    "projectDepartmentName": "selectField_m41cj94d",
+    "projectDepartmentId": "textField_m41cj94e",
+    "projectStructure": "selectField_m8lo3vpm",
+    "projectLine": "selectField_m8lo3vpn",
+    "projectSubline": "selectField_m8lo3vpo",
+    "projectAccount": "selectField_m8oli3eo",
+    "expenseCategory": "textField_m8ls51qw",
+    "account": "textField_m8ls51qx",
+    "originalCurrency": "selectField_m41cj94m",
+    "originalRate": "numberField_m41cj94n",
+    "reimbursedAmount": "numberField_m41cj94p",
+    "hkdAmount": "numberField_m41cj94o",
+    "hkdRate": "numberField_m41cj959",
+    "attachment": "attachmentField_m41cj94r",
+    "total": "numberField_m41cj94a",
+    "hkdTotal": "numberField_m41cj95d",
+    "projectDepartmentAggregate": "textField_m41cj95e",
+    "projectManagers": "employeeField_m41cj95f",
+    "projectActive": "textField_ml7ul4qr",
+    "departure": "textField_m459scf4",
+    "destination": "textField_m459scf6",
+    "region": "selectField_m459scf8",
+    "dateRange": "cascadeDateField_m459scfj",
+    "days": "numberField_m459scfa",
+    "tripAssociation": "associationFormField_m459scfc",
+    "tripAssociationText": "textField_m459scfp",
+    "airfare": "numberField_m41cj94j",
+    "accommodation": "numberField_m459scfg",
+    "localTransport": "numberField_m459scfi",
+    "otherExpenses": "numberField_m459scfd",
+    "allowanceCurrency": "textField_m459scfn",
+    "allowanceStandard": "numberField_m459scfl",
+    "allowanceAmount": "numberField_m459scfm",
+    "allowanceTotal": "numberField_m459scfo",
+    "allowanceHkdAmount": "numberField_m6vum6qo",
+    "allowanceHkdTotal": "numberField_m8o52pqn"
+  },
+  "roster": {
+    "name": "sys00-name",
+    "office": "sys00-workPlace",
+    "mainDepartment": "sys00-mainDeptId",
+    "departments": "sys00-deptIds",
+    "departmentNames": "sys00-dept",
+    "positionLevel": "sys01-positionLevel",
+    "bankAccount": "sys04-bankAccountNo",
+    "bankName": "c25a949b-1c28-4ad0-803b-4ce1ba8c7148",
+    "bankCity": "59b7514e-5d01-4a63-b236-e2566cf3e0e6",
+    "bankBranch": "eec62388-645f-4fa0-8ab5-42351a623c0b",
+    "accountName": "eb1f9d44-a245-42f8-b11a-7b616b56bfcb"
+  },
+  "sources": {
+    "employeePaymentCompanies": "employeePaymentCompanies",
+    "companies": "costBearingCompanies",
+    "currencies": "reimbursementCurrencies",
+    "originalCurrencies": "procurementCurrencies",
+    "businessLines": "departmentBusinessLines",
+    "rates": "exchangeRates",
+    "contacts": "paymentContacts",
+    "accounts": "expenseAccounts",
+    "projects": "activeProjects",
+    "projectDepartments": "projectDepartments",
+    "regions": "tripRegions",
+    "allowances": "travelAllowances"
+  },
+  "attachments": {
+    "field": "attachmentField_m41cj94r",
+    "previewField": "报销附件"
+  },
+  "rules": {
+    "defaultIsProject": false,
+    "defaultSameBearingCompany": true,
+    "managerIndex": 0,
+    "precision": 2,
+    "ratePrecision": 4,
+    "formulas": {
+      "numberField_m41cj94a": "ROUND(SUM(#{numberField_m41cj94p}),2)",
+      "textField_m459scfn": "IF(EQ(#{textField_m41cj947},\"CNY\"),\"CNY\",\"HKD\")",
+      "numberField_m459scfo": "ROUND(SUM(#{numberField_m459scfm}),2)",
+      "numberField_m41cj95d": "SUM(#{numberField_m41cj94o})",
+      "numberField_m8o52pqn": "SUM(#{numberField_m6vum6qo})",
+      "numberField_m459scfa": "CASCADEDATEINTERVAL(#{cascadeDateField_m459scfj})",
+      "numberField_m41cj94p": "ROUND((#{numberField_m41cj94j}+#{numberField_m459scfg}+#{numberField_m459scfi}+#{numberField_m459scfd})*#{numberField_m41cj94n},2)",
+      "numberField_m41cj94o": "ROUND(#{numberField_m41cj94p}*#{numberField_m41cj959},2)",
+      "numberField_m6vum6qo": "ROUND(IF(EQ(TRIM(#{textField_m459scfn}),\"HKD\"),#{numberField_m459scfm}*1,#{numberField_m459scfm}*#{numberField_m41cj959}),2)",
+      "textField_m41cj956": "#{selectField_m41cj946}",
+      "textField_m41cj95e": "#{textField_m41cj94e}",
+      "textField_m41cj95b": "USERFIELD(#{employeeField_m41da53i},\"userId\")",
+      "textField_m41cj95c": "LOGINUSERWORKNO()",
+      "textField_m8lo3vpe": "#{textField_m8lo3vpd}",
+      "textField_mam9hi67": "EQ(#{employeeField_m41da53i},#{employeeField_m4ldjq45})"
+    },
+    "defaults": {
+      "radioField_m8lo3vpb": "HIDDEN",
+      "radioField_m41da53k": "HIDDEN",
+      "textField_m41cj958": "HKD",
+      "textField_m8oli3ep": "是",
+      "textField_ml7ul4qr": "生效",
+      "textField_m8ls51qw": "13 差旅费 Business Trip",
+      "textField_m8ls51qx": "1301 差旅费 Business Trip"
+    },
+    "associationOptionalUsers": [
+      "jefferson.sun"
+    ],
+    "fixedCategory": "13 差旅费 Business Trip",
+    "fixedAccount": "1301 差旅费 Business Trip",
+    "allowanceCurrency": "reimbursement",
+    "supportedAllowanceCurrencies": ["CNY", "HKD"],
+    "allowanceDatePolicy": "calendar_inclusive",
+    "duplicateAllowance": "within_application_date_coverage"
+  },
+  "policy": {
+    "rosterFields": [
+      "sys00-name",
+      "sys00-workPlace",
+      "sys00-mainDeptId",
+      "sys00-deptIds",
+      "sys00-dept",
+      "sys01-positionLevel",
+      "sys04-bankAccountNo",
+      "c25a949b-1c28-4ad0-803b-4ce1ba8c7148",
+      "59b7514e-5d01-4a63-b236-e2566cf3e0e6",
+      "eec62388-645f-4fa0-8ab5-42351a623c0b",
+      "eb1f9d44-a245-42f8-b11a-7b616b56bfcb"
+    ],
+    "dataForms": [
+      "FORM-06EF3CD6EB534961B3E710449AF1A379WX6S",
+      "FORM-FB1F218B6F6B4BB4AA54B60087F8265DIB6X",
+      "FORM-9F48888FD81F4382AB9B2D0D025A4ECAKZSG",
+      "FORM-BC161CE5E6BE401EA7A221C3E1B59D3F39LH",
+      "FORM-5902374F6C2C462AB826C0EB5B6F73CB9JBQ",
+      "FORM-0E81A1BBF9C24779B3087C10A32489E26UDW",
+      "FORM-70411F65EF7B412C84FD5A61760DF4BCZU6C",
+      "FORM-09190A7BD4FA473383608B2784A409A8WH1S",
+      "FORM-B33628F4E05E47FBACD7EF29902BE12EPJKR",
+      "FORM-C702478E872E41C6B35993ABD41B1B90H6O6",
+      "FORM-0E82A410567249159687A81A6EDE456EOZDY",
+      "FORM-A094CC0A4AC94E0D852CCF87EB9E2DDA7C8Q"
+    ],
+    "connectors": {
+      "departmentDetails": {
+        "connectorId": "Http_75b8f8aef03c4b40815462052ba21a13",
+        "actionId": "operation-1",
+        "type": "httpConnector",
+        "connection": 15624
+      }
+    },
+    "delegation": {
+      "allowedActors": [
+        "ansel.wang",
+        "candice.kuo",
+        "nancy.he",
+        "fiona.yuan",
+        "ana.koh",
+        "helen.lau",
+        "carol.huang",
+        "kristy.lee"
+      ]
+    },
+    "relatedSources": {
+      "trip": {
+        "form": "FORM-674D4FE01A894121BB2FF2A851F5CF76H0AD",
+        "title": "serialNumberField_m0du7qt7",
+        "subtitle": "textField_m0du7qte",
+        "scope": "applicant",
+        "applicantField": "employeeField_m0du7qt4",
+        "statuses": [
+          "COMPLETED"
+        ],
+        "approvedResults": [
+          "agree"
+        ],
+        "fields": [
+          "serialNumberField_m0du7qt7",
+          "textField_m0du7qte",
+          "employeeField_m0du7qt4"
+        ]
+      }
+    }
+  }
+}
+

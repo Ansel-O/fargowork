@@ -1,0 +1,69 @@
+{
+  "key": "hardware_request",
+  "title": "硬件申请",
+  "mode": "formal",
+  "managerRole": "itManager",
+  "target": {
+    "formUuid": "FORM-A502753D2A4546258915AAC3C89EFEA68IZS",
+    "processCode": "TPROC--T1D66ND1DSJOCSESAKHH54PCQYVF30O3LK61M8"
+  },
+  "fields": {
+    "applicant": "employeeField_m16klbg0",
+    "department": "departmentSelectField_m16klbg1",
+    "applicationDate": "dateField_m16klbg2",
+    "serial": "serialNumberField_m16klbg3",
+    "remarks": "textareaField_m16klbgb",
+    "attachment": "attachmentField_m16klbgn",
+    "total": "numberField_m16klbgc",
+    "currency": "selectField_m4pols77",
+    "items": "tableField_m16klbgd",
+    "name": "textField_m16klbge",
+    "model": "textField_m16klbgf",
+    "purpose": "textField_m16klbgg",
+    "quantity": "numberField_m16klbgi",
+    "price": "numberField_m16klbgj",
+    "amount": "numberField_m16klbgm",
+    "office": "textField_m16klbga",
+    "it": "employeeField_m4pols78",
+    "applicantId": "textField_m4pozlx1",
+    "manager": "employeeField_mcxblc33"
+  },
+  "sources": {
+    "office": "officeAdministrators",
+    "currencies": "exchangeRates"
+  },
+  "attachments": {
+    "field": "attachmentField_m16klbgn",
+    "required": false
+  },
+  "policy": {
+    "rosterFields": [
+      "sys00-name",
+      "sys00-workPlace",
+      "sys00-mainDeptId",
+      "sys00-deptIds"
+    ],
+    "dataForms": [
+      "FORM-644A41735FC1422394A3C8197FADD2ACZ7UA",
+      "FORM-0E81A1BBF9C24779B3087C10A32489E26UDW"
+    ],
+    "connectors": {
+      "departmentDetails": {
+        "connectorId": "Http_75b8f8aef03c4b40815462052ba21a13",
+        "actionId": "operation-1",
+        "type": "httpConnector",
+        "connection": 15624
+      }
+    },
+    "departmentRoles": {
+      "itManager": {
+        "connector": "departmentDetails",
+        "departmentId": "656306928",
+        "managerIndex": 0,
+        "rosterFields": [
+          "sys00-name"
+        ]
+      }
+    }
+  }
+}

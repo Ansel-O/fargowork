@@ -1,0 +1,41 @@
+{
+  "key": "listing",
+  "title": "挂牌申请",
+  "mode": "formal",
+  "target": {
+    "formUuid": "FORM-682B25DB197D42869C87AB548BB66C91YB25",
+    "processCode": "TPROC--6R866V91MWB172RNMRMWY48HFXW42ECXIEYIM0"
+  },
+  "fields": {
+    "applicant": "employeeField_miyejfs6",
+    "applicationDate": "dateField_miyejfsg",
+    "serial": "serialNumberField_miyejfsq",
+    "ownerEnglishName": "textField_miyejfs7",
+    "ownerEmail": "textField_mj2ifdum",
+    "ownerChineseName": "textField_miyejfs8",
+    "ownerDepartment": "departmentSelectField_miyejft1",
+    "licenseType": "textField_miyejfs9",
+    "hiddenSituation": "textField_miyejfss",
+    "parentDepartmentCode": "textField_miyejfsz",
+    "compliance": "employeeField_mkpiixe5"
+  },
+  "sources": {
+    "listingCompliance": "listingCompliance"
+  },
+  "connectors": {
+    "parentsByDept": "listingParentsByDept"
+  },
+  "departmentHierarchy": {
+    "connector": "parentsByDept",
+    "index": -2
+  },
+  "policy": {
+    "employeeSelection": true,
+    "rosterFields": ["sys00-name", "sys00-email", "sys00-mainDeptId", "sys00-deptIds", "sys00-dept", "8a7aadd1-3e54-40a6-ada0-dc3d6541bcbe"],
+    "selectedEmployeeRosterFields": ["sys00-name", "sys00-email", "sys00-mainDeptId", "sys00-deptIds", "sys00-dept", "8a7aadd1-3e54-40a6-ada0-dc3d6541bcbe"],
+    "dataForms": ["FORM-1174DEDBA4E3432B854B0E6D57598DEEYX5T"],
+    "connectors": {
+      "parentsByDept": "listingParentsByDept"
+    }
+  }
+}

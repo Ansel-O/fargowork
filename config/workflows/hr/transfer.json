@@ -1,0 +1,20 @@
+{
+  "key": "transfer",
+  "title": "转岗流程",
+  "mode": "formal",
+  "availability": {
+    "status": "migrated",
+    "message": "该流程不可发起，请转至 HR 应用 Moka。此流程涉及重要人事变更，不建议通过 Agent 编排发起，请本人按 HR 指引办理。"
+  },
+  "orchestration": "manual-only",
+  "target": {
+    "formUuid": "FORM-5516B0F288244E148100EFB83B83B567BZ0B",
+    "processCode": "TPROC--1Y966G8121XNH9RKAGPJF48K1T1C29QVIBN0MB1"
+  },
+  "policy": {
+    "dataForms": [],
+    "rosterFields": [
+      "sys00-name"
+    ]
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "key": "software_request",
+  "title": "软件申请",
+  "mode": "formal",
+  "managerRole": "itManager",
+  "target": {
+    "formUuid": "FORM-C06FA1CEE16B4EA4B1A8D9B5082A68DAV02L",
+    "processCode": "TPROC--Y1A66U61EUKONH646IGK66K3AY7O2VC7XK61M7"
+  },
+  "fields": {
+    "applicant": "employeeField_m16klbg0",
+    "department": "departmentSelectField_m16klbg1",
+    "applicationDate": "dateField_m16klbg2",
+    "serial": "serialNumberField_m16klbg3",
+    "remarks": "textareaField_m16klbgb",
+    "attachment": "attachmentField_m16klbgn",
+    "type": "selectField_m16kxmyr",
+    "systemName": "textField_m16kxmys",
+    "involvesAmount": "radioField_m16kxmyt",
+    "userOrDepartment": "textField_m16kxmyv",
+    "office": "textField_m4pp1ijh",
+    "applicantId": "textField_m4pp1iji",
+    "it": "employeeField_m91602e5",
+    "manager": "employeeField_mcxbrb8t"
+  },
+  "sources": {
+    "office": "officeAdministrators"
+  },
+  "attachments": {
+    "field": "attachmentField_m16klbgn",
+    "required": false
+  },
+  "policy": {
+    "rosterFields": [
+      "sys00-name",
+      "sys00-workPlace",
+      "sys00-mainDeptId",
+      "sys00-deptIds"
+    ],
+    "dataForms": [
+      "FORM-644A41735FC1422394A3C8197FADD2ACZ7UA"
+    ],
+    "connectors": {
+      "departmentDetails": {
+        "connectorId": "Http_75b8f8aef03c4b40815462052ba21a13",
+        "actionId": "operation-1",
+        "type": "httpConnector",
+        "connection": 15624
+      }
+    },
+    "departmentRoles": {
+      "itManager": {
+        "connector": "departmentDetails",
+        "departmentId": "656306928",
+        "managerIndex": 0,
+        "rosterFields": [
+          "sys00-name"
+        ]
+      }
+    }
+  },
+  "options": {
+    "types": [
+      "申请",
+      "更改",
+      "取消"
+    ],
+    "involvesAmount": [
+      "是",
+      "否"
+    ]
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "key": "business_card",
+  "title": "名片申请",
+  "mode": "formal",
+  "target": {
+    "formUuid": "FORM-F3B3659CD74D4260BDE5F2BEA4CEEB02TGYX",
+    "processCode": "TPROC--OSC66DA164BOXA1S6FY519QXG4GO20T42LU0ME"
+  },
+  "fields": {
+    "applicant": "employeeField_m0ul2g5r",
+    "department": "departmentSelectField_m0ul2g5s",
+    "applicationDate": "dateField_m0ul2g5t",
+    "serial": "serialNumberField_m0ul2g5u",
+    "quantity": "selectField_m0ul2g61",
+    "template": "selectField_mejqqspj",
+    "printMethod": "selectField_m0ul2g62",
+    "office": "selectField_mejqqspk",
+    "purpose": "textField_m0ul2g63",
+    "confirmed": "radioField_m0ul2g64",
+    "mailingAddress": "textField_m0ul2g69",
+    "hrProducedCard": "attachmentField_m4quspo2",
+    "pdf": "attachmentField_m0ul2g6a",
+    "companyNameEnglish": "textField_mejqqspr",
+    "nameEnglish": "textField_m4qtwbev",
+    "titleEnglish": "textField_m0un2kmo",
+    "emailEnglish": "textField_m4qtwbej",
+    "mobileEnglish": "textField_m4qtwbek",
+    "landlineEnglish": "textField_m4qtwbel",
+    "addressEnglish": "textField_m4qtwben",
+    "companyNameChinese": "textField_mejqqsps",
+    "nameChinese": "textField_m4qtwbew",
+    "titleChinese": "textField_m4qtwbep",
+    "emailChinese": "textField_m4qtwbeq",
+    "mobileChinese": "textField_m4qtwber",
+    "landlineChinese": "textField_m4qtwbes",
+    "addressChinese": "textField_m4qtwbet",
+    "remarks": "textareaField_m0ul2g6l",
+    "approvalCompany": "textField_mac9fg6k",
+    "hr": "employeeField_m3wr9d95",
+    "applicantId": "textField_m3wr9d96"
+  },
+  "options": {
+    "quantities": ["200", "500"],
+    "printMethods": ["电子版", "纸质版"],
+    "confirmation": ["是", "否"]
+  },
+  "defaults": {
+    "quantity": "200",
+    "print_method": "电子版"
+  },
+  "sources": {
+    "templates": "businessCardTemplates",
+    "companyExecutors": "companyExecutors"
+  },
+  "attachments": {
+    "field": "attachmentField_m0ul2g6a",
+    "required": false
+  },
+  "policy": {
+    "rosterFields": [
+      "sys05-contractCompanyName",
+      "sys00-name",
+      "8a7aadd1-3e54-40a6-ada0-dc3d6541bcbe",
+      "sys00-mobile",
+      "sys00-email",
+      "c05340a1-ca6b-4906-ad41-18c83eed8617",
+      "sys00-mainDeptId"
+    ],
+    "dataForms": ["FORM-670B39A41569410CA70466CA62FFBF51HR2P", "FORM-CD63264343264CA9ADB92306F442CCE9NOZ0"],
+    "connectors": {}
+  }
+}

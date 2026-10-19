@@ -1,0 +1,13 @@
+{
+  "corpId": "ding376dac86ffe9d2dbf2c783f7214b6d69",
+  "appType": "APP_GITLRTH76PM6J4M29F5D",
+  "rootUrl": "https://www.aliwork.com",
+  "tenantUrl": "https://xdlonl.aliwork.com",
+  "roster": {
+    "connectorId": "Http_5c72b42d47f14a1983767932f6c1d4f1",
+    "actionId": "getUserMessage",
+    "type": "httpConnector",
+    "connection": 15597
+  },
+  "rosterAgentId": "3195124669"
+}

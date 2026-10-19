@@ -1,0 +1,130 @@
+[
+  {
+    "key": "meal_transport",
+    "category": "finance"
+  },
+  {
+    "key": "employee_certificate",
+    "category": "hr"
+  },
+  {
+    "key": "referral_reward",
+    "category": "hr"
+  },
+  {
+    "key": "probation_confirmation",
+    "category": "hr"
+  },
+  {
+    "key": "probation_plan",
+    "category": "hr"
+  },
+  {
+    "key": "employer_housing",
+    "category": "hr"
+  },
+  {
+    "key": "onboarding",
+    "category": "hr"
+  },
+  {
+    "key": "resignation",
+    "category": "hr"
+  },
+  {
+    "key": "transfer",
+    "category": "hr"
+  },
+  {
+    "key": "hr_offboarding",
+    "category": "hr"
+  },
+  {
+    "key": "annual_leave",
+    "category": "leave"
+  },
+  {
+    "key": "annual_leave_application",
+    "category": "leave"
+  },
+  {
+    "key": "annual_leave_cancellation",
+    "category": "leave"
+  },
+  {
+    "key": "unpaid_sick_leave",
+    "category": "leave"
+  },
+  {
+    "key": "paid_sick_leave",
+    "category": "leave"
+  },
+  {
+    "key": "paid_sick_leave_cancellation",
+    "category": "leave"
+  },
+  {
+    "key": "other_leave",
+    "category": "leave"
+  },
+  {
+    "key": "personal_leave",
+    "category": "leave"
+  },
+  {
+    "key": "business_trip_application",
+    "category": "business"
+  },
+  {
+    "key": "external_expense_request",
+    "category": "finance"
+  },
+  {
+    "key": "external_expense_application",
+    "category": "finance"
+  },
+  {
+    "key": "expense_reimbursement",
+    "category": "finance"
+  },
+  {
+    "key": "trip_expense_reimbursement",
+    "category": "finance"
+  },
+  {
+    "key": "medical_checkup_reimbursement",
+    "category": "finance"
+  },
+  {
+    "key": "default_bank_change",
+    "category": "finance"
+  },
+  {
+    "key": "contract",
+    "category": "business"
+  },
+  {
+    "key": "seal",
+    "category": "business"
+  },
+  {
+    "key": "business_card",
+    "category": "business"
+  },
+  {
+    "key": "procurement_application",
+    "category": "assets"
+  },
+  {
+    "key": "hardware_request",
+    "category": "assets"
+  },
+  {
+    "key": "software_request",
+    "category": "assets"
+  },
+  {
+    "key": "listing",
+    "category": "business"
+  }
+]

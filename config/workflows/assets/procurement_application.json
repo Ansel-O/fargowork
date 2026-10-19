@@ -1,0 +1,66 @@
+{
+  "key": "procurement_application",
+  "title": "采购申请",
+  "mode": "formal",
+  "policy": {
+    "rosterFields": [
+      "sys00-name",
+      "sys00-workPlace",
+      "sys00-mainDeptId",
+      "sys00-deptIds",
+      "sys00-mainDept",
+      "sys00-dept"
+    ]
+  },
+  "target": {
+    "formUuid": "FORM-99C895A427654BE6AF298B7EF6BE5D7DC3ML",
+    "processCode": "TPROC--ER866ED1OR2O58K68N6DJ47STN0W2P59CME0MA"
+  },
+  "attachments": {
+    "field": "attachmentField_m0emckuw",
+    "required": false
+  },
+  "fields": {
+    "applicant": "employeeField_m0emcku2",
+    "dept": "departmentSelectField_m0emcku3",
+    "date": "dateField_m0emcku4",
+    "reason": "textareaField_m0emcku7",
+    "method": "selectField_m0emckuc",
+    "type": "selectField_m0emckue",
+    "currency": "selectField_m0emckul",
+    "total": "numberField_m0emckum",
+    "description": "textField_m0emckuf",
+    "remarks": "textField_m0emckup",
+    "delivery": "dateField_m0emckuk",
+    "items": "tableField_m0emckuq",
+    "name": "textField_m0emckur",
+    "spec": "textField_m0emckus",
+    "quantity": "numberField_m0emckut",
+    "price": "numberField_m0emckuu",
+    "subtotal": "numberField_m0emckuv",
+    "attachment": "attachmentField_m0emckuw",
+    "office": "textField_m0emckuy",
+    "rate": "numberField_m0emckun",
+    "admin": "employeeField_m0emckuz",
+    "hkd": "numberField_m0emckuo",
+    "it": "employeeField_m0emckv1",
+    "target": "textField_m4podi40"
+  },
+  "options": {
+    "methods": [
+      "采购后报销",
+      "公司采购"
+    ],
+    "types": [
+      "行政采购",
+      "商务事务",
+      "IT采购",
+      "其他"
+    ]
+  },
+  "sources": {
+    "currency": "procurementCurrencies",
+    "rate": "exchangeRates",
+    "office": "officeAdministrators"
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "key": "business_trip_application",
+  "title": "正式出差申请",
+  "mode": "formal",
+  "target": {
+    "formUuid": "FORM-674D4FE01A894121BB2FF2A851F5CF76H0AD",
+    "processCode": "TPROC--HW9663A1GF3OYU6VDP6M98EGCS8Q3KF56UD0MA"
+  },
+  "fields": {
+    "applicant": "employeeField_m0du7qt4",
+    "applicantId": "textField_m3o40468",
+    "application": "dateField_m0du7qt6",
+    "days": "numberField_m0du7qtj",
+    "location": "textField_m0du7qte",
+    "purpose": "selectField_m0du7qtg",
+    "start": "dateField_m0du7qth",
+    "end": "dateField_m0du7qti",
+    "budget": "numberField_m0du7qtv",
+    "content": "textareaField_m0du7qtk",
+    "office": "textField_m0du7que",
+    "officeAdmin": "employeeField_m0du7qub",
+    "manager": "employeeField_m0du7quc",
+    "isProject": "radioField_m6vvoxcl",
+    "project": "selectField_m6vvoxcm",
+    "projectDepartment": "selectField_m6vvoxct",
+    "projectDepartmentId": "textField_m6vvoxcu",
+    "projectDepartmentTransition": "textField_m6vwtyds",
+    "schedule": "tableField_m0du7qtw",
+    "rowDate": "dateField_m0du7qu5",
+    "rowItem": "textField_m0du7qu7",
+    "rowRemark": "textField_m0du7qu8",
+    "company": "textField_m0du7qud",
+    "attachment": "attachmentField_m0du7qu9"
+  },
+  "sources": {
+    "projectDirectory": {
+      "formUuid": "FORM-B33628F4E05E47FBACD7EF29902BE12EPJKR",
+      "codeField": "textField_m8wrvwm2",
+      "nameField": "textField_m40odatb",
+      "statusField": "textField_m4222ivk"
+    },
+    "projectDepartments": {
+      "formUuid": "FORM-C702478E872E41C6B35993ABD41B1B90H6O6",
+      "projectField": "selectField_m40oe3nj",
+      "codeField": "textField_m8wsspqp",
+      "departmentField": "departmentSelectField_m40neq61",
+      "nameField": "textField_m40pmzwx",
+      "idField": "textField_m40ym365"
+    }
+  },
+  "options": {
+    "purposes": [
+      "外出学习",
+      "客户拜访",
+      "其他",
+      "内部协作"
+    ]
+  },
+  "attachments": {
+    "field": "attachmentField_m0du7qu9",
+    "required": false
+  },
+  "policy": {
+    "rosterFields": [
+      "sys00-name",
+      "sys00-workPlace",
+      "sys05-contractCompanyName",
+      "sys00-mainDeptId",
+      "sys00-deptIds"
+    ],
+    "dataForms": [
+      "FORM-644A41735FC1422394A3C8197FADD2ACZ7UA",
+      "FORM-B33628F4E05E47FBACD7EF29902BE12EPJKR",
+      "FORM-C702478E872E41C6B35993ABD41B1B90H6O6"
+    ],
+    "connectors": {
+      "department": "tripDepartment"
+    }
+  }
+}

@@ -1,0 +1,173 @@
+{
+  "rosterFields": {
+    "name": "sys00-name",
+    "office": "sys00-workPlace",
+    "mainDepartment": "sys00-mainDeptId",
+    "departments": "sys00-deptIds",
+    "departmentNames": "sys00-dept",
+    "contractCompany": "sys05-contractCompanyName",
+    "mobile": "sys00-mobile",
+    "email": "sys00-email",
+    "businessCardTitle": "c05340a1-ca6b-4906-ad41-18c83eed8617",
+    "businessCardChineseName": "8a7aadd1-3e54-40a6-ada0-dc3d6541bcbe"
+  },
+  "officeAdministrators": {
+    "formUuid": "FORM-644A41735FC1422394A3C8197FADD2ACZ7UA",
+    "officeField": "selectField_m0aq0jqm",
+    "administratorsField": "employeeField_m0aq0jqo",
+    "itField": "employeeField_m0aq0jqq"
+  },
+  "companyDirectory": {
+    "formUuid": "FORM-50D35E66794F4B2F9C1B52C7F2208999S95G",
+    "companyField": "textField_m0apuch7"
+  },
+  "exchangeRates": {
+    "formUuid": "FORM-0E81A1BBF9C24779B3087C10A32489E26UDW",
+    "currencyField": "textField_m3lpjlno",
+    "targetCurrencyField": "selectField_m3lpjlnt",
+    "rateField": "numberField_m3lpjlnu",
+    "targetCurrency": "HKD"
+  },
+  "companyExecutors": {
+    "formUuid": "FORM-CD63264343264CA9ADB92306F442CCE9NOZ0",
+    "companyField": "selectField_m0aqkj9x",
+    "sealExecutorField": "employeeField_m0aqkj9y",
+    "hrBusinessCardField": "employeeField_m2jtwu7z",
+    "annualLeaveAdministratorField": "employeeField_m2jtwu7t",
+    "employeeRelationsField": "employeeField_m2jtwu80"
+  },
+  "businessCardTemplates": {
+    "formUuid": "FORM-670B39A41569410CA70466CA62FFBF51HR2P",
+    "templateField": "textField_mei4ts28",
+    "officeField": "textField_mmss3w8q",
+    "companyNameEnglishField": "textField_mei4ts2a",
+    "companyNameChineseField": "textField_mei4ts29",
+    "officeAddressEnglishField": "textField_mmss3w8r",
+    "officeAddressChineseField": "textField_mmss3w8s"
+  },
+  "listingCompliance": {
+    "formUuid": "FORM-1174DEDBA4E3432B854B0E6D57598DEEYX5T",
+    "departmentCodeField": "numberField_mjb7w954",
+    "peopleField": "employeeField_mjb7w955"
+  },
+  "relatedProcesses": {
+    "contract": {
+      "form": "FORM-3DB996CA240D4F3FAB0CC8C9E72A092BUJGU",
+      "title": "textField_m0ezwbjl",
+      "subtitle": "serialNumberField_m0ewp8f9"
+    },
+    "seal": {
+      "form": "FORM-ABF68B75000543F4A34EFCB284AC13FAZL8E",
+      "title": "serialNumberField_m0yw02li",
+      "subtitle": "selectField_m9ur9e78"
+    }
+  },
+  "connectors": {
+    "tripDepartment": {
+      "connectorId": "Http_75b8f8aef03c4b40815462052ba21a13",
+      "actionId": "operation-1",
+      "type": "httpConnector",
+      "connection": 15624
+    },
+    "listingParentsByDept": {
+      "connectorId": "Http_75040e999ce6470cae848835cbb17024",
+      "actionId": "GetParentId",
+      "type": "httpConnector",
+      "connection": 19159
+    },
+    "departmentDetails": {
+      "connectorId": "Http_75b8f8aef03c4b40815462052ba21a13",
+      "actionId": "operation-1",
+      "type": "httpConnector",
+      "connection": 15624
+    }
+  },
+  "procurementCurrencies": {
+    "formUuid": "FORM-BC161CE5E6BE401EA7A221C3E1B59D3F39LH",
+    "currencyField": "textField_m3lrdomv"
+  },
+  "employeePaymentCompanies": {
+    "formUuid": "FORM-06EF3CD6EB534961B3E710449AF1A379WX6S",
+    "employeeIdField": "textField_mkxsiueg",
+    "companyField": "selectField_mkxsiuei"
+  },
+  "costBearingCompanies": {
+    "formUuid": "FORM-FB1F218B6F6B4BB4AA54B60087F8265DIB6X",
+    "companyField": "textField_m0apuch7",
+    "hasBankAccountField": "radioField_m8g0bxo6"
+  },
+  "externalPaymentCurrencies": {
+    "formUuid": "FORM-7D97B6BF8C88482ABECE6D1AA9C2454B21S8",
+    "companyField": "selectField_m0g613r7",
+    "currencyField": "selectField_m0g613r8"
+  },
+  "activeProjects": {
+    "formUuid": "FORM-B33628F4E05E47FBACD7EF29902BE12EPJKR",
+    "nameField": "textField_m40odatb",
+    "statusField": "textField_m4222ivk"
+  },
+  "projectDepartments": {
+    "formUuid": "FORM-C702478E872E41C6B35993ABD41B1B90H6O6",
+    "projectField": "selectField_m40oe3nj",
+    "nameField": "textField_m40pmzwx",
+    "departmentIdField": "textField_m40ym365",
+    "categoryField": "selectField_m8obmi4m"
+  },
+  "expenseAccounts": {
+    "formUuid": "FORM-09190A7BD4FA473383608B2784A409A8WH1S",
+    "categoryField": "textField_m4aoqtkh",
+    "accountField": "textField_m4aoqtki"
+  },
+  "departmentBusinessLines": {
+    "formUuid": "FORM-5902374F6C2C462AB826C0EB5B6F73CB9JBQ",
+    "departmentField": "textField_m8ijmeko",
+    "structureField": "selectField_m8l4p5wo",
+    "lineField": "selectField_m8l4p5wp",
+    "sublineField": "selectField_m8ik5hcg"
+  },
+  "reimbursementCurrencies": {
+    "formUuid": "FORM-9F48888FD81F4382AB9B2D0D025A4ECAKZSG",
+    "companyField": "selectField_m0g613r7",
+    "currencyField": "selectField_m0g613r8"
+  },
+  "paymentContacts": {
+    "formUuid": "FORM-70411F65EF7B412C84FD5A61760DF4BCZU6C",
+    "companyField": "selectField_m8g1cqwr",
+    "financeField": "employeeField_m8g1cqwu",
+    "cashierField": "employeeField_m8g1cqwv"
+  },
+  "leaveCalendar": {
+    "formUuid": "FORM-3F61EBF8217141A78D2D48342E7B1A19XNH0",
+    "group": "selectField_m0ls2e74",
+    "date": "dateField_m0ls2e75",
+    "kind": "selectField_m0ls2e76"
+  },
+  "annualLeaveBalance": {
+    "formUuid": "FORM-40A7D242ECEA4E07AA6C1A94BA6904D6AOQC",
+    "userid": "textField_m0n7wtlr",
+    "year": "selectField_m0lvidyi",
+    "remaining": "numberField_m0lvidyn",
+    "contract": "numberField_m0lvidyl",
+    "adjustment": "numberField_m0lvidyo",
+    "carryover": "numberField_m3wuh1ee",
+    "availableFrom": "dateField_m0vssxiv",
+    "validUntil": "dateField_m0lvidyp"
+  },
+  "tripRegions": {
+    "formUuid": "FORM-0E82A410567249159687A81A6EDE456EOZDY",
+    "nameField": "textField_m3nt0yl3"
+  },
+  "travelAllowances": {
+    "formUuid": "FORM-A094CC0A4AC94E0D852CCF87EB9E2DDA7C8Q",
+    "regionField": "selectField_m3ntnstr",
+    "currencyField": "selectField_m3o2cz1l",
+    "standardField": "numberField_m3o2cz1m"
+  },
+  "paidSickLeaveBalance": {
+    "formUuid": "FORM-69929961190B49CC801DBAE102271BD1NS95",
+    "userid": "textField_m0n7wtlr",
+    "year": "selectField_m0lvidyi",
+    "remaining": "numberField_m0lvidyn",
+    "contract": "numberField_m0lvidyl"
+  }
+}

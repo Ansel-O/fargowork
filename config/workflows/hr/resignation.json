@@ -1,0 +1,20 @@
+{
+  "key": "resignation",
+  "title": "离职流程",
+  "mode": "formal",
+  "availability": {
+    "status": "migrated",
+    "message": "该流程不可发起，请转至 HR 应用 Moka。此流程涉及重要人事变更，不建议通过 Agent 编排发起，请本人按 HR 指引办理。"
+  },
+  "orchestration": "manual-only",
+  "target": {
+    "formUuid": "FORM-638B4E7D07BC48359DEABC7BDFCC64BFBJ1S",
+    "processCode": "TPROC--Q4766J81PU9O330T7Y7M36AXKC2G2Z6XEMN0M2"
+  },
+  "policy": {
+    "dataForms": [],
+    "rosterFields": [
+      "sys00-name"
+    ]
+  }
+}

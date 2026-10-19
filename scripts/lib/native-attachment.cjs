@@ -7,11 +7,10 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const ROOT = 'https://www.aliwork.com';
 const TENANT = 'https://xdlonl.aliwork.com';
-const APP = 'APP_GITLRTH76PM6J4M29F5D';
-const FORMS = new Set(['FORM-4E378FADE81F40F8A520A47251D804E6MT1K',
-  'FORM-AEE70BC941234A97B25DE3D5340B7DA7IXT3', 'FORM-188915A63185430D9A57AD9114129887TVCT']);
+const {attachmentAllowed, registeredForm, assertTargetStartAllowed} = require('./policy.cjs');
 const TYPES = Object.freeze({'.pdf':'application/pdf','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg',
   '.gif':'image/gif','.webp':'image/webp','.txt':'text/plain',
+  '.doc':'application/msword','.xls':'application/vnd.ms-excel',
   '.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   '.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   '.pptx':'application/vnd.openxmlformats-officedocument.presentationml.presentation'});
@@ -148,7 +147,7 @@ function actorKey(actor) {
 }
 
 function createNativeAttachmentUploader(options) {
-  const {tenantClient, appType, formUuid, stateDir, fetchImpl = globalThis.fetch,
+  const {tenantClient, appType, formUuid, fieldId, stateDir, fetchImpl = globalThis.fetch,
     maxBytes = 20 * 1024 * 1024, now = Date.now} = options;
   const tenantOrigin = assertTenant(options.tenantOrigin);
   check(tenantClient && typeof tenantClient.get === 'function', 'ATTACHMENT_CLIENT_REQUIRED');
@@ -158,9 +157,11 @@ function createNativeAttachmentUploader(options) {
   check(typeof fetchImpl === 'function', 'ATTACHMENT_HTTP_REQUIRED');
   check(text(appType, 160) && text(formUuid, 160) && typeof stateDir === 'string' && stateDir,
     'ATTACHMENT_CONFIG_INVALID');
-  check(appType === APP && FORMS.has(formUuid), 'ATTACHMENT_TARGET_NOT_ALLOWED');
+  check(registeredForm(appType, formUuid), 'ATTACHMENT_TARGET_NOT_ALLOWED');
+  assertTargetStartAllowed(appType, formUuid);
+  check(attachmentAllowed(appType,formUuid,fieldId), 'ATTACHMENT_TARGET_NOT_ALLOWED');
   const actorDigest = actorKey(options.actor);
-  check(Number.isSafeInteger(maxBytes) && maxBytes > 0 && maxBytes <= 20 * 1024 * 1024, 'ATTACHMENT_SIZE_LIMIT_INVALID');
+  check(Number.isSafeInteger(maxBytes) && maxBytes > 0 && maxBytes <= 100 * 1024 * 1024, 'ATTACHMENT_SIZE_LIMIT_INVALID');
   // The caller must establish tenant ownership from an observed official route.
   // A DNS suffix alone does not prove which company the tenant belongs to.
   if (typeof tenantClient.getAuthRef === 'function') {
@@ -180,6 +181,7 @@ function createNativeAttachmentUploader(options) {
   }
 
   async function upload({filePath, contentType, attemptId, expectedSha256}) {
+    assertTargetStartAllowed(appType, formUuid);
     check(typeof filePath === 'string' && text(attemptId, 160) && /^[a-zA-Z0-9_-]+$/.test(attemptId),
       'ATTACHMENT_INPUT_INVALID');
     filePath = localFile(filePath);
@@ -297,7 +299,7 @@ async function verifyDownload({reference, expectedSha256, tenantOrigin, rootOrig
   tenantOrigin = assertTenant(tenantOrigin);
   check(rootOrigin === 'https://www.aliwork.com', 'ATTACHMENT_DOWNLOAD_ROOT_INVALID');
   check(reference && text(reference.downloadUrl, 8192) && Number.isSafeInteger(reference.size) &&
-    reference.size > 0 && reference.size <= 20 * 1024 * 1024 && /^[a-f0-9]{64}$/i.test(expectedSha256),
+    reference.size > 0 && reference.size <= 100 * 1024 * 1024 && /^[a-f0-9]{64}$/i.test(expectedSha256),
   'ATTACHMENT_DOWNLOAD_INPUT_INVALID');
   check(typeof getAccessToken === 'function' && typeof fetchImpl === 'function', 'ATTACHMENT_DOWNLOAD_PROVIDER_REQUIRED');
   let url = safeUrl(reference.downloadUrl, rootOrigin);

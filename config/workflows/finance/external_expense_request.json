@@ -1,0 +1,22 @@
+{
+  "key": "external_expense_request",
+  "title": "对外付款申请（Demo测试）",
+  "mode": "demo",
+  "policy": {
+    "rosterFields": [
+      "sys00-workPlace",
+      "sys00-mainDeptId",
+      "sys00-deptIds",
+      "sys05-contractCompanyName"
+    ]
+  },
+  "target": {
+    "formUuid": "FORM-AEE70BC941234A97B25DE3D5340B7DA7IXT3",
+    "processCode": "TPROC--75G66PD11X2AKIO9MWLLO68KHRB9257KSEAVM3"
+  },
+  "attachments": {
+    "field": "attachmentField_m41cj94r",
+    "required": true
+  },
+  "group": "demo"
+}

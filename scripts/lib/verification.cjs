@@ -1,6 +1,6 @@
 'use strict';
 
-// Pure readback verification for the four workflow contracts. No I/O or writes.
+// Pure readback verification for the registered workflow contracts. No I/O or writes.
 const plain = value => value !== null && typeof value === 'object'
   && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
 const nonempty = value => typeof value === 'string' && value.length > 0;
@@ -68,10 +68,33 @@ function scalarFieldEqual(field, actual, expected) {
   }
   return false;
 }
+function multiSelectEqual(actual, expected) {
+  actual = unpack(actual,'array');
+  if (!actual || !Array.isArray(expected) || !actual.every(nonempty) || !expected.every(nonempty)) return false;
+  const left = new Set(actual), right = new Set(expected);
+  return left.size === actual.length && right.size === expected.length
+    && left.size === right.size && [...left].every(value => right.has(value));
+}
 
-function radioComparison(field, actual, expected, target) {
-  const map = target.appType === 'APP_GITLRTH76PM6J4M29F5D' && target.formUuid === PAYMENT_FORM
-    ? PAYMENT_ENUMS[field] : undefined;
+function validEnumLabels(enumLabels, formData) {
+  if (!plain(enumLabels)) return false;
+  const labelText = value => typeof value === 'string' && value.trim().length > 0
+    && value.length <= 500 && !/[\x00-\x1f\x7f]/.test(value);
+  return Object.entries(enumLabels).every(([field, map]) => {
+    if (!/^radioField_[A-Za-z0-9_]+$/.test(field) || !Object.hasOwn(formData, field)
+        || typeof formData[field] !== 'string' || !plain(map)) return false;
+    const entries = Object.entries(map);
+    return entries.length > 0 && entries.every(([code, label]) => labelText(code) && labelText(label)
+      // A label equal to another code would give the same value two meanings.
+      && (!Object.hasOwn(map, label) || code === label))
+      && new Set(entries.map(([, label]) => label)).size === entries.length;
+  });
+}
+
+function radioComparison(field, actual, expected, target, enumLabels) {
+  const map = Object.hasOwn(enumLabels, field) ? enumLabels[field]
+    : target.appType === 'APP_GITLRTH76PM6J4M29F5D' && target.formUuid === PAYMENT_FORM
+      ? PAYMENT_ENUMS[field] : undefined;
   if (!map) return actual === expected ? 'verified'
     : ['HIDDEN', 'NORMAL'].includes(actual) && ['HIDDEN', 'NORMAL'].includes(expected) ? 'mismatch' : 'partial';
   const code = value => Object.hasOwn(map, value) ? value
@@ -80,7 +103,7 @@ function radioComparison(field, actual, expected, target) {
   return left && right ? left === right ? 'verified' : 'mismatch' : 'partial';
 }
 
-function fieldComparison(field, data, expected, target, optional) {
+function fieldComparison(field, data, expected, target, optional, enumLabels) {
   const actual = data[field];
   if (/^(employeeField|departmentSelectField)_/.test(field)) {
     const ids = data[field + '_id'];
@@ -92,17 +115,21 @@ function fieldComparison(field, data, expected, target, optional) {
     if (absent(ids)) return 'partial';
     return identifierSetEqual(ids, expected) ? 'verified' : 'mismatch';
   }
+  if (/^multiSelectField_/.test(field)) return multiSelectEqual(actual,expected) ? 'verified' : 'mismatch';
   if (optional && expected === '' && /^(textField|textareaField|selectField|serialNumberField|radioField)_/.test(field)
       && (absent(actual) || actual === '')) return 'verified';
-  // An explicitly frozen empty attachment list means no file was selected.
-  // Yida can omit that empty component; any returned file must still fail.
   if (/^attachmentField_/.test(field) && Array.isArray(expected) && expected.length === 0) {
     return absent(actual) || unpack(actual, 'array')?.length === 0 ? 'verified' : 'mismatch';
   }
+  if (optional && /^associationFormField_/.test(field) && Array.isArray(expected) && expected.length === 0) {
+    return emptyDisplay(actual) ? 'verified' : 'mismatch';
+  }
+  // An explicitly frozen empty attachment list means no file was selected.
+  // Yida can omit that empty component; any returned file must still fail.
   if (absent(actual)) return 'partial';
   if (/^radioField_/.test(field)) {
     if (typeof actual !== 'string' || typeof expected !== 'string') return 'mismatch';
-    return radioComparison(field, actual, expected, target);
+    return radioComparison(field, actual, expected, target, enumLabels);
   }
   if (/^tableField_/.test(field)) return tableEqual(actual, expected) ? 'verified' : 'mismatch';
   if (/^attachmentField_/.test(field)) return attachmentsEqual(actual, expected) ? 'verified' : 'mismatch';
@@ -114,11 +141,21 @@ function fieldComparison(field, data, expected, target, optional) {
 function tableEqual(actual, expected) {
   actual = unpack(actual, 'array');
   if (!actual || !Array.isArray(expected) || actual.length !== expected.length) return false;
-  return expected.every((row, index) => plain(row) && plain(actual[index]) && Object.keys(row).length > 0
-    && Object.keys(row).every(field => scalarFieldEqual(field, actual[index][field], row[field])));
+  return expected.every((row, index) => plain(row) && plain(actual[index])
+    && (Object.keys(row).length === 0 ? Object.keys(actual[index]).length === 0 : Object.keys(row).every(field => {
+      const actualValue = actual[index][field], expectedValue = row[field];
+      if (/^attachmentField_/.test(field)) {
+        return Array.isArray(expectedValue) && expectedValue.length === 0
+          ? absent(actualValue) || unpack(actualValue,'array')?.length === 0
+          : attachmentsEqual(actualValue,expectedValue);
+      }
+      if (/^multiSelectField_/.test(field)) return multiSelectEqual(actualValue,expectedValue);
+      return scalarFieldEqual(field,actualValue,expectedValue);
+    })));
 }
 
 function attachmentsEqual(actual, expected) {
+  if (Array.isArray(expected) && expected.length === 0) return absent(actual) || unpack(actual,'array')?.length === 0;
   actual = unpack(actual, 'array');
   if (!actual || !Array.isArray(expected) || actual.length !== expected.length) return false;
   return expected.every((file, index) => {
@@ -128,6 +165,33 @@ function attachmentsEqual(actual, expected) {
       && nonempty(file.name) && saved.name === file.name
       && Number.isSafeInteger(size) && size >= 0 && size === expectedSize;
   });
+}
+
+function attachmentGroups(formData) {
+  const groups = [];
+  for (const [field,value] of Object.entries(formData)) {
+    if (/^attachmentField_/.test(field)) groups.push(unpack(value,'array') || []);
+    if (/^tableField_/.test(field)) {
+      for (const row of unpack(value,'array') || []) if (plain(row)) {
+        for (const [nestedField,nestedValue] of Object.entries(row)) {
+          if (/^attachmentField_/.test(nestedField)) groups.push(unpack(nestedValue,'array') || []);
+        }
+      }
+    }
+  }
+  return groups;
+}
+function expectedAttachmentCount(formData) {
+  let count = 0;
+  for (const [field,value] of Object.entries(formData)) {
+    if (/^attachmentField_/.test(field) && Array.isArray(value)) count += value.length;
+    if (/^tableField_/.test(field) && Array.isArray(value)) for (const row of value) if (plain(row)) {
+      for (const [nestedField,nestedValue] of Object.entries(row)) {
+        if (/^attachmentField_/.test(nestedField) && Array.isArray(nestedValue)) count += nestedValue.length;
+      }
+    }
+  }
+  return count;
 }
 
 function associationsEqual(actual,expected) {
@@ -140,6 +204,16 @@ function associationsEqual(actual,expected) {
     &&new Set(saved).size===saved.length&&wanted.every(x=>saved.includes(x));
 }
 
+function associationTextComparison(actual, expected) {
+  if (!expected.length && emptyDisplay(actual)) return 'verified';
+  if (absent(actual)) return 'partial';
+  // This is a text field, not a second native association component. Compare
+  // the full JSON content including display labels, independent of key order.
+  if (typeof actual !== 'string') return 'mismatch';
+  const parsed = unpack(actual,'array');
+  return parsed && stable(parsed) === stable(expected) ? 'verified' : 'mismatch';
+}
+
 function validateInstance({ instance, snapshot, expectedInstanceId } = {}) {
   const checks = { instanceShape: plain(instance), snapshotShape: plain(snapshot)
     && plain(snapshot.target) && plain(snapshot.actor) && plain(snapshot.formData)
@@ -147,9 +221,16 @@ function validateInstance({ instance, snapshot, expectedInstanceId } = {}) {
   const unavailable = () => ({ checks, allPassed: false, status: 'unavailable', attachmentStatus: 'unavailable' });
   if (!checks.instanceShape || !checks.snapshotShape) return unavailable();
   const optional = snapshot.verification?.optionalEmptyFields === undefined ? [] : snapshot.verification.optionalEmptyFields;
+  const mirrors = snapshot.verification?.associationTextMirrors ?? {};
+  const enumLabels = snapshot.verification?.enumLabels === undefined ? {} : snapshot.verification.enumLabels;
   checks.verificationContract = (snapshot.verification === undefined || plain(snapshot.verification))
     && Array.isArray(optional) && optional.every(field => nonempty(field) && Object.hasOwn(snapshot.formData, field))
-    && optional.length === new Set(optional).size;
+    && optional.length === new Set(optional).size
+    && plain(mirrors) && Object.entries(mirrors).every(([field,source]) => /^textField_/.test(field)
+      && typeof source === 'string' && /^associationFormField_/.test(source)
+      && Array.isArray(snapshot.formData[source]) && typeof snapshot.formData[field] === 'string'
+      && stable(unpack(snapshot.formData[field], 'array')) === stable(snapshot.formData[source]))
+    && validEnumLabels(enumLabels, snapshot.formData);
   if (!checks.verificationContract) return unavailable();
   checks.instanceId = nonempty(expectedInstanceId) && instance.processInstanceId === expectedInstanceId;
   checks.formTarget = nonempty(snapshot.target.formUuid) && instance.formUuid === snapshot.target.formUuid;
@@ -171,19 +252,22 @@ function validateInstance({ instance, snapshot, expectedInstanceId } = {}) {
   const fieldStatuses = {};
   const attachmentStatuses = [];
   for (const [field, expected] of Object.entries(snapshot.formData)) {
-    const status = fieldComparison(field, data, expected, snapshot.target, optional.includes(field));
+    const status = Object.hasOwn(mirrors,field)
+      ? associationTextComparison(data[field],snapshot.formData[mirrors[field]])
+      : fieldComparison(field, data, expected, snapshot.target, optional.includes(field), enumLabels);
     const passed = status === 'verified';
     fieldStatuses['field:' + field] = status;
-    if (/^attachmentField_/.test(field)) {
+    if (/^attachmentField_/.test(field) || /^tableField_/.test(field)
+        && Array.isArray(expected) && expected.some(row => plain(row) && Object.keys(row).some(name => /^attachmentField_/.test(name)))) {
       attachmentStatuses.push(status);
-      if (passed) references.push(...(unpack(data[field], 'array') || []));
     }
     checks['field:' + field] = passed;
   }
-  const expectedAttachments=Object.entries(snapshot.formData)
-    .filter(([field])=>/^attachmentField_/.test(field)).reduce((n,[,files])=>n+(Array.isArray(files)?files.length:0),0);
+  const groups = attachmentGroups(data);
+  references.push(...groups.flat());
+  const expectedAttachments=expectedAttachmentCount(snapshot.formData);
   checks.nativeAttachmentCount=references.length===expectedAttachments;
-  checks.nativeAttachmentUnique=references.length===new Set(references.map(x=>x.fileUuid)).size;
+  checks.nativeAttachmentUnique=groups.every(group => group.length===new Set(group.map(x=>x?.fileUuid)).size);
   const allPassed = Object.values(checks).every(value => value === true);
   const attachmentStatus = !identityVerified ? identityMismatch ? 'mismatch' : 'unavailable'
     : attachmentStatuses.includes('mismatch') || !checks.nativeAttachmentUnique ? 'mismatch'

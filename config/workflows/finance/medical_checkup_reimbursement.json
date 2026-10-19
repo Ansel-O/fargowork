@@ -1,0 +1,158 @@
+{
+  "key": "medical_checkup_reimbursement",
+  "title": "体检报销",
+  "mode": "formal",
+  "target": {
+    "formUuid": "FORM-FEA10FAA67204CCABD64295DE2A91857DH4G",
+    "processCode": "TPROC--3YA66YC13WUUYHMIF63BJBXT83WD2YK1T4V9M1"
+  },
+  "fields": {
+    "applicant": "employeeField_m9v4ten1",
+    "applicationDate": "dateField_m9v4ten2",
+    "paymentCompany": "selectField_m9v51bo8",
+    "currency": "textField_m9v4tenb",
+    "amount": "numberField_m9v4tenc",
+    "attachment": "attachmentField_m9v4tend",
+    "bankAccount": "textField_mjjp1non",
+    "bankName": "textField_mjjp1noo",
+    "bankCity": "textField_mjjp1nop",
+    "bankBranch": "textField_mjjp1noq",
+    "accountName": "textField_mjjp1noy",
+    "employeeStatus": "textField_m9v51bo6",
+    "hr": "employeeField_m9v51boa",
+    "paymentCompanyMirror": "textField_m9v51boe",
+    "applicantId": "textField_m9v51bo7",
+    "finance": "employeeField_m9v51bob",
+    "applicationYear": "textField_m9v51bo9",
+    "cashier": "employeeField_m9v51boc",
+    "contractCompany": "textField_m9v4tena",
+    "hasBankAccount": "textField_m9v51bod"
+  },
+  "roster": {
+    "mainDepartment": "sys00-mainDeptId",
+    "departments": "sys00-deptIds",
+    "contractCompany": "sys05-contractCompanyName",
+    "employeeStatus": "sys01-employeeStatus",
+    "bankAccount": "sys04-bankAccountNo",
+    "bankName": "c25a949b-1c28-4ad0-803b-4ce1ba8c7148",
+    "bankCity": "59b7514e-5d01-4a63-b236-e2566cf3e0e6",
+    "bankBranch": "eec62388-645f-4fa0-8ab5-42351a623c0b",
+    "accountName": "eb1f9d44-a245-42f8-b11a-7b616b56bfcb"
+  },
+  "sources": {
+    "paymentCompanies": {
+      "formUuid": "FORM-70411F65EF7B412C84FD5A61760DF4BCZU6C",
+      "companyField": "selectField_m8g1cqwr",
+      "hasBankAccountField": "textField_m8g1cqws"
+    },
+    "currencies": "reimbursementCurrencies",
+    "hr": "companyExecutors",
+    "contacts": "paymentContacts"
+  },
+  "attachments": {
+    "field": "attachmentField_m9v4tend",
+    "previewField": "报销附件",
+    "maximumCount": 9,
+    "maximumMiB": 100
+  },
+  "rules": {
+    "currency": "CNY",
+    "maximumAmount": 1500,
+    "precision": 2,
+    "applicantFormula": "USER()",
+    "applicationDateFormula": "TIMESTAMP(TODAY())",
+    "formulas": {
+      "textField_m9v51boe": "#{selectField_m9v51bo8}",
+      "textField_m9v51bo7": "USERFIELD(#{employeeField_m9v4ten1},\"userId\")",
+      "textField_m9v51bo9": "YEAR(DATE(#{dateField_m9v4ten2}))"
+    },
+    "defaults": {
+      "textField_m9v51bod": "是"
+    },
+    "linkages": {
+      "selectField_m9v51bo8": {
+        "formId": "FORM-70411F65EF7B412C84FD5A61760DF4BCZU6C",
+        "innerLinkageFieldId": "selectField_m9v51bo8",
+        "otherLinkageFieldId": "selectField_m8g1cqwr",
+        "deduplication": true,
+        "conditions": [
+          {
+            "op": "eq",
+            "otherFieldId": "textField_m8g1cqws",
+            "innerFieldId": "textField_m9v51bod"
+          }
+        ]
+      },
+      "textField_m9v4tenb": {
+        "formId": "FORM-9F48888FD81F4382AB9B2D0D025A4ECAKZSG",
+        "innerLinkageFieldId": "textField_m9v4tenb",
+        "otherLinkageFieldId": "selectField_m0g613r8",
+        "deduplication": true,
+        "conditions": [
+          {
+            "op": "eq",
+            "otherFieldId": "selectField_m0g613r7",
+            "innerFieldId": "selectField_m9v51bo8"
+          }
+        ]
+      },
+      "employeeField_m9v51boa": {
+        "formId": "FORM-CD63264343264CA9ADB92306F442CCE9NOZ0",
+        "innerLinkageFieldId": "employeeField_m9v51boa",
+        "otherLinkageFieldId": "employeeField_m2jtwu7t",
+        "deduplication": false,
+        "conditions": [
+          {
+            "op": "eq",
+            "otherFieldId": "selectField_m0aqkj9x",
+            "innerFieldId": "textField_m9v4tena"
+          }
+        ]
+      },
+      "employeeField_m9v51bob": {
+        "formId": "FORM-70411F65EF7B412C84FD5A61760DF4BCZU6C",
+        "innerLinkageFieldId": "employeeField_m9v51bob",
+        "otherLinkageFieldId": "employeeField_m8g1cqwu",
+        "deduplication": true,
+        "conditions": [
+          {
+            "op": "eq",
+            "otherFieldId": "selectField_m8g1cqwr",
+            "innerFieldId": "textField_m9v51boe"
+          }
+        ]
+      },
+      "employeeField_m9v51boc": {
+        "formId": "FORM-70411F65EF7B412C84FD5A61760DF4BCZU6C",
+        "innerLinkageFieldId": "employeeField_m9v51boc",
+        "otherLinkageFieldId": "employeeField_m8g1cqwv",
+        "deduplication": true,
+        "conditions": [
+          {
+            "op": "eq",
+            "otherFieldId": "selectField_m8g1cqwr",
+            "innerFieldId": "textField_m9v51boe"
+          }
+        ]
+      }
+    }
+  },
+  "policy": {
+    "rosterFields": [
+      "sys00-mainDeptId",
+      "sys00-deptIds",
+      "sys05-contractCompanyName",
+      "sys01-employeeStatus",
+      "sys04-bankAccountNo",
+      "c25a949b-1c28-4ad0-803b-4ce1ba8c7148",
+      "59b7514e-5d01-4a63-b236-e2566cf3e0e6",
+      "eec62388-645f-4fa0-8ab5-42351a623c0b",
+      "eb1f9d44-a245-42f8-b11a-7b616b56bfcb"
+    ],
+    "dataForms": [
+      "FORM-70411F65EF7B412C84FD5A61760DF4BCZU6C",
+      "FORM-9F48888FD81F4382AB9B2D0D025A4ECAKZSG",
+      "FORM-CD63264343264CA9ADB92306F442CCE9NOZ0"
+    ]
+  }
+}

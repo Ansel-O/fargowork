@@ -1,0 +1,46 @@
+{
+  "key": "contract",
+  "title": "合同申请",
+  "mode": "formal",
+  "target": {
+    "formUuid": "FORM-3DB996CA240D4F3FAB0CC8C9E72A092BUJGU",
+    "processCode": "TPROC--2PA669C16N2OHRZW9PIML4HRPIE32N1WOWE0MM"
+  },
+  "fields": {
+    "applicant": "employeeField_m0ewp8f6",
+    "department": "departmentSelectField_m0ewp8f7",
+    "applicationDate": "dateField_m0ewp8f8",
+    "serial": "serialNumberField_m0ewp8f9",
+    "name": "textField_m0ezwbjl",
+    "number": "textField_m0ezwbjm",
+    "company": "selectField_m4qfpz60",
+    "type": "selectField_m0ezwbjt",
+    "body": "attachmentField_m0ezwbju",
+    "content": "textareaField_m0ezwbk0",
+    "counterparty": "textField_m0ezwbk2",
+    "amount": "numberField_m0ezwbk4",
+    "currency": "selectField_m4lgy60e",
+    "rate": "numberField_m0ezwbk7",
+    "targetCurrency": "textField_m0ezwbk5",
+    "amountHkd": "numberField_m0ezwbk8",
+    "paymentTerms": "textareaField_m0ezwbke",
+    "postSealScan": "attachmentField_m0ezwbkf",
+    "remarks": "textField_m0ezwbkg"
+  },
+  "options": {
+    "contractTypes": ["招标合同", "日常说明", "技术协议", "贷款合同", "采购合同", "劳动合同", "代理协议", "承诺合同", "固定资产", "咨询合同", "其他合同"]
+  },
+  "sources": {
+    "companyDirectory": "companyDirectory",
+    "exchangeRates": "exchangeRates"
+  },
+  "attachments": {
+    "field": "attachmentField_m0ezwbju",
+    "required": true
+  },
+  "policy": {
+    "rosterFields": ["sys00-name", "sys00-mainDeptId"],
+    "dataForms": ["FORM-50D35E66794F4B2F9C1B52C7F2208999S95G", "FORM-0E81A1BBF9C24779B3087C10A32489E26UDW"],
+    "connectors": {}
+  }
+}
