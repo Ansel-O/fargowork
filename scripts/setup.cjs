@@ -24,12 +24,14 @@ function verify(root, manifest) {
       && Object.keys(item).length === 2 && typeof item.key === 'string'
       && /^[a-z][a-z0-9_]*$/.test(item.key) && categories.has(item.category))
     && new Set(workflows.map(item => item.key)).size === workflows.length, 'PACKAGE_MANIFEST_INVALID');
-  const required = ['README.md','SKILL.md','LICENSE','package.json','package-lock.json','scripts/setup.cjs','scripts/fargowork.cjs',
+  const required = ['README.md','README.en.md','SKILL.md','LICENSE','package.json','package-lock.json','scripts/setup.cjs','scripts/fargowork.cjs',
     'scripts/lib/common.cjs','scripts/lib/auth.cjs','scripts/lib/official-cli.cjs','scripts/lib/policy.cjs','scripts/lib/runtime.cjs',
     'scripts/lib/process.cjs','scripts/lib/native-attachment.cjs','scripts/lib/verification.cjs','scripts/lib/support.cjs',
+    'scripts/lib/personal.cjs','scripts/lib/workflow-directory.cjs',
     'shared/local-datetime.cjs','shared/scoped-catalog.cjs','shared/account-recommendation.cjs','shared/finance-catalog.cjs',
     'shared/finance-details.cjs','shared/detail-review.cjs','shared/exchange-rates.cjs','shared/leave-calendar.cjs',
     'shared/reimbursement-info.cjs','shared/employee-selection.cjs','shared/workflow-subject.cjs','shared/travel-allowance.cjs',
+    'shared/payment-history.cjs',
     'shared/department-hierarchy.cjs',
     'shared/department-details.cjs',
     'shared/decimal-arithmetic.cjs',
@@ -37,8 +39,9 @@ function verify(root, manifest) {
     'shared/initial-values.cjs',
     'shared/process-association.cjs',
     'shared/workflow-attachments.cjs',
-    'references/ATTACHMENTS.md','references/CHECKS.md','references/CONNECTORS.md','references/DEBUG.md','references/FINANCE-DETAILS.md',
-    'config/company.json','config/sources.json','config/workflow-index.json',
+    'references/ADAPTING.md','references/ATTACHMENTS.md','references/CHECKS.md','references/CONNECTORS.md','references/DEBUG.md','references/FINANCE-DETAILS.md',
+    'references/PERSONAL.md','references/WORKFLOW-DIRECTORY.md',
+    'config/company.json','config/sources.json','config/workflow-index.json','config/workflow-versions.json',
     ...workflows.map(({key,category})=>'config/workflows/'+category+'/'+key+'.json'),
     ...workflows.map(({key,category})=>'skills/'+category+'/'+key.replaceAll('_','-')+'/SKILL.md'),
     ...workflows.map(({key,category})=>'workflows/'+category+'/'+key.replaceAll('_','-')+'.cjs'),

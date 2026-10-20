@@ -4,6 +4,7 @@ const C=require('../leave-trip-common.cjs');
 const config=require('../../config/workflows/finance/medical_checkup_reimbursement.json');
 const sources=require('../../config/sources.json');
 const companyConfig=require('../../config/company.json');
+const PaymentHistory=require('../../shared/payment-history.cjs');
 const Decimal=require('../../shared/decimal-arithmetic.cjs');
 const {personalPaymentDefaults}=require('../../shared/reimbursement-info.cjs');
 const {matchingRows,distinctValues}=require('../../shared/scoped-catalog.cjs');
@@ -11,7 +12,7 @@ const {key,title,target,fields:F,roster:R,policy,rules}=config;
 const bankFields={bank_account:'bankAccount',bank_name:'bankName',bank_city:'bankCity',
   bank_branch:'bankBranch',account_name:'accountName'};
 const labels={bank_account:'收款账号',bank_name:'开户银行',bank_city:'开户城市',bank_branch:'开户支行',account_name:'账户名称'};
-const requirements={required:['amount','attachments'],optional:['payment_company',...Object.keys(bankFields)],
+const requirements={required:['amount','attachments'],optional:['payment_company',...Object.keys(bankFields),...PaymentHistory.INPUT_FIELDS],
   attachments:{required:true,maximumCount:config.attachments.maximumCount,maximumMiB:config.attachments.maximumMiB},
   notes:['仅为当前登录员工办理人民币体检报销；超过1500元自动按1500元准备，并在预览说明。',
     '正式员工及每年一次由原表提交校验，不额外查询年度报销或增加资格判断。',
@@ -63,6 +64,7 @@ function assertSchema(schema) {
 }
 async function prepare(input,ctx) {
   C.inputKeys(input,[...requirements.required,...requirements.optional]);
+  PaymentHistory.validateInput(input);
   // Reject malformed explicit input before any personal-data lookup.
   const money=C.absent(input.amount)?null:amount(input.amount);
   const actor=C.identity(ctx),fields=assertSchema(await ctx.schema()),needs=[];
@@ -72,10 +74,18 @@ async function prepare(input,ctx) {
   if(!money) return {needsInput:[{field:'amount',message:'请提供本次人民币体检报销金额。'}]};
 
   const raw=await ctx.roster(policy.rosterFields),roster=C.rosterFields(raw,actor),dept=C.department(roster);
+  const reference=await PaymentHistory.resolvePaymentHistory({input,ctx,actor,roster:raw,
+    rosterAccountNameField:R.accountName,sources:policy.relatedSources,appType:companyConfig.appType,
+    requiredFields:Object.entries(bankFields).filter(([,field])=>C.required(fields,F[field])).map(([name])=>name),
+    previous:ctx.workflowState?.paymentHistory});
+  if(reference.needsInput.length)return {needsInput:reference.needsInput,code:reference.code,
+    workflowState:{...(ctx.workflowState||{}),paymentHistory:reference.state}};
+  input=reference.input;
+  const historyState=reference.state===null&&!ctx.workflowState?.paymentHistory?{}:{paymentHistory:reference.state};
   const defaults=personalPaymentDefaults({actor,input,roster:raw,previous:ctx.workflowState?.bankDefaults,
     fields:{...Object.fromEntries(Object.entries(bankFields).map(([inputKey,fieldKey])=>[inputKey,R[fieldKey]])),
       payment_company:R.contractCompany},stringFields:['bank_account']});
-  const workflowState={bankDefaults:defaults.state},formData={...rules.defaults,
+  const workflowState={bankDefaults:defaults.state,...historyState},formData={...rules.defaults,
     [F.applicant]:[actor.userid],[F.applicantId]:actor.userid,[F.applicationDate]:ctx.todayMs,
     [F.applicationYear]:ctx.today.slice(0,4),[F.contractCompany]:optionalRoster(roster,R.contractCompany),
     // Populate the native validator's input without judging eligibility here.
@@ -120,6 +130,7 @@ async function prepare(input,ctx) {
       &&(value===''||Array.isArray(value)&&!value.length)).map(([field])=>field)},
     preview:{流程:title,申请人:actor.name||actor.userid,申请日期:ctx.today,支付公司:company,报销币种:rules.currency,
       原申请金额:money.requested,报销金额:money.value,
+      ...(reference.preview?{收款历史参考:reference.preview}:{}),...(reference.notice?{收款资料提示:reference.notice}:{}),
       ...(money.capped?{金额调整说明:`原金额${money.requested}元，超过体检报销上限，已调整为${rules.maximumAmount}元。`}:{}),
       收款资料:Object.fromEntries(Object.entries(bankFields).map(([inputKey,fieldKey])=>[labels[inputKey],formData[F[fieldKey]]]))}};
 }

@@ -99,18 +99,50 @@
   },
   "detailReview": {
     "columns": [
-      ["startTime", "开始时间", false],
-      ["endTime", "结束时间", true],
-      ["reason", "加班事由", true],
-      ["mealAmount", "餐费补贴", true],
-      ["transportAmount", "交通费", false],
-      ["remarks", "备注", false]
+      [
+        "startTime",
+        "开始时间",
+        false
+      ],
+      [
+        "endTime",
+        "结束时间",
+        true
+      ],
+      [
+        "reason",
+        "加班事由",
+        true
+      ],
+      [
+        "mealAmount",
+        "餐费补贴",
+        true
+      ],
+      [
+        "transportAmount",
+        "交通费",
+        false
+      ],
+      [
+        "remarks",
+        "备注",
+        false
+      ]
     ],
     "currencyPreviewKey": "报销币种",
     "rowsPreviewKey": "加班明细",
     "materialRoles": [
-      {"role": "attendance", "label": "打卡证明", "inputField": "attendance_attachments"},
-      {"role": "expense", "label": "报销附件", "inputField": "expense_attachments"}
+      {
+        "role": "attendance",
+        "label": "打卡证明",
+        "inputField": "attendance_attachments"
+      },
+      {
+        "role": "expense",
+        "label": "报销附件",
+        "inputField": "expense_attachments"
+      }
     ]
   },
   "rules": {
@@ -174,6 +206,116 @@
         "actionId": "operation-1",
         "type": "httpConnector",
         "connection": 15624
+      }
+    },
+    "relatedSources": {
+      "personal_history_expense": {
+        "form": "FORM-6EB2E57A94CF4445BB28508DC45262E3MDDX",
+        "title": "textField_m41cj948",
+        "scope": "applicant",
+        "applicantField": "employeeField_m41da53i",
+        "statuses": [
+          "COMPLETED"
+        ],
+        "approvedResults": [
+          "agree"
+        ],
+        "fields": [
+          "textField_m41cj949",
+          "textField_m41cj948",
+          "textField_m4vmcrx5",
+          "textField_m4vmcrx6",
+          "textField_m4vmcrx7"
+        ],
+        "label": "费用报销",
+        "paymentFields": {
+          "bank_account": "textField_m41cj949",
+          "bank_name": "textField_m41cj948",
+          "bank_city": "textField_m4vmcrx5",
+          "bank_branch": "textField_m4vmcrx6",
+          "account_name": "textField_m4vmcrx7"
+        }
+      },
+      "personal_history_trip": {
+        "form": "FORM-FF467D1C65F940C2A7A65C6EA234BB95QVO8",
+        "title": "textField_m41cj948",
+        "scope": "applicant",
+        "applicantField": "employeeField_m41da53i",
+        "statuses": [
+          "COMPLETED"
+        ],
+        "approvedResults": [
+          "agree"
+        ],
+        "fields": [
+          "textField_m41cj949",
+          "textField_m41cj948",
+          "textField_m4viq0za",
+          "textField_m4viq0zi",
+          "textField_m4viq0z9"
+        ],
+        "label": "出差报销",
+        "paymentFields": {
+          "bank_account": "textField_m41cj949",
+          "bank_name": "textField_m41cj948",
+          "bank_city": "textField_m4viq0za",
+          "bank_branch": "textField_m4viq0zi",
+          "account_name": "textField_m4viq0z9"
+        }
+      },
+      "personal_history_medical": {
+        "form": "FORM-FEA10FAA67204CCABD64295DE2A91857DH4G",
+        "title": "textField_mjjp1noo",
+        "scope": "applicant",
+        "applicantField": "employeeField_m9v4ten1",
+        "statuses": [
+          "COMPLETED"
+        ],
+        "approvedResults": [
+          "agree"
+        ],
+        "fields": [
+          "textField_mjjp1non",
+          "textField_mjjp1noo",
+          "textField_mjjp1nop",
+          "textField_mjjp1noq",
+          "textField_mjjp1noy"
+        ],
+        "label": "体检报销",
+        "paymentFields": {
+          "bank_account": "textField_mjjp1non",
+          "bank_name": "textField_mjjp1noo",
+          "bank_city": "textField_mjjp1nop",
+          "bank_branch": "textField_mjjp1noq",
+          "account_name": "textField_mjjp1noy"
+        }
+      },
+      "personal_history_meal": {
+        "form": "FORM-37E345438F1344298217640B2437B76AJ2LU",
+        "title": "textField_m41cj948",
+        "scope": "applicant",
+        "applicantField": "employeeField_m41da53i",
+        "statuses": [
+          "COMPLETED"
+        ],
+        "approvedResults": [
+          "agree"
+        ],
+        "fields": [
+          "textField_m41cj949",
+          "textField_m41cj948",
+          "textField_m4vmcrx5",
+          "textField_m4vmcrx6",
+          "textField_m4vmcrx7"
+        ],
+        "label": "餐费交通补贴",
+        "paymentFields": {
+          "bank_account": "textField_m41cj949",
+          "bank_name": "textField_m41cj948",
+          "bank_city": "textField_m4vmcrx5",
+          "bank_branch": "textField_m4vmcrx6",
+          "account_name": "textField_m4vmcrx7"
+        }
       }
     }
   }

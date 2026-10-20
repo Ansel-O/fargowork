@@ -1,6 +1,7 @@
 'use strict';
 const {FORM,TABLES,RELATIONS,F,fail,text,required,unique,same,choose,choosePair,rows,rosterValues,date,decimal,calculations}=require('../payment-core.cjs');
 const sources=require('../payment-sources.cjs');
+const {buildRecommendationContext}=require('../../shared/account-recommendation.cjs');
 const workflowConfig=require('../../config/workflows/finance/external_expense_request.json');
 const rosterFields=Object.freeze([...workflowConfig.policy.rosterFields]);
 const policy={dataForms:Object.values(TABLES).map(t=>t[0]),rosterFields,connectors:{department:{connectorId:'Http_75b8f8aef03c4b40815462052ba21a13',actionId:'operation-1',type:'httpConnector',connection:15624}},relatedSources:require('../../config/sources.json').relatedProcesses};
@@ -30,9 +31,25 @@ function validate(input){
   }
 }
 
+// Demo keeps its own supplier and row catalogs. Only the conversational
+// handoff is shared with formal finance; no form target or rule is borrowed.
+function classify(needs,contexts,{categoryKey,categoryInputKey=categoryKey,accountKey,category,account,pairs,fixedCategory,description,scope,rowNumber}) {
+  const before=needs.length,selected=choosePair(needs,categoryKey,accountKey,category,account,pairs,fixedCategory);
+  const context=buildRecommendationContext({scope,description,pairs:pairs.map(([category,account])=>({category,account})),
+    categoryInputKey,accountInputKey:accountKey,
+    explicitCategory:category||selected?.[0],explicitAccount:account||selected?.[1],fixedCategory});
+  if(rowNumber!==undefined) context.rowNumber=rowNumber;
+  else context.label='供应商分类';
+  contexts.push(context);
+  if(needs.length>before) Object.assign(needs.at(-1),{resolver:'agent_recommendation',recommendationContext:context,
+    message:context.conflicts.length?'明确分类与当前合法配对冲突，请核对，不能静默替换。'
+      :'请 Agent 按用途建议一组合法类别和科目；有合理备选时在明细表外单独说明，让员工接受或明确替换。'});
+  return selected;
+}
+
 async function prepare(input,ctx){
   validate(input);
-  const needs=[];
+  const needs=[],recommendationContexts=[];
   if(typeof input.is_project!=='boolean')needs.push({field:'is_project',message:'这笔付款是否属于项目？'});
   const paymentDate=date(input.latest_payment_date);
   if(paymentDate===null)needs.push({field:'latest_payment_date',message:'请提供有效的最晚付款日期（YYYY-MM-DD）。'});
@@ -75,7 +92,9 @@ async function prepare(input,ctx){
     }
     const [,sf,cat,acc]=TABLES.supplierPairs;
     const pairs=(await rows(ctx,'supplierPairs',{[sf]:supplier})).filter(r=>same(r[sf],supplier)).map(r=>[required(r[cat]),required(r[acc])]);
-    const selected=choosePair(needs,'supplier_expense_category','supplier_account',input.supplier_expense_category,input.supplier_account,pairs);
+    const selected=classify(needs,recommendationContexts,{scope:'supplier',description:input.description||input.items.map(row=>row.description).join('；'),
+      categoryKey:'supplier_expense_category',accountKey:'supplier_account',category:input.supplier_expense_category,
+      account:input.supplier_account,pairs});
     if(selected){formData[F.supplierCategory]=selected[0];formData[F.supplierAccount]=selected[1];resolved.supplier_expense_category=selected[0];resolved.supplier_account=selected[1];}
   }
   let project=null;
@@ -85,14 +104,17 @@ async function prepare(input,ctx){
   if(!input.is_project||project){
     const [,category,account]=TABLES.accounts;
     const catalog=(await rows(ctx,'accounts',project?{[category]:project.category}:{})).filter(r=>!project||text(r[category])===project.category).map(r=>[required(r[category]),required(r[account])]);
-    itemPairs=input.items.map((r,i)=>choosePair(needs,`items[${i}].expense_category`,`items[${i}].account`,r.expense_category,r.account,catalog,project?.category));
+    itemPairs=input.items.map((r,i)=>classify(needs,recommendationContexts,{scope:project?'project':'general',rowNumber:i+1,
+      description:r.description,categoryKey:`items[${i}].expense_category`,
+      categoryInputKey:project?'project_expense_category':`items[${i}].expense_category`,
+      accountKey:`items[${i}].account`,category:r.expense_category,account:r.account,pairs:catalog,fixedCategory:project?.category}));
   }
-  if(needs.length)return {needsInput:needs};
+  if(needs.length)return {needsInput:needs,recommendationContexts};
   const contexts=[['application',departmentId,F.applicationStructure],...(project?[['project',project.department.id,F.projectStructure]]:[])];
   const optionalEmptyFields=[];
   for(const [prefix,id,fields]of contexts){const structure=await sources.structure(ctx,prefix,id);fields.forEach((field,i)=>{formData[field]=structure.values[i];});optionalEmptyFields.push(...structure.optionalEmptyFields);}
   const associated=await sources.relations(ctx,input,needs);
-  if(needs.length)return {needsInput:needs};
+  if(needs.length)return {needsInput:needs,recommendationContexts};
   Object.assign(formData,associated.formData);
   const contacts=await sources.contacts(ctx,company);
   for(const [role,field]of[['finance',F.finance],['cashier',F.cashier]]){if(contacts[role].length)formData[field]=contacts[role];}
@@ -107,7 +129,7 @@ async function prepare(input,ctx){
   });
   formData[F.total]=calc.total;formData[F.hkdTotal]=calc.hkdTotal;
   resolved.items=input.items.map((r,i)=>({...r,expense_category:itemPairs[i][0],account:itemPairs[i][1]}));
-  return {formData,departmentId,attachmentField:F.attachment,verification:{optionalEmptyFields},resolvedInputs:resolved,preview:{
+  return {formData,departmentId,attachmentField:F.attachment,verification:{optionalEmptyFields},resolvedInputs:resolved,recommendationContexts,preview:{
     流程:workflowConfig.title,申请人:ctx.actor.name||'本人',申请日期:ctx.today,发起部门:dept.name,
     支付公司:company,币种:currency,供应商:supplier,银行账户:formData[F.bankAccount]||'',开户行:formData[F.bankName]||'',供应商费用类别:formData[F.supplierCategory],供应商科目:formData[F.supplierAccount],
     是否项目:input.is_project,项目:project?{名称:project.name,部门:project.department.name,费用类别:project.category}:null,

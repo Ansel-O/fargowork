@@ -42,6 +42,7 @@ const {
 } = require('./lib/verification.cjs');
 const {supportForError} = require('./lib/support.cjs');
 const DetailReview = require('../shared/detail-review.cjs');
+const Directory = require('./lib/workflow-directory.cjs');
 const {
   attachmentJobs,
   attachmentGroupKey,
@@ -79,10 +80,11 @@ function parse(args) {
     logout: [],
     workflows: [],
     requirements: [],
-    doctor: []
+    doctor: [],
+    directory: [], personal: ['input','confirm']
   };
   check(Object.hasOwn(accepted, command) && Object.keys(options).every(k => accepted[command].includes(k)), 'COMMAND_NOT_ALLOWED');
-  if (['details', 'review', 'confirm-details', 'prepare', 'submit', 'preview', 'result', 'requirements'].includes(command)) check(positionals.length === 1, 'ARGUMENT_INVALID');else check(positionals.length === 0, 'ARGUMENT_INVALID');
+  if (['details', 'review', 'confirm-details', 'prepare', 'submit', 'preview', 'result', 'requirements','personal'].includes(command)) check(positionals.length === 1, 'ARGUMENT_INVALID');else check(positionals.length === 0, 'ARGUMENT_INVALID');
   return {
     command,
     arg: positionals[0],
@@ -301,13 +303,36 @@ async function run(args, deps = {}) {
       arg,
       options
     } = parse(args);
+  // Local unavailable workflows still exit without reading identity or logging
+  // in. Directory access is lazy, and result lookup never calls it.
+  const directory = {
+    check:key=>(deps.directory || Directory.createDirectoryClient({auth:deps.auth || require('./lib/auth.cjs')})).check(key),
+    list:()=>(deps.directory || Directory.createDirectoryClient({auth:deps.auth || require('./lib/auth.cjs')})).list()
+  };
+  if(command==='directory') return directory.list();
+  if(command==='personal') {
+    const auth=deps.auth || require('./lib/auth.cjs');
+    check(['view','set','delete','clear'].includes(arg),'ARGUMENT_INVALID');
+    const personal=deps.personal || require('./lib/personal.cjs').createPersonalStore({actorResolver:auth.actor});
+    if(arg==='view'||arg==='clear') {check(!options.input&&!options.confirm,'ARGUMENT_INVALID');return personal[arg]();}
+    check(options.input&&path.isAbsolute(options.input),'INPUT_FILE_REQUIRED');
+    const value=read(options.input);
+    check(value&&typeof value==='object'&&!Array.isArray(value),'INPUT_OBJECT_REQUIRED');
+    if(arg==='set') {
+      check(Object.keys(value).length===1&&Object.hasOwn(value,'values'),'ARGUMENT_INVALID');
+      return personal.set({values:value.values,confirmed:options.confirm==='yes'});
+    }
+    check(!options.confirm&&Object.keys(value).length===1&&Object.hasOwn(value,'keys'),'ARGUMENT_INVALID');
+    return personal.delete({keys:value.keys});
+  }
   if (command === 'workflows') return {
     workflows: Object.values(registry).map(w => {
       const availability = workflowAvailability(w.key);
       return {key: w.key, title: w.title, category: workflowCategory(w.key), group: workflowGroup(w.key),
         ...(!availability.canStart ? {availability, message: availability.message} : {})};
     }),
-    scope: `仅 ${Object.keys(registry).length} 个固定流程；不检索其他流程。`
+    scope: `本地仅支持 ${Object.keys(registry).length} 个固定流程；在线新增流程仅提示更新。`,
+    directory: await directory.list()
   };
   if (command === 'requirements') {
     const w = workflow(arg);
@@ -324,7 +349,8 @@ async function run(args, deps = {}) {
       category: workflowCategory(w.key),
       group: workflowGroup(w.key),
       requirements: w.requirements,
-      attachments: w.requirements.attachments || {required:false,supported:false}
+      attachments: w.requirements.attachments || {required:false,supported:false},
+      directory: await directory.check(w.key)
     };
   }
   if (command === 'details') {
@@ -343,6 +369,7 @@ async function run(args, deps = {}) {
     const rt = detailsRuntime(arg, {auth: detailsAuth});
     const current = rt.actor(), actor = {userid: current.userid, corp_id: current.corp_id};
     check(sameActor(actor, rt.ctx.actor), 'IDENTITY_CHANGED');
+    const directoryStatus=await directory.check(arg);
     // No roster, connectors, raw HTTP client, upload or submit capability is
     // passed to a first-round details adapter.
     const result = json(await w.details(input, readonlyDetailContext(rt,actor,w)));
@@ -355,7 +382,8 @@ async function run(args, deps = {}) {
     'WORKFLOW_DETAILS_RESULT_INVALID');
     const needs = result.needsInput || [];
     return {
-      ...result, readOnly: true, status: needs.length ? 'needs_input' : 'details_ready', workflow: arg,
+      ...result, directory:directoryStatus,submissionBlocked:directoryStatus.status!=='allowed',
+      readOnly: true, status: needs.length ? 'needs_input' : 'details_ready', workflow: arg,
       nextAction: needs.some(need => need.resolver === 'agent_recommendation')
         ? 'agent_recommendation' : needs.length ? 'clarify_details' : 'review_details'
     };
@@ -371,8 +399,7 @@ async function run(args, deps = {}) {
     const info = read(path.join(draftDir(root, arg), 'input.json'));
     assertWorkflowStartAllowed(info.workflow);
   }
-  const auth = deps.auth || require('./lib/auth.cjs'),
-    runtime = deps.runtime || createRuntime;
+  const auth = deps.auth || require('./lib/auth.cjs'), runtime = deps.runtime || createRuntime;
   if (command === 'status' || command === 'login' || command === 'logout') return auth[command]();
   if (command === 'doctor') return {
     version: VERSION,
@@ -413,8 +440,9 @@ async function run(args, deps = {}) {
       if(request.materialUploadsProvided||previous?.materialUploads!==undefined)
         info.materialUploads=request.materialUploadsProvided?request.materialUploads:previous.materialUploads;
       write(infoFile,info);
+      const directoryStatus=await directory.check(arg);
       const review=await refreshReview(dir,w,rt,info,prior);
-      return DetailReview.response(review,id);
+      return {...DetailReview.response(review,id),directory:directoryStatus,submissionBlocked:directoryStatus.status!=='allowed'};
     }).catch(error=>{error.draftId=id;throw error;});
   }
   if (command === 'prepare') {
@@ -496,6 +524,8 @@ async function run(args, deps = {}) {
         if(w.detailReview===true&&(request.materialUploadsProvided||previous?.materialUploads!==undefined))
           info.materialUploads=request.materialUploadsProvided?request.materialUploads:previous.materialUploads;
         write(infoFile, info);
+        const directoryStatus=await directory.check(arg);
+        if(directoryStatus.status!=='allowed') return Directory.blocked(directoryStatus,id);
         let detailReview;
         if(w.detailReview === true) {
           const file=path.join(dir,'details-review.json'),prior=fs.existsSync(file)?read(file):null;
@@ -519,7 +549,8 @@ async function run(args, deps = {}) {
           return {
             status: 'needs_input',
             draftId: id,
-            needsInput: prepared.needsInput
+            needsInput: prepared.needsInput,
+            ...(prepared.recommendationContexts?{recommendationContexts:prepared.recommendationContexts}:{})
           };
         }
         check(prepared.formData && prepared.departmentId && prepared.preview, 'WORKFLOW_RESULT_INVALID');
@@ -610,6 +641,7 @@ async function run(args, deps = {}) {
         write(path.join(dir, 'prepared.json'), {
           version: VERSION,
           workflow: arg,
+          directory:directoryStatus,
           revisionId,
           identity,
           draftSha256: receipt.draftSha256,
@@ -639,6 +671,8 @@ async function run(args, deps = {}) {
           draftId: id,
           nextAction: 'preview',
           requiresConfirmation: true,
+          directory:directoryStatus,
+          ...(prepared.recommendationContexts?{recommendationContexts:prepared.recommendationContexts}:{}),
           localDraftOnly: true,
           message: '草稿已准备。先读取并展示最终预览，然后等待员工回复；本步骤不授权提交。'
         };
@@ -685,6 +719,7 @@ async function run(args, deps = {}) {
       try {
         current=DetailReview.checkpoint({workflow:w.key,actor:info.actor,previous:prior,
           result:{rows:prior.rows,preview:prior.preview,needsInput:prior.needsInput,
+            ...(prior.recommendationContexts?{recommendationContexts:prior.recommendationContexts}:{}),
             ...(prior.detailReviewContract===undefined?{}:{detailReviewContract:prior.detailReviewContract})},
       materials:DetailReview.normalizeMaterials(info.materials||[],info.input.items?.length||0,w.materialRoles)});
       } catch(error) {
@@ -732,6 +767,8 @@ async function run(args, deps = {}) {
     if (command === 'submit') {
       check(options.confirm && options.confirm === state.draftSha256, 'PROCESS_EXPLICIT_CONFIRMATION_REQUIRED');
       if (state.status === 'prepared') {
+        const directoryStatus=await directory.check(info.workflow);
+        if(directoryStatus.status!=='allowed') return Directory.blocked(directoryStatus,arg);
         check(saved.previewedDraftSha256 === state.draftSha256, 'PROCESS_PREVIEW_REQUIRED');
         check(saved.version === VERSION && info.version === VERSION, 'DRAFT_VERSION_CHANGED');
         check(state.snapshot.businessDate === today(), 'PROCESS_DRAFT_EXPIRED');
@@ -804,6 +841,8 @@ async function run(args, deps = {}) {
           });
         }
         rt.actor();
+        const finalDirectoryStatus=await directory.check(info.workflow);
+        if(finalDirectoryStatus.status!=='allowed') return Directory.blocked(finalDirectoryStatus,arg);
       }
       const receipt = await pm.submit({
         draftSha256: options.confirm,

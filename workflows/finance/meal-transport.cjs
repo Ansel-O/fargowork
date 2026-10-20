@@ -2,6 +2,8 @@
 const C=require('../leave-trip-common.cjs');
 const config=require('../../config/workflows/finance/meal_transport.json');
 const sources=require('../../config/sources.json');
+const companyConfig=require('../../config/company.json');
+const PaymentHistory=require('../../shared/payment-history.cjs');
 const Department=require('../../shared/department-details.cjs');
 const Decimal=require('../../shared/decimal-arithmetic.cjs');
 const {createRateResolver,convertAmount}=require('../../shared/exchange-rates.cjs');
@@ -14,7 +16,7 @@ const bankFields={bank_account:'bankAccount',bank_name:'bankName',bank_city:'ban
 const labels={bank_account:'收款账号',bank_name:'开户银行',bank_city:'开户城市',bank_branch:'开户支行',account_name:'账户名称'};
 const requirements={required:['items','attendance_attachments'],
   optional:['department_id','payment_company','same_bearing_company','bearing_company','business_structure',
-    'business_line','business_subline',...Object.keys(bankFields),'description','expense_attachments'],
+    'business_line','business_subline',...Object.keys(bankFields),'description','expense_attachments',...PaymentHistory.INPUT_FIELDS],
   item:{required:['reason'],optional:['start_time','end_time','transport_amount','remarks'],minimumRows:1,maximumRows:50},
   attachments:{fields:config.attachments.fields.map(f=>({...f,required:f.inputField==='attendance_attachments',maximumCount:20,maximumMiB:100}))},
   notes:['起止时间到分钟；结束时间默认等于开始时间，未提供开始时间时请提供结束时间。',
@@ -22,7 +24,7 @@ const requirements={required:['items','attendance_attachments'],
     '个人收款资料首次带入后可以修改。支付公司只能从本人映射中选择。','餐补及港币金额自动计算，最终预览后等待新的员工确认。']};
 const inputFields=['items','department_id','payment_company','same_bearing_company','bearing_company',
   'business_structure','business_line','business_subline',...Object.keys(bankFields),
-  'description','attendance_attachments','expense_attachments'];
+  'description','attendance_attachments','expense_attachments',...PaymentHistory.INPUT_FIELDS];
 
 function optionalRoster(map,field,prefer='value') {
   const rows=map.get(field);
@@ -117,11 +119,13 @@ async function buildDetails(input,ctx,fields) {
 }
 async function details(input,ctx) {
   C.inputKeys(input,inputFields);
+  PaymentHistory.validateInput(input);
   const result=await buildDetails(input,ctx,schemaFields(await ctx.schema()));
   return {rows:result.rows,needsInput:result.needsInput,preview:result.preview,detailReviewContract:result.detailReviewContract};
 }
 async function prepare(input,ctx) {
   C.inputKeys(input,inputFields);
+  PaymentHistory.validateInput(input);
   const actor=C.identity(ctx),fields=schemaFields(await ctx.schema()),detail=await buildDetails(input,ctx,fields);
   if(detail.needsInput.length)return {needsInput:detail.needsInput};
   const needs=[],{company,currency}=detail;
@@ -144,6 +148,14 @@ async function prepare(input,ctx) {
     [F.contractCompany]:optionalRoster(roster,R.contractCompany),[F.office]:optionalRoster(roster,R.office),
     [F.positionLevel]:optionalRoster(roster,R.positionLevel,'label')};
   if(!manager && C.required(fields,F.manager)) C.fail('DEPARTMENT_MANAGER_MISSING');
+  const reference=await PaymentHistory.resolvePaymentHistory({input,ctx,actor,roster:rosterResponse,
+    rosterAccountNameField:R.accountName,sources:policy.relatedSources,appType:companyConfig.appType,
+    requiredFields:Object.entries(bankFields).filter(([,field])=>C.required(fields,F[field])).map(([name])=>name),
+    previous:ctx.workflowState?.paymentHistory});
+  if(reference.needsInput.length)return {needsInput:reference.needsInput,code:reference.code,
+    workflowState:{...(ctx.workflowState||{}),paymentHistory:reference.state}};
+  input=reference.input;
+  const historyState=reference.state===null&&!ctx.workflowState?.paymentHistory?{}:{paymentHistory:reference.state};
   const payment=personalPaymentDefaults({actor,input,roster:rosterResponse,previous:ctx.workflowState?.bankDefaults,
     fields:Object.fromEntries(Object.entries(bankFields).map(([inputKey,fieldKey])=>[inputKey,R[fieldKey]])),stringFields:['bank_account']});
   for(const [inputKey,fieldKey] of Object.entries(bankFields)) {
@@ -151,7 +163,7 @@ async function prepare(input,ctx) {
     formData[F[fieldKey]]=textInput(value,F[fieldKey],fields);
     if(!value && C.required(fields,F[fieldKey])) needs.push({field:inputKey,message:`请补充${labels[inputKey]}。`});
   }
-  const state=()=>({bankDefaults:payment.state});
+  const state=()=>({bankDefaults:payment.state,...historyState});
   formData[F.paymentCompany]=company;formData[F.paymentCompanyMirror]=company;
   const same=input.same_bearing_company===undefined?true:input.same_bearing_company;
   C.check(typeof same==='boolean','MEAL_INPUT_INVALID');
@@ -202,6 +214,7 @@ async function prepare(input,ctx) {
       承担公司:formData[F.bearingCompany],报销币种:currency,
       业务总架构:formData[F.structure],业务线:formData[F.line],子业务线:formData[F.subline],
       收款资料:Object.fromEntries(Object.entries(bankFields).map(([key,field])=>[labels[key],formData[F[field]]])),
+      ...(reference.preview?{收款历史参考:reference.preview}:{}),...(reference.notice?{收款资料提示:reference.notice}:{}),
       加班明细:detail.preview.加班明细,餐补总额:formData[F.mealTotal],交通费总额:formData[F.transportTotal],说明:formData[F.description]}};
 }
 module.exports={key,title,formUuid:target.formUuid,policy,requirements,detailReview:true,

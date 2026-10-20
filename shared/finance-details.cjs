@@ -69,8 +69,8 @@ async function prepareFinanceDetails({ctx,items,accountSource,pairs,originalCurr
   if(category!==undefined) check(allowedPairs.some(pair=>pair.category===category),'RECOMMENDATION_FIXED_CATEGORY_INVALID');
   // A workflow may still be resolving a project/category scope. Conversion is
   // independent; the caller supplies that scope's pending questions.
-  const needsInput=[],selections=deferClassification?normalizedItems.map(()=>({}))
-    :Finance.accountSelections({items:normalizedItems},allowedPairs,needsInput,category);
+  const needsInput=[],recommendationContexts=[],selections=deferClassification?normalizedItems.map(()=>({}))
+    :Finance.accountSelections({items:normalizedItems},allowedPairs,needsInput,category,recommendationContexts);
   const currencies=distinctValues(await matchingRows(ctx,originalCurrencySource.formUuid,{},
     [originalCurrencySource.currencyField]),originalCurrencySource.currencyField);
   const rows=[];
@@ -86,7 +86,7 @@ async function prepareFinanceDetails({ctx,items,accountSource,pairs,originalCurr
       reimbursedAmount:item.amount===null||exchange===null?null:convertAmount(item.amount,exchange,precision),
       remarks:text(item.remarks),classificationReason:text(item.classification_reason)});
   }
-  return {rows,needsInput};
+  return {rows,needsInput,recommendationContexts};
 }
 
 module.exports={prepareFinanceDetails};

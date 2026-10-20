@@ -1,0 +1,40 @@
+{
+  "directory": {
+    "formUuid": "FORM-3DD14956D5B6469FB2FB0C64C652FED8XFTB",
+    "protocol": 1
+  },
+  "rules": {
+    "meal_transport": "1.0.0",
+    "employee_certificate": "1.0.0",
+    "referral_reward": "1.0.0",
+    "probation_confirmation": "1.0.0",
+    "probation_plan": "1.0.0",
+    "employer_housing": "1.0.0",
+    "onboarding": "1.0.0",
+    "resignation": "1.0.0",
+    "transfer": "1.0.0",
+    "hr_offboarding": "1.0.0",
+    "annual_leave": "1.0.0",
+    "annual_leave_application": "1.0.0",
+    "annual_leave_cancellation": "1.0.0",
+    "unpaid_sick_leave": "1.0.0",
+    "paid_sick_leave": "1.0.0",
+    "paid_sick_leave_cancellation": "1.0.0",
+    "other_leave": "1.0.0",
+    "personal_leave": "1.0.0",
+    "business_trip_application": "1.0.0",
+    "external_expense_request": "1.0.0",
+    "external_expense_application": "1.0.0",
+    "expense_reimbursement": "1.0.0",
+    "trip_expense_reimbursement": "1.0.0",
+    "medical_checkup_reimbursement": "1.0.0",
+    "default_bank_change": "1.0.0",
+    "contract": "1.0.0",
+    "seal": "1.0.0",
+    "business_card": "1.0.0",
+    "procurement_application": "1.0.0",
+    "hardware_request": "1.0.0",
+    "software_request": "1.0.0",
+    "listing": "1.0.0"
+  }
+}

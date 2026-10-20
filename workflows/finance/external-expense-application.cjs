@@ -129,8 +129,9 @@ async function buildDetails(input,ctx,fields) {
   const currency=paymentCompany?choice(needs,'currency','币种',input.currency,distinctValues(
     await query(ctx,'currencies',{[currencies.companyField]:paymentCompany},[currencies.currencyField]),currencies.currencyField)):null;
   const scope=await classificationScope({...input,items},ctx,needs,project),PD=source('projectDepartments');
+  const recommendationContexts=[];
   const selections=scope.ready?accountSelections({items:items.map(item=>({...item,description:item.description||''}))},
-    scope.pairs,needs,project?scope.category:undefined):items.map(()=>({}));
+    scope.pairs,needs,project?scope.category:undefined,recommendationContexts):items.map(()=>({}));
   const hkd=rules.defaults[F.hkd],resolveRate=createRateResolver({ctx,source:source('rates'),errorCode:'PAYMENT_RATE_INVALID',
     errorMessage:'付款汇率未唯一配置，请联系 Finance。'});
   const rate=currency?await resolveRate(currency,hkd):null,rows=[];
@@ -160,7 +161,7 @@ async function buildDetails(input,ctx,fields) {
   const detailReviewContract=detailContract(project,paymentCompany,currency,scope,rows,fields);
   const previewRows=rows.map(row=>({...Object.fromEntries(detailReviewContract.columns.map(([key,label])=>[label,row[key]])),
     ...(row.classificationReason?{分类建议依据:row.classificationReason}:{})}));
-  return {rows,needsInput:needs,detailReviewContract,paymentCompany,currency,scope,rate,
+  return {rows,needsInput:needs,detailReviewContract,recommendationContexts,paymentCompany,currency,scope,rate,
     preview:{支付公司:paymentCompany||'',币种:currency,是否项目款项:project?'是':'否',
       ...(project?{项目:scope.projectName||'',项目费用类别:scope.category||''}:{}),付款明细:previewRows,
       付款总额:rows.length&&rows.every(row=>row.amount!==null)?sum(rows.map(row=>row.amount)):null}};
@@ -169,7 +170,7 @@ async function details(input,ctx) {
   validateInput(input);
   const result=await buildDetails(input,ctx,assertSchema(await ctx.schema()));
   return {rows:result.rows.map(({hkdAmount,projectDepartmentId,...row})=>row),preview:result.preview,
-    needsInput:result.needsInput,detailReviewContract:result.detailReviewContract};
+    needsInput:result.needsInput,detailReviewContract:result.detailReviewContract,recommendationContexts:result.recommendationContexts};
 }
 async function relations(ctx,input,needs) {
   const formData={},preview={},labels={contract:'关联合同',seal:'关联用印',expense:'关联对外费用'};
@@ -357,7 +358,7 @@ async function prepare(input,ctx) {
   const associated=await relations(ctx,input,needs);if(needs.length) return pause();
   Object.assign(formData,associated.formData);
   return {formData,departmentId:dept.id,attachmentField:F.attachment,workflowState,
-    detailReviewContract:detail.detailReviewContract,detailReviewRows:detail.rows,
+    detailReviewContract:detail.detailReviewContract,detailReviewRows:detail.rows,recommendationContexts:detail.recommendationContexts,
     verification:{optionalEmptyFields:Object.entries(formData).filter(([field,value])=>!C.required(fields,field)&&(value===''||Array.isArray(value)&&value.length===0)).map(([field])=>field),
       enumLabels:{[F.isProject]:{HIDDEN:'否',NORMAL:'是'},[F.sameBearing]:{HIDDEN:'是',NORMAL:'否'}}},
     preview:{流程:title,申请人:actor.name||actor.userid,申请部门:departmentName,申请日期:ctx.today,

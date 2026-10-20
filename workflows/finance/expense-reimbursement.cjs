@@ -2,6 +2,8 @@
 const C=require('../leave-trip-common.cjs');
 const config=require('../../config/workflows/finance/expense_reimbursement.json');
 const sources=require('../../config/sources.json');
+const companyConfig=require('../../config/company.json');
+const PaymentHistory=require('../../shared/payment-history.cjs');
 const Department=require('../../shared/department-details.cjs');
 const Finance=require('../../shared/finance-catalog.cjs');
 const {prepareFinanceDetails}=require('../../shared/finance-details.cjs');
@@ -14,7 +16,7 @@ const bankFields={bank_account:'bankAccount',bank_name:'bankName',bank_city:'ban
 const bankLabels={bank_account:'收款账号',bank_name:'开户银行',bank_city:'开户城市',bank_branch:'开户支行',account_name:'账户名称'};
 const requirements={required:['items'],
   optional:['department_id','department_name','payment_company','same_bearing_company','bearing_company',
-    'business_structure','business_line','business_subline',...Object.keys(bankFields),'description','is_project','project_name','project_expense_category'],
+    'business_structure','business_line','business_subline',...Object.keys(bankFields),'description','is_project','project_name','project_expense_category',...PaymentHistory.INPUT_FIELDS],
   items:{required:['description','amount','original_currency'],optional:['expense_category','account','classification_reason','remarks',
     'project_department_name','business_structure','business_line','business_subline'],minimumRows:1,maximumRows:50},
   attachments:{required:true,input:'attachments: [绝对文件路径]',maxFiles:20,maxFileSizeMiB:100},
@@ -34,6 +36,7 @@ const rateOptions={ratePrecision:rules.ratePrecision,errorCode:'REIMBURSEMENT_RA
 
 function validateInput(input) {
   C.inputKeys(input,allowed);
+  PaymentHistory.validateInput(input);
   for(const [name,value] of Object.entries(input)) {
     if(['is_project','same_bearing_company'].includes(name)) C.check(typeof value==='boolean','REIMBURSEMENT_INPUT_INVALID');
     else if(name!=='items') C.check(typeof value==='string','REIMBURSEMENT_INPUT_INVALID');
@@ -131,7 +134,7 @@ async function details(input,ctx) {
     C.check(choices.length===1,'REIMBURSEMENT_CURRENCY_AMBIGUOUS','支付公司的报销币种未唯一配置，请联系 Finance。');currency=choices[0];
   }
   const result=await financeDetails(input,ctx,scope,currency);
-  return {rows:result.rows,needsInput:[...needs,...result.needsInput],
+  return {rows:result.rows,needsInput:[...needs,...result.needsInput],recommendationContexts:result.recommendationContexts,
     preview:{支付公司:company||'',报销币种:currency,报销明细:detailPreview(result.rows),
       报销总额:result.rows.every(row=>row.reimbursedAmount!==null)?sum(result.rows.map(row=>row.reimbursedAmount)):null}};
 }
@@ -162,9 +165,17 @@ async function prepare(input,ctx) {
 
   // Stage 1: identity-bound defaults are editable, and survive every pause.
   const rosterResponse=await ctx.roster(policy.rosterFields),roster=C.rosterFields(rosterResponse,actor);
+  const reference=await PaymentHistory.resolvePaymentHistory({input,ctx,actor,roster:rosterResponse,
+    rosterAccountNameField:R.accountName,sources:policy.relatedSources,appType:companyConfig.appType,
+    requiredFields:Object.entries(bankFields).filter(([,field])=>C.required(fields,F[field])).map(([name])=>name),
+    previous:ctx.workflowState?.paymentHistory});
+  if(reference.needsInput.length)return {needsInput:reference.needsInput,code:reference.code,
+    workflowState:{...(ctx.workflowState||{}),paymentHistory:reference.state}};
+  input=reference.input;
+  const historyState=reference.state===null&&!ctx.workflowState?.paymentHistory?{}:{paymentHistory:reference.state};
   const payment=personalPaymentDefaults({actor,input,roster:rosterResponse,previous:ctx.workflowState?.bankDefaults,
     fields:Object.fromEntries(Object.entries(bankFields).map(([inputKey,fieldKey])=>[inputKey,R[fieldKey]])),stringFields:['bank_account']});
-  const workflowState={bankDefaults:payment.state},pause=()=>({needsInput:needs,workflowState});
+  const workflowState={bankDefaults:payment.state,...historyState},pause=()=>({needsInput:needs,workflowState});
   const formData={};
   for(const [inputKey,fieldKey] of Object.entries(bankFields)) {
     const value=textValue(payment.values[inputKey],F[fieldKey],fields);formData[F[fieldKey]]=value;
@@ -261,12 +272,14 @@ async function prepare(input,ctx) {
   }
   // Native attachments, draft revisions, preview and submit belong to runner.
   return {formData,departmentId:dept.id,attachmentField:F.attachment,attachmentPreviewField:config.attachments.previewField,workflowState,
+    recommendationContexts:detailRows.recommendationContexts,
     verification:{optionalEmptyFields:Object.entries(formData).filter(([field,value])=>!C.required(fields,field)&&(value===''||Array.isArray(value)&&value.length===0)).map(([field])=>field),
       enumLabels:{[F.isProject]:{HIDDEN:'否',NORMAL:'是'},[F.sameBearing]:{HIDDEN:'是',NORMAL:'否'}}},
     preview:{流程:title,报销人:optionalRoster(roster,R.name)||actor.name||actor.userid,申请日期:ctx.today,申请部门:departmentName,
       支付公司:company,承担公司:formData[F.bearingCompany],报销币种:currency,
       业务总架构:formData[F.structure],业务线:formData[F.line],子业务线:formData[F.subline],
       收款资料:Object.fromEntries(Object.entries(bankFields).map(([inputKey,fieldKey])=>[bankLabels[inputKey],formData[F[fieldKey]]])),
+      ...(reference.preview?{收款历史参考:reference.preview}:{}),...(reference.notice?{收款资料提示:reference.notice}:{}),
       是否项目:project?'是':'否',...(project?{项目:formData[F.project],项目费用类别:formData[F.projectCategory]}:{}),
       报销明细:previewRows,报销总额:formData[F.total],说明:formData[F.description]}};
 }

@@ -17,6 +17,14 @@ const FINANCE = new Set(['FW-PAY-STRUCTURE-MISSING','FW-PAY-STRUCTURE-AMBIGUOUS'
   'RECOMMENDATION_FIXED_CATEGORY_INVALID','REIMBURSEMENT_CURRENCY_AMBIGUOUS','REIMBURSEMENT_RATE_INVALID',
   'TRAVEL_ALLOWANCE_SOURCE_INVALID','TRAVEL_ALLOWANCE_CURRENCY_UNSUPPORTED','MEDICAL_CURRENCY_CONFLICT']);
 function supportForError(code) {
+  if(code==='WORKFLOW_CLIENT_UPDATE_REQUIRED')
+    return {nextAction:'update_client',message:'保留材料和草稿，更新完整 FargoWork 包后重新准备；不能手改版本号放行。'};
+  if(/^DIRECTORY_/.test(code))
+    return {contact:'IT',nextAction:'restore_directory_check',message:'流程目录暂时不能核对或已停用。保留草稿并暂停提交，请联系维护者核实目录与读取权限。'};
+  if(/^PAYMENT_HISTORY_/.test(code))
+    return {nextAction:'check_payment_history',message:'请核对本人收款户名和历史候选，或自行提供本次收款资料；不扩大历史查询范围。'};
+  if(/^PERSONAL_/.test(code))
+    return {nextAction:'continue_without_personal',message:'个人偏好未能保存或读取。按正常流程继续询问和取数，不用修改公司规则。'};
   if (code === 'WORKFLOW_DELEGATION_NOT_ALLOWED')
     return {nextAction:'select_claimant',message:'当前账号不能代选该报销人。请使用本人资料办理，或由公司已授权的人员处理代办。'};
   if (['WORKFLOW_SUBJECT_INVALID','EMPLOYEE_SELECTION_REQUIRED'].includes(code))

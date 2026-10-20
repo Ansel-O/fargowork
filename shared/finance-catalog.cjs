@@ -61,7 +61,8 @@ function recommendation(item,index,pairs,fixedCategory) {
 }
 
 // Collect every line's unresolved classification before returning to the agent.
-function accountSelections(input,pairs,needs,projectCategory) {
+function accountSelections(input,pairs,needs,projectCategory,recommendationContexts) {
+  check(recommendationContexts===undefined||Array.isArray(recommendationContexts),'RECOMMENDATION_INPUT_INVALID');
   return input.items.map((item,index)=>{
     const before=needs.length,prefix=`items[${index}].`;
     const category=projectCategory??choice(needs,prefix+'expense_category','本行费用类别',item.expense_category,
@@ -69,13 +70,17 @@ function accountSelections(input,pairs,needs,projectCategory) {
     let account='';
     if(needs.length===before) account=choice(needs,prefix+'account','本行会计科目',item.account,
       [...new Set(pairs.filter(pair=>normalized(pair.category)===normalized(category)).map(pair=>pair.account))]);
+    const context=recommendation({...item,expense_category:category||item.expense_category,
+      account:account||item.account},index,pairs,projectCategory);
+    context.rowNumber=index+1;
+    if(recommendationContexts) recommendationContexts.push(context);
     if(needs.length>before) {
-      const context=recommendation(item,index,pairs,projectCategory),need=needs.at(-1);
+      const need=needs.at(-1);
       need.recommendationContext=context;
       need.resolver='agent_recommendation';
       need.message=context.conflicts.length
         ?`第 ${index+1} 行的明确分类与合法配对冲突，请 Agent 先澄清相关业务事实，不能静默覆盖员工输入。`
-        :`请 Agent 结合第 ${index+1} 行用途，从 recommendationContext.allowedPairs 的完整配对中建议并回填类别与科目；不要把目录交给员工自行选择。用途不足时集中补问必要事实。`;
+        :`请 Agent 结合第 ${index+1} 行用途，从 recommendationContext.allowedPairs 的完整配对中建议并回填一组类别与科目；有合理备选时在表外按行说明供员工选择，不把整个目录交给员工。用途不足时集中补问必要事实。`;
     }
     return {category,account};
   });

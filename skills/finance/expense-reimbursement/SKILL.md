@@ -7,6 +7,8 @@ description: 为当前登录员工整理费用报销材料，推荐科目、匹�
 
 本 Skill 办理费用报销，固定目标为 `FORM-6EB2E57A94CF4445BB28508DC45262E3MDDX`，workflow key 为 `expense_reimbursement`。不能当作出差报销、对外付款或餐费补贴的替代入口。
 
+办理时优先遵守[公司维护源与个人选择](../../../references/FINANCE-DETAILS.md#公司维护源与个人选择)：汇率及合法目录按公司来源核对，用户口述、网络或 personal 不能覆盖；类别／科目仍由员工在合法范围内接受或改选，财务按原流程审核。
+
 从本文件向上三级确定完整包根。首次使用按[入口 Skill](../../../SKILL.md#首次安装)准备官方 OpenYida CLI 并安装本包；以后复用官方登录态，不注册 MCP。
 
 ```text
@@ -26,10 +28,10 @@ node scripts/fargowork.cjs details expense_reimbursement --input <绝对路径�
 按[财务明细工具](../../../references/FINANCE-DETAILS.md)执行以下顺序：
 
 1. 已解析的内容写入 `items[].description`，原币金额、币种分别写入 `amount`、`original_currency`。用只读 `details` 取得实际科目候选和换算信息；此时不传 `attachments`。只先确定影响明细的本人支付公司、报销币种及必要项目范围，不要求员工先补银行、部门和全部业务线。项目报销使用 `is_project: true`、`project_name`、`project_expense_category`；普通报销不填项目字段。
-2. **Agent 根据内容详情，从返回的合法类别与科目完整配对中作出建议，直接写入 `expense_category`、`account` 和简短 `classification_reason`，再运行 `details`。** `resolver: agent_recommendation` 是 Agent 的工作，不是让员工翻科目目录。用途足以判断就完成建议；仅在缺少关键用途或明确选择冲突时补问业务事实。
+2. **Agent 根据内容详情，从返回的合法类别与科目完整配对中建议一组，写入 `expense_category`、`account` 和简短 `classification_reason`，再运行 `details`。** 完整合法草稿也读取 `recommendationContexts`，按[科目推荐与独立备选](../../../references/FINANCE-DETAILS.md#科目推荐与独立备选)，有合理备选时在表外按行提示理由及是否替换；不把候选混写进实际字段。员工已有合法明确选择保持。`resolver: agent_recommendation` 由 Agent 处理，用途不足或明确选择冲突时补问业务事实，不让员工翻整个目录。
 3. 汇率由工具按原币种和支付公司的报销币种查维护表并计算。唯一支付公司直接使用；多家公司确需员工选择时才问。不要要求员工手填已有汇率，也不自行使用市场汇率替代。
 4. 用 `review expense_reimbursement --input <明细文件>` 保存首轮草稿，后续修改加 `--draft <同一draftId>`。按返回的 `preview` 展示八列：**费用类别*、会计科目*、内容详情*、原币金额*、原币种*、汇率*、报销金额、备注**。表头标明报销币种，原币分别小计，报销金额合计；建议理由简短附在表后。可用宿主现有可编辑表格，也可让员工直接说“第几行改什么”；不强制 Excel。允许新增、删除/排除、拆分、纠正识别和改选科目。Agent 回写当前明细后重新 `review`，保留其他已改内容，展示受影响行和更新合计。待补草稿可以保存和展示，缺项未解不能确认。
-5. 八列完整且 `needsInput` 已解决时，展示当前明细和材料范围，**停止并等待员工对这一版的新确认**。收到确认后才执行 `confirm-details <draftId> --confirm <本次reviewSha256>`，继续补主表。编辑、保存或最初“帮我报销”都不等于确认。摘要只绑定内容，不能代替本人答复；第一次确认也不授权提交。
+5. 八列完整且 `needsInput` 已解决时，展示当前明细、材料范围及合理备选，**停止并等待员工的新答复**。接受推荐即可确认；明确替换已展示的某行且其余保持时，回写并重新 `review`，核对只有员工指定的变更、没有新金额／材料／共同类别连带变化，简短回显后用新 `reviewSha256` 执行 `confirm-details`，继续补主表，不重问未改行。额外变化仍展示并取得确认。仅编辑、保存或最初“帮我报销”不等于确认；第一次明细确认也不授权提交。
 
 ## 补齐申请资料
 
@@ -44,6 +46,8 @@ node scripts/fargowork.cjs details expense_reimbursement --input <绝对路径�
 收款账号、账户名称按原表必填；其他可空资料不额外设置门禁。部门主管、财务、出纳及内部计算等隐藏资料正常时不展示、不确认。原表的付款状态、实际付款日期属于后续节点，不在发起时填写。确实阻断办理时按[资料检查](../../../references/CHECKS.md)引导联系 HR、Finance 或 IT。
 
 本人没有默认收款资料或指定本次换卡时，按其已明确的资料继续当前报销，将实际收款资料纳入最终完整申请预览；不单独重复确认已明确的修改，也不提前引导变更流程。只有员工主动单独要求先改默认资料时，才保留当前报销草稿并转入[默认银行卡变更申请](../default-bank-change/SKILL.md)。
+
+员工明确要求本次换卡时，按[本次换收款卡](../../../references/PERSONAL.md#本次换收款卡)在同一草稿检索本人遮掩历史候选，或自行提供；选定后整组替换五项，再纳入最终申请确认。默认仍取花名册，不因 personal 偏好自动查卡。
 
 ## 附件与最终确认
 

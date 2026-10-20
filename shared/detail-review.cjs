@@ -182,6 +182,7 @@ function checkpoint({workflow,actor,result,materials,previous}) {
   if(!ready&&!needsInput.length) needsInput.push({field:'items',message:explicit
     ?'请补齐本流程必需的明细和币种，再确认本次明细。':'请补齐八列明细和报销币种，再确认本次明细。'});
   return {status:'ready',snapshot,reviewSha256,rows,materials,needsInput,
+    ...(result.recommendationContexts?{recommendationContexts:result.recommendationContexts}:{}),
     ...(explicit?{detailReviewContract:definition}:{}),
     preview:{...result.preview,[definition.currencyPreviewKey]:currency,
       [definition.rowsPreviewKey]:rows.map(row=>Object.fromEntries(definition.columns.map(([key,label])=>[label,row[key]]))),
@@ -193,6 +194,7 @@ function response(review,draftId) {
   const needs=review.needsInput.length>0;
   return {status:needs?'needs_input':confirmed?'details_confirmed':'awaiting_detail_confirmation',
     draftId,reviewSha256:review.reviewSha256,preview:review.preview,rows:review.rows,needsInput:review.needsInput,
+    ...(review.recommendationContexts?{recommendationContexts:review.recommendationContexts}:{}),
     requiresConfirmation:!needs&&!confirmed,localDraftOnly:true,
     nextAction:needs?review.needsInput.some(n=>n.resolver==='agent_recommendation')?'agent_recommendation':'clarify_details'
       :confirmed?'complete_application':'wait_for_detail_confirmation',
