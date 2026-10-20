@@ -4,7 +4,7 @@
     "protocol": 1
   },
   "rules": {
-    "meal_transport": "1.0.0",
+    "meal_transport": "1.0.1",
     "employee_certificate": "1.0.0",
     "referral_reward": "1.0.0",
     "probation_confirmation": "1.0.0",
@@ -24,10 +24,10 @@
     "personal_leave": "1.0.0",
     "business_trip_application": "1.0.0",
     "external_expense_request": "1.0.0",
-    "external_expense_application": "1.0.0",
-    "expense_reimbursement": "1.0.0",
-    "trip_expense_reimbursement": "1.0.0",
-    "medical_checkup_reimbursement": "1.0.0",
+    "external_expense_application": "1.0.1",
+    "expense_reimbursement": "1.0.1",
+    "trip_expense_reimbursement": "1.0.1",
+    "medical_checkup_reimbursement": "1.0.1",
     "default_bank_change": "1.0.0",
     "contract": "1.0.0",
     "seal": "1.0.0",

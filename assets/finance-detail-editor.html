@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>FargoWork · 申请明细</title>
+<style>
+:root{color-scheme:light;--ink:#213047;--muted:#64748b;--line:#dce5ee;--blue:#2463b5;--wash:#f2f6fa;--paper:#fff}
+*{box-sizing:border-box}body{margin:0;background:var(--wash);color:var(--ink);font:15px/1.65 system-ui,"Microsoft YaHei",sans-serif}
+main{max-width:1120px;margin:0 auto;padding:32px 24px 120px}h1{font-size:28px;line-height:1.3;margin:8px 0 12px}
+h2{font-size:19px;margin:0}h3{font-size:16px;margin:0}.eyebrow{color:var(--blue);font-weight:750;letter-spacing:.06em}
+p{margin:8px 0}.muted,.hint{color:var(--muted)}.hint{font-size:12px;line-height:1.5}.notice{border-left:3px solid #ddb25a;background:#fffbef;padding:12px 16px;margin:20px 0}
+.badge{display:inline-block;background:#fff1cf;color:#754b00;border-radius:6px;font-size:13px;padding:2px 8px;margin-left:8px}
+.card{border:1px solid var(--line);border-radius:15px;background:var(--paper);padding:22px;margin:18px 0;box-shadow:0 3px 14px #233c5a04}
+.head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.field{min-width:0;display:flex;flex-direction:column;gap:5px}
+.wide{grid-column:1/-1}label{font-size:13px;color:#47566c;font-weight:650}input,select,textarea{font:inherit;color:inherit;width:100%;min-height:42px;border:1px solid #ccd7e3;border-radius:7px;background:#fff;padding:8px 10px}
+textarea{min-height:72px;resize:vertical}input:focus,select:focus,textarea:focus{outline:2px solid #7ba6dd;outline-offset:1px}
+button{font:inherit;cursor:pointer;border:1px solid #cad6e4;border-radius:7px;padding:7px 12px;background:#fff;color:#315879}
+button:hover{background:#eef4fb}button:disabled{cursor:default;opacity:.45}.primary{background:var(--blue);color:#fff;border-color:var(--blue)}
+.primary:hover{background:#184f95}.danger{color:#a64343}.actions{display:flex;gap:6px;flex-wrap:wrap}.readonly{border-top:1px solid var(--line);margin-top:20px;padding-top:16px}
+.readonly .value{background:#f4f7fa;border-radius:6px;padding:8px 10px;min-height:40px;overflow-wrap:anywhere}.value{white-space:pre-wrap}
+.summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.summary .cell{min-width:0;padding:10px 0}.summary strong{display:block;font-size:18px;overflow-wrap:anywhere}
+.material{border-top:1px solid var(--line);padding-top:16px;margin-top:16px}.material:first-of-type{border-top:0}.material-name{font-weight:650;overflow-wrap:anywhere;margin-bottom:10px}
+.checks{display:flex;flex-wrap:wrap;gap:10px}.checks label{font-weight:400;display:flex;align-items:center;gap:6px}.checks input{width:16px;min-height:16px;margin:0}
+.footer{position:fixed;bottom:0;left:0;right:0;background:#fffffff2;border-top:1px solid var(--line);padding:14px 24px;backdrop-filter:blur(8px)}
+.footer>div{max-width:1072px;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:12px}.footer p{margin:0;font-size:13px}
+.empty{padding:16px;text-align:center;color:var(--muted)}[hidden]{display:none!important}
+@media(max-width:760px){main{padding:20px 16px 150px}.grid,.summary{grid-template-columns:repeat(2,minmax(0,1fr))}.card{padding:16px}h1{font-size:24px}.footer>div{align-items:stretch;flex-direction:column}.footer{padding:12px 16px}}
+@media(max-width:420px){.grid,.summary{grid-template-columns:minmax(0,1fr)}.actions button{padding:5px 9px}.head{align-items:flex-start}}
+</style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">FARGOWORK / 申请明细</div>
+  <h1 id="title">申请明细</h1>
+  <p class="muted">可以直接修改下方内容，也可以回到对话告诉 Agent 要改什么。两种方式更新同一份申请。</p>
+  <div class="notice">这是本地编辑页面。修改后请<strong>导出修改文件并交回 Agent</strong>，由原流程校验、重算并更新草稿。此页面不会保存到宜搭，也不会提交申请。</div>
+  <section id="needs" class="notice" hidden></section>
+  <section class="card"><div class="head"><h2 id="main-heading">公司、币种与项目</h2></div><div id="main-fields" class="grid"></div></section>
+  <section id="summary-section" class="card"><div class="head"><h2>当前核算结果</h2><span class="hint">修改后的金额由 Agent 重算</span></div><div id="summary" class="summary"></div></section>
+  <section id="notes" class="notice" hidden></section>
+  <section id="rows-section"><div class="head"><h2>申请明细</h2><button id="add-row" type="button">＋ 添加明细</button></div><div id="rows"></div></section>
+  <section id="materials-section" class="card"><div class="head"><h2>材料与对应明细</h2><span class="hint">补充新材料请交给 Agent</span></div><div id="materials"></div></section>
+  <p class="hint">汇率、固定科目及计算结果由公司数据和原流程规则确定。若候选不完整，请告诉 Agent 刷新；不要自行填写目录项。此文件包含本次申请信息，请妥善保存。</p>
+</main>
+<div class="footer"><div><p id="status" role="status" aria-live="polite">当前为草稿预览；尚未应用修改。</p><button class="primary" id="export" type="button">导出修改文件</button></div></div>
+<!--FARGOWORK_EDITOR_DATA-->
+<script>
+'use strict';
+const documentData=JSON.parse(document.getElementById('editor-data').textContent);
+const clone=value=>JSON.parse(JSON.stringify(value));
+const state={main:clone(documentData.mainValues),rows:clone(documentData.rows),materials:clone(documentData.materials)};
+const $=id=>document.getElementById(id);
+function el(tag,text,className){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;}
+function pretty(value){return value===null||value===undefined||value===''?'未填写':typeof value==='object'?JSON.stringify(value,null,2):String(value);}
+function dirty(){ $('status').textContent='有待应用的修改。导出并交回 Agent 后，才能更新草稿与计算结果。'; }
+function rowId(){return 'row-'+(globalThis.crypto?.randomUUID?crypto.randomUUID():Array.from({length:32},()=>Math.floor(Math.random()*16).toString(16)).join(''));}
+function projectVisibility(){document.querySelectorAll('[data-project]').forEach(node=>{node.hidden=state.main.is_project!==true;});}
+function control(field,values,options){
+  const wrapper=el('div',undefined,'field'+(field.type==='textarea'?' wide':''));
+  if(field.project)wrapper.dataset.project='true';
+  const id='field-'+rowId();const label=el('label',field.label);label.htmlFor=id;wrapper.append(label);
+  const hasValue=Object.prototype.hasOwnProperty.call(values,field.key);
+  const current=hasValue?values[field.key]:field.value;
+  let input;
+  if(field.type==='select'||field.type==='boolean'){
+    input=el('select');const empty=el('option',field.type==='boolean'?'请选择':'请选择或保留当前值');empty.value='';
+    if(field.type==='boolean')empty.disabled=true;input.append(empty);
+    const choices=field.type==='boolean'?[{value:true,label:'是'},{value:false,label:'否'}]:field.choices||[];
+    choices.forEach((option,index)=>{const node=el('option',option.label);node.value=String(index);input.append(node);
+      if(option.value===current)node.selected=true;});
+    input.addEventListener('change',()=>{
+      if(input.value===''){if(field.type==='boolean'){delete values[field.key];}else values[field.key]='';}
+      else values[field.key]=choices[Number(input.value)].value;
+      dirty();projectVisibility();
+      if(field.key==='is_project')$('status').textContent='项目归属已修改。请导出交回 Agent，重新核对项目、部门及科目；费用金额保留。';
+    });
+    if(field.choicesMissing&&field.type==='select')wrapper.append(el('span','更多候选请让 Agent 刷新。','hint'));
+    if(!hasValue&&field.display!==undefined)wrapper.append(el('span','当前值：'+pretty(field.display),'hint'));
+  }else{
+    input=el(field.type==='textarea'?'textarea':'input');
+    if(field.type!=='textarea')input.type=field.type==='number'?'number':field.type==='date'?'date':field.type==='datetime-local'?'datetime-local':'text';
+    if(field.type==='number'){input.step='any';input.inputMode='decimal';}
+    if(field.type==='datetime-local')input.step='60';
+    input.value=current===undefined||current===null?'':String(current);
+    input.addEventListener('input',()=>{values[field.key]=input.value;dirty();});
+  }
+  input.id=id;input.autocomplete='off';wrapper.append(input);return wrapper;
+}
+function renderMain(){
+  $('main-fields').replaceChildren(...documentData.mainFields.map(field=>control(field,state.main)));
+  if(documentData.workflow==='default_bank_change')$('main-heading').textContent='新收款资料';
+  else if(documentData.workflow==='medical_checkup_reimbursement')$('main-heading').textContent='体检报销';
+  else if(documentData.stage==='application')$('main-heading').textContent='申请信息';
+}
+function button(text,fn,className){const node=el('button',text,className);node.type='button';node.addEventListener('click',fn);return node;}
+function materialRowsChanged(){
+  const ids=new Set(state.rows.map(row=>row.id));
+  for(const material of state.materials){material.rowIds=material.rowIds.filter(id=>ids.has(id));
+    if(material.status==='included'&&!material.rowIds.length)material.status='unresolved';}
+  renderMaterials();dirty();
+}
+function addRow(source){
+  if(state.rows.length>=documentData.maxRows)return;
+  const fields=source?clone(source.fields):documentData.rowFields.map(field=>({...field,value:null,present:false,
+    choices:clone(documentData.choices['items[*].'+field.key]||[]),choicesMissing:!(documentData.choices['items[*].'+field.key]||[]).length}));
+  const row={id:rowId(),values:source?clone(source.values):{},fields,readonly:[]};
+  const index=source?state.rows.indexOf(source)+1:state.rows.length;
+  state.rows.splice(index,0,row);renderRows();materialRowsChanged();
+}
+function renderRows(){
+  $('rows-section').hidden=!documentData.hasRows;
+  $('rows').replaceChildren();$('add-row').disabled=state.rows.length>=documentData.maxRows;
+  state.rows.forEach((row,index)=>{
+    const card=el('article',undefined,'card'),head=el('div',undefined,'head'),actions=el('div',undefined,'actions');
+    head.append(el('h3','第 '+(index+1)+' 条'));
+    const up=button('上移',()=>{[state.rows[index-1],state.rows[index]]=[state.rows[index],state.rows[index-1]];renderRows();materialRowsChanged();});
+    const down=button('下移',()=>{[state.rows[index+1],state.rows[index]]=[state.rows[index],state.rows[index+1]];renderRows();materialRowsChanged();});
+    up.disabled=index===0;down.disabled=index===state.rows.length-1;
+    const duplicate=button('复制为新行',()=>addRow(row));duplicate.title='复制后请调整金额、日期及材料归属，避免重复报销';
+    duplicate.disabled=state.rows.length>=documentData.maxRows;
+    actions.append(up,down,duplicate,button('删除',()=>{state.rows.splice(index,1);renderRows();materialRowsChanged();},'danger'));
+    head.append(actions);card.append(head);
+    const grid=el('div',undefined,'grid');row.fields.forEach(field=>grid.append(control(field,row.values)));card.append(grid);
+    if(row.readonly.length){const derived=el('div',undefined,'readonly grid');
+      for(const field of row.readonly){const block=el('div',undefined,'field');block.append(el('label',field.label),el('div',pretty(field.value),'value'));derived.append(block);}
+      card.append(derived);}
+    $('rows').append(card);
+  });
+  if(!state.rows.length)$('rows').append(el('p','尚无明细，可以添加一条。','empty'));
+  projectVisibility();
+}
+function renderMaterials(){
+  $('materials-section').hidden=!state.materials.length;$('materials').replaceChildren();
+  for(const material of state.materials){
+    const block=el('div',undefined,'material');block.append(el('div',material.name,'material-name'));
+    const grid=el('div',undefined,'grid');
+    grid.append(control({key:'status',label:'是否纳入',type:'select',choices:[{value:'included',label:'纳入本次申请'},
+      {value:'excluded',label:'不纳入'},{value:'unresolved',label:'待确认'}]},material));
+    if(documentData.materialRoles.length)grid.append(control({key:'role',label:'附件用途',type:'select',
+      choices:documentData.materialRoles.map(role=>({value:role.role,label:role.label}))},material));
+    grid.append(control({key:'note',label:'说明（不纳入时必填）',type:'text'},material));block.append(grid);
+    if(documentData.hasRows){const checks=el('div',undefined,'checks');checks.append(el('span','对应明细：','hint'));
+      state.rows.forEach((row,index)=>{const label=el('label'),input=el('input');input.type='checkbox';input.checked=material.rowIds.includes(row.id);
+        input.addEventListener('change',()=>{material.rowIds=input.checked?[...material.rowIds,row.id]:material.rowIds.filter(id=>id!==row.id);dirty();});
+        label.append(input,document.createTextNode('第 '+(index+1)+' 条'));checks.append(label);});block.append(checks);}
+    $('materials').append(block);
+  }
+}
+function exportEdit(){
+  const invalid=state.materials.find(material=>material.status==='excluded'&&(!material.note.trim()||material.rowIds.length)
+    ||material.status==='included'&&documentData.hasRows&&!material.rowIds.length);
+  if(invalid){$('status').textContent='请核对“'+invalid.name+'”的对应明细；不纳入时取消行归属并填写原因。';return;}
+  const payload={schemaVersion:1,workflow:documentData.workflow,draftId:documentData.draftId,baseRevision:documentData.baseRevision,
+    main:state.main,rows:state.rows.map(row=>({id:row.id,values:row.values})),
+    materials:state.materials.map(({id,status,rowIds,note,role})=>({id,status,rowIds,note,...(role!==undefined?{role}:{})}))};
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'});
+  const link=el('a');const url=URL.createObjectURL(blob);link.href=url;link.download='FargoWork-'+documentData.workflow+'-修改.json';
+  document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
+  $('status').textContent='修改文件已导出，请交回 Agent。草稿尚未更新，也未确认或提交申请。';
+}
+$('title').textContent=documentData.title;if(documentData.demo)$('title').append(el('span','仅供测试','badge'));
+if(documentData.needsInput.length){$('needs').hidden=false;$('needs').append(el('strong','待补充'));
+  documentData.needsInput.forEach(message=>$('needs').append(el('p',message)));}
+$('summary-section').hidden=!documentData.summary.length;
+for(const item of documentData.summary){const cell=el('div',undefined,'cell');cell.append(el('span',item.label,'hint'),el('strong',pretty(item.value)));$('summary').append(cell);}
+if(documentData.notes.length){$('notes').hidden=false;for(const item of documentData.notes)$('notes').append(el('p',item.label+'：'+item.text));}
+$('add-row').addEventListener('click',()=>addRow());$('export').addEventListener('click',exportEdit);
+renderMain();renderRows();renderMaterials();projectVisibility();
+</script>
+</body>
+</html>

@@ -45,11 +45,11 @@ async function structure(ctx, prefix, id) {
   return {values:selected,optionalEmptyFields:targetFields.filter((field,i)=>!selected[i]&&!requiredFields[i])};
 }
 
-async function project(ctx,input,needs) {
+async function project(ctx,input,needs,editorChoices={}) {
   const [,nameField,codeField,statusField]=TABLES.projects;
-  let catalog=await rows(ctx,'projects',{[statusField]:'生效',...(input.project_name?{[nameField]:input.project_name}:{})});
+  let catalog=await rows(ctx,'projects',{[statusField]:'生效'});
   catalog=catalog.filter(r=>text(r[statusField])==='生效');
-  if(!catalog.length&&input.project_name)catalog=(await rows(ctx,'projects',{[statusField]:'生效'})).filter(r=>text(r[statusField])==='生效');
+  editorChoices.project_name=[...new Set(catalog.map(r=>required(r[nameField],'FW-PAY-PROJECT')))];
   const name=choose(needs,'project_name',input.project_name,catalog.map(r=>required(r[nameField],'FW-PAY-PROJECT')));
   if(!name)return null;
   const record=unique(catalog,r=>text(r[nameField])===name,'FW-PAY-PROJECT-AMBIGUOUS');
@@ -61,9 +61,11 @@ async function project(ctx,input,needs) {
     const actualCode=text(r[pc]);if(code&&actualCode&&code!==actualCode)fail('FW-PAY-PROJECT-CODE-MISMATCH');
     return {id,name:required(r[pname]??r[native],'FW-PAY-PROJECT-DEPARTMENT-NAME'),category:required(r[category],'FW-PAY-PROJECT-CATEGORY')};
   });
+  editorChoices.project_department_id=[...new Map(entries.map(row=>[row.id,{value:row.id,label:row.name}])).values()];
   const id=choose(needs,'project_department_id',input.project_department_id,entries.map(r=>r.id));
   if(!id){const item=needs.at(-1);item.choices=item.choices.map(c=>({...c,label:entries.find(e=>e.id===c.value).name}));return null;}
   const selected=entries.filter(r=>r.id===id);
+  editorChoices.project_expense_category=[...new Set(selected.map(row=>row.category))];
   const expense=choose(needs,'project_expense_category',input.project_expense_category,selected.map(r=>r.category));
   if(!expense)return null;
   const manager=await department(ctx,id,F.projectManager);
@@ -82,7 +84,7 @@ async function contacts(ctx,company) {
   return result;
 }
 
-async function relations(ctx,input,needs) {
+async function relations(ctx,input,needs,editorChoices={}) {
   const formData={},preview={};
   for(const [key,config] of Object.entries(RELATIONS)){
     const selected=input[key+'_instance_id'],include=input['include_'+key];
@@ -91,6 +93,7 @@ async function relations(ctx,input,needs) {
     if(typeof ctx.related!=='function')fail('FW-PAY-RELATION-UNAVAILABLE','当前环境暂不能核验本人关联流程，请取消本次关联或联系维护人员。');
     const candidates=validateCandidates(await ctx.related(key),{appType:APP,formUuid:config.form,actorId:ctx.actor.userid,
       shapeCode:'FW-PAY-RELATION-SHAPE',boundaryCode:'FW-PAY-RELATION-BOUNDARY'});
+    editorChoices[key+'_instance_id']=candidates.map(c=>({value:c.instance_id,label:c.title||c.sub_title||'关联审批'}));
     const found=candidates.find(c=>c.instance_id===selected);
     if(!found){needs.push({field:key+'_instance_id',message:candidates.length?'请选择本人可用的关联流程，或取消关联。':'本人当前没有可用的关联流程，请取消本次关联。',choices:candidates.map(c=>({value:c.instance_id,label:c.title||c.sub_title||'关联审批',subtitle:c.sub_title,status:c.instance_status}))});continue;}
     formData[config.field]=[processReference(found)];

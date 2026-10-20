@@ -10,10 +10,11 @@ function check(condition,code,message) {
   if(!condition) throw Object.assign(new Error(message||code),{code});
 }
 
-// Existing PAYMENT codes remain stable for callers and support routing.
+// An empty visible result does not prove the company has not maintained data.
 function choice(needs,field,label,value,choices,required=true) {
   if(!choices.length) {
-    check(!required,'PAYMENT_SOURCE_MISSING','办理所需的财务资料缺失，请联系 Finance。');
+    check(!required,field==='payment_company'?'PAYMENT_COMPANY_NOT_FOUND':'PAYMENT_SOURCE_MISSING',
+      '当前账号暂时未能核对所需的财务资料，请维护者检查读取权限和匹配条件。');
     check(absent(value),'PAYMENT_SOURCE_MISSING');return '';
   }
   if(value===undefined&&choices.length===1) return choices[0];
@@ -88,11 +89,13 @@ function accountSelections(input,pairs,needs,projectCategory,recommendationConte
 
 // A selected parent scopes the next level; unresolved parents stop only this
 // chain. Each caller controls whether its actual form field is required.
-async function businessLines({ctx,source,input,departmentId,steps,needs,prefix=''}) {
+async function businessLines({ctx,source,input,departmentId,steps,needs,prefix='',editorChoices}) {
   const filters={[source.departmentField]:departmentId},result={};
   for(const {inputKey,field,sourceField,label,required} of steps) {
     const rows=await matchingRows(ctx,source.formUuid,filters,[sourceField]),before=needs.length;
-    const value=choice(needs,prefix+inputKey,label,input[inputKey],distinctValues(rows,sourceField),required);
+    const choices=distinctValues(rows,sourceField);
+    if(editorChoices)editorChoices[prefix+inputKey]=choices;
+    const value=choice(needs,prefix+inputKey,label,input[inputKey],choices,required);
     result[field]=value;filters[sourceField]=value;
     if(needs.length>before) return result;
   }

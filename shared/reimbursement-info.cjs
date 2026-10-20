@@ -34,6 +34,33 @@ async function paymentCompanyChoices(ctx, source) {
   return distinctValues(rows.filter(row => texts(row[source.employeeIdField]).includes(actor.userid)), source.companyField);
 }
 
+// Resolve the payment context before classifying or calculating any details.
+// Explicit selections always remain bounded by this employee's maintained data.
+async function resolveReimbursementContext({input,ctx,companySource,currencySource,needs=[]}) {
+  check(object(input)&&Array.isArray(needs),'REIMBURSEMENT_INPUT_INVALID');
+  check(object(currencySource)&&typeof currencySource.formUuid==='string'
+    &&safeKey(currencySource.companyField)&&safeKey(currencySource.currencyField),'REIMBURSEMENT_SOURCE_INVALID');
+  const companyChoices=await paymentCompanyChoices(ctx,companySource);
+  if(!companyChoices.length)throw Object.assign(new Error(
+    '暂时未能核对报销人的支付公司，请财务核查维护记录、查看权限及匹配条件。'),{code:'PAYMENT_COMPANY_NOT_FOUND'});
+  const normalize=value=>String(value).normalize('NFKC').trim().toLocaleLowerCase('en-US');
+  function select(field,label,value,choices) {
+    check(value===undefined||typeof value==='string','REIMBURSEMENT_INPUT_INVALID');
+    if(value===undefined&&choices.length===1)return choices[0];
+    const found=absent(value)?undefined:choices.find(candidate=>normalize(candidate)===normalize(value));
+    if(found)return found;
+    needs.push({field,message:`请选择本次${label}。`,choices});return null;
+  }
+  const company=select('payment_company','支付公司',input.payment_company,companyChoices);
+  if(!company)return {company:null,currency:null,companyChoices,currencyChoices:[],needsInput:needs};
+  const currencyChoices=distinctValues(await matchingRows(ctx,currencySource.formUuid,
+    {[currencySource.companyField]:company},[currencySource.currencyField]),currencySource.currencyField);
+  if(!currencyChoices.length)throw Object.assign(new Error(
+    '暂时未能核对支付公司的收款币种，请财务核查维护记录、查看权限及匹配条件。'),{code:'REIMBURSEMENT_CURRENCY_MISSING'});
+  const currency=select('reimbursement_currency','收款币种',input.reimbursement_currency,currencyChoices);
+  return {company,currency,companyChoices,currencyChoices,needsInput:needs};
+}
+
 function personalPaymentDefaults({actor, input, roster, previous, fields, stringFields = []}) {
   currentActor(actor);
   check(object(input) && object(fields) && Object.keys(fields).length > 0
@@ -66,4 +93,4 @@ function personalPaymentDefaults({actor, input, roster, previous, fields, string
   return {values, state: defaults.snapshot()};
 }
 
-module.exports = {paymentCompanyChoices, personalPaymentDefaults};
+module.exports = {paymentCompanyChoices, resolveReimbursementContext, personalPaymentDefaults};

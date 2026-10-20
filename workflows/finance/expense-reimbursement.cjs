@@ -9,13 +9,13 @@ const Finance=require('../../shared/finance-catalog.cjs');
 const {prepareFinanceDetails}=require('../../shared/finance-details.cjs');
 const {createRateResolver,convertAmount,sumAmounts}=require('../../shared/exchange-rates.cjs');
 const {buildRecommendationContext}=require('../../shared/account-recommendation.cjs');
-const {paymentCompanyChoices,personalPaymentDefaults}=require('../../shared/reimbursement-info.cjs');
+const {resolveReimbursementContext,personalPaymentDefaults}=require('../../shared/reimbursement-info.cjs');
 const {matchingRows,distinctValues}=require('../../shared/scoped-catalog.cjs');
 const {key,title,target,fields:F,roster:R,policy,rules}=config;
 const bankFields={bank_account:'bankAccount',bank_name:'bankName',bank_city:'bankCity',bank_branch:'bankBranch',account_name:'accountName'};
 const bankLabels={bank_account:'收款账号',bank_name:'开户银行',bank_city:'开户城市',bank_branch:'开户支行',account_name:'账户名称'};
 const requirements={required:['items'],
-  optional:['department_id','department_name','payment_company','same_bearing_company','bearing_company',
+  optional:['department_id','department_name','payment_company','reimbursement_currency','same_bearing_company','bearing_company',
     'business_structure','business_line','business_subline',...Object.keys(bankFields),'description','is_project','project_name','project_expense_category',...PaymentHistory.INPUT_FIELDS],
   items:{required:['description','amount','original_currency'],optional:['expense_category','account','classification_reason','remarks',
     'project_department_name','business_structure','business_line','business_subline'],minimumRows:1,maximumRows:50},
@@ -58,18 +58,22 @@ function optionalRoster(map,field,prefer='value') {
   const rows=map.get(field);
   return !rows?.length||rows.every(row=>C.absent(row.value)&&C.absent(row.label))?'':C.rosterValue(map,field,prefer);
 }
-async function businessLines(ctx,fields,needs,input,departmentId,keys,prefix='') {
+async function businessLines(ctx,fields,needs,input,departmentId,keys,prefix='',editorChoices) {
   const s=source('businessLines');
-  return Finance.businessLines({ctx,source:s,input,departmentId,needs,prefix,steps:[
+  return Finance.businessLines({ctx,source:s,input,departmentId,needs,prefix,editorChoices,steps:[
     {inputKey:'business_structure',field:F[keys[0]],sourceField:s.structureField,label:'业务总架构',required:C.required(fields,F[keys[0]])},
     {inputKey:'business_line',field:F[keys[1]],sourceField:s.lineField,label:'业务线',required:C.required(fields,F[keys[1]])},
     {inputKey:'business_subline',field:F[keys[2]],sourceField:s.sublineField,label:'子业务线',required:C.required(fields,F[keys[2]])}]});
 }
-function selectDepartment(input,roster,needs) {
+function selectDepartment(input,roster,needs,editorChoices) {
   const ids=C.rosterDepartmentIds(roster);
   const names=(roster.get(R.departmentNames)||[]).flatMap(row=>C.values(row.label??row.value))
     .flatMap(value=>value.split(/[,，|]/)).map(value=>value.trim());
   let selected=input.department_id;
+  if(editorChoices&&names.length===ids.length&&names.every(Boolean)) {
+    editorChoices.department_name=names;
+    editorChoices.department_id=ids.map((value,index)=>({value,label:names[index]}));
+  }
   if(input.department_name!==undefined||!selected&&ids.length>1) {
     C.check(names.length===ids.length&&names.every(Boolean),'ROSTER_FIELD_MISSING');
     const choices=ids.map((value,index)=>({value,label:names[index]}));
@@ -82,15 +86,18 @@ function selectDepartment(input,roster,needs) {
   return {id:dept.id,name:ids.length===names.length?names[ids.indexOf(dept.id)]:''};
 }
 
-async function classificationScope(input,ctx,needs) {
+async function classificationScope(input,ctx,needs,editorChoices={}) {
   const pairs=await Finance.accountPairs(ctx,source('accounts'));
-  if(!(input.is_project??rules.defaultIsProject)) return {pairs,projectRows:[],ready:true};
+  if(!input.is_project) return {pairs,projectRows:[],ready:true};
   const ps=source('projects'),pd=source('projectDepartments');
-  const projectName=Finance.choice(needs,'project_name','项目',input.project_name,distinctValues(
-    await query(ctx,'projects',{[ps.statusField]:rules.defaults[F.projectActive]},[ps.nameField]),ps.nameField));
+  editorChoices.project_name=distinctValues(
+    await query(ctx,'projects',{[ps.statusField]:rules.defaults[F.projectActive]},[ps.nameField]),ps.nameField);
+  const projectName=Finance.choice(needs,'project_name','项目',input.project_name,editorChoices.project_name);
   if(!projectName) return {pairs:[],projectRows:[],ready:false};
   const projectRows=await query(ctx,'projectDepartments',{[pd.projectField]:projectName},[pd.nameField,pd.departmentIdField,pd.categoryField]);
   const categories=distinctValues(projectRows,pd.categoryField);
+  editorChoices.project_expense_category=categories;
+  editorChoices['items[*].project_department_name']=distinctValues(projectRows,pd.nameField);
   const projectCategory=Finance.choice(needs,'project_expense_category','项目费用类别',input.project_expense_category,categories);
   if(!projectCategory) {
     const allowedPairs=pairs.filter(pair=>categories.some(c=>C.normalized(c)===C.normalized(pair.category)));
@@ -115,27 +122,43 @@ function detailPreview(rows) {
     原币金额:row.amount,原币种:row.originalCurrency,汇率:row.rate,报销金额:row.reimbursedAmount,备注:row.remarks,
     ...(row.classificationReason?{分类建议依据:row.classificationReason}:{})}));
 }
+const paymentContext=(input,ctx,needs)=>resolveReimbursementContext({input,ctx,needs,
+  companySource:source('employeePaymentCompanies'),currencySource:source('currencies')});
+function reviewContract(input,company,scope={}) {
+  return {columns:[['category','费用类别',true],['account','会计科目',true],['description','内容详情',true],
+    ['amount','原币金额',true],['originalCurrency','原币种',true],['rate','汇率',true],
+    ['reimbursedAmount','报销金额',true],['remarks','备注',false]],
+    currencyPreviewKey:'报销币种',rowsPreviewKey:'报销明细',context:{paymentCompany:company||null,project:input.is_project??null,
+    projectName:scope.projectName||null,projectCategory:scope.projectCategory||null}};
+}
 // First detail review needs neither bank/department data nor a submission draft.
 async function details(input,ctx) {
   validateInput(input);
   C.check(typeof ctx.actor?.userid==='string'&&ctx.actor.userid.trim()
     &&typeof ctx.actor?.corp_id==='string'&&ctx.actor.corp_id.trim(),'CURRENT_IDENTITY_MISSING');
-  const needs=[],project=input.is_project??rules.defaultIsProject;
-  C.check(project||['project_name','project_expense_category'].every(k=>C.absent(input[k])),'REIMBURSEMENT_INPUT_CONFLICT');
-  if(!input.items?.length) return {rows:[],preview:{报销明细:[]},needsInput:[{field:'items',message:'请提供费用内容、原币金额和原币种。'}]};
+  const needs=[],project=input.is_project;
+  const payment=await paymentContext(input,ctx,needs),{company,currency}=payment;
+  if(project===undefined)needs.push({field:'is_project',message:'这笔报销是否属于项目？如是，请说明项目名称。',choices:[{value:false,label:'非项目'},{value:true,label:'项目'}]});
+  C.check(project!==false||['project_name','project_expense_category'].every(k=>C.absent(input[k])),'REIMBURSEMENT_INPUT_CONFLICT');
+  if(!input.items?.length)needs.push({field:'items',message:'请提供费用内容、原币金额和原币种。'});
+  const editorChoices={payment_company:payment.companyChoices,reimbursement_currency:payment.currencyChoices};
+  if(!input.items?.length||project===undefined||!currency) {
+    const rows=(input.items||[]).map(item=>({category:item.expense_category||'',account:item.account||'',
+      description:item.description||'',amount:C.absent(item.amount)?null:converted(item.amount,1),
+      originalCurrency:item.original_currency||'',rate:null,reimbursedAmount:null,remarks:item.remarks||''}));
+    return {rows,needsInput:needs,editorChoices,detailReviewContract:reviewContract(input,company),
+      preview:{支付公司:company||'',报销币种:currency,是否项目:project===undefined?'待确认':project?'是':'否',
+        报销明细:detailPreview(rows),报销总额:null}};
+  }
   for(const item of input.items) C.check(project?C.absent(item.expense_category):
     ['project_department_name','business_structure','business_line','business_subline'].every(k=>C.absent(item[k])),'REIMBURSEMENT_INPUT_CONFLICT');
-  const scope=await classificationScope(input,ctx,needs);
-  const company=Finance.choice(needs,'payment_company','支付公司',input.payment_company,
-    await paymentCompanyChoices(ctx,source('employeePaymentCompanies')));
-  let currency=null;
-  if(company) {
-    const cs=source('currencies'),choices=distinctValues(await query(ctx,'currencies',{[cs.companyField]:company},[cs.currencyField]),cs.currencyField);
-    C.check(choices.length===1,'REIMBURSEMENT_CURRENCY_AMBIGUOUS','支付公司的报销币种未唯一配置，请联系 Finance。');currency=choices[0];
-  }
+  const scope=await classificationScope(input,ctx,needs,editorChoices);
   const result=await financeDetails(input,ctx,scope,currency);
+  Object.assign(editorChoices,result.editorChoices);
   return {rows:result.rows,needsInput:[...needs,...result.needsInput],recommendationContexts:result.recommendationContexts,
-    preview:{支付公司:company||'',报销币种:currency,报销明细:detailPreview(result.rows),
+    editorChoices,detailReviewContract:reviewContract(input,company,scope),
+    preview:{支付公司:company||'',报销币种:currency,是否项目:project?'是':'否',
+      ...(project?{项目:scope.projectName||'',项目费用类别:scope.projectCategory||''}:{}),报销明细:detailPreview(result.rows),
       报销总额:result.rows.every(row=>row.reimbursedAmount!==null)?sum(result.rows.map(row=>row.reimbursedAmount)):null}};
 }
 
@@ -148,7 +171,11 @@ async function prepare(input,ctx) {
     C.check((typeof raw==='object'?raw?.zh_CN:raw)===value,'WORKFLOW_SCHEMA_CHANGED');
   }
   C.check(fields.get(F.applicant).props.variable?.type==='user'&&fields.get(F.applicationDate).props.variable?.type==='today','WORKFLOW_SCHEMA_CHANGED');
-  const project=input.is_project??rules.defaultIsProject,same=input.same_bearing_company??rules.defaultSameBearingCompany;
+  const paymentSource=await paymentContext(input,ctx,needs),{company,currency}=paymentSource;
+  const editorChoices={payment_company:paymentSource.companyChoices,reimbursement_currency:paymentSource.currencyChoices};
+  const project=input.is_project,same=input.same_bearing_company??rules.defaultSameBearingCompany;
+  if(project===undefined)needs.push({field:'is_project',message:'这笔报销是否属于项目？如是，请说明项目名称。',choices:[{value:false,label:'非项目'},{value:true,label:'项目'}]});
+  if(needs.length)return {needsInput:needs,editorChoices,preview:{支付公司:company||'',报销币种:currency,是否项目:project===undefined?'待确认':project?'是':'否'}};
   C.option(fields,F.isProject,project?'NORMAL':'HIDDEN',['HIDDEN','NORMAL']);
   C.option(fields,F.sameBearing,same?'HIDDEN':'NORMAL',['HIDDEN','NORMAL']);
   C.check(project||['project_name','project_expense_category'].every(k=>C.absent(input[k])),'REIMBURSEMENT_INPUT_CONFLICT');
@@ -175,13 +202,13 @@ async function prepare(input,ctx) {
   const historyState=reference.state===null&&!ctx.workflowState?.paymentHistory?{}:{paymentHistory:reference.state};
   const payment=personalPaymentDefaults({actor,input,roster:rosterResponse,previous:ctx.workflowState?.bankDefaults,
     fields:Object.fromEntries(Object.entries(bankFields).map(([inputKey,fieldKey])=>[inputKey,R[fieldKey]])),stringFields:['bank_account']});
-  const workflowState={bankDefaults:payment.state,...historyState},pause=()=>({needsInput:needs,workflowState});
+  const workflowState={bankDefaults:payment.state,...historyState},pause=()=>({needsInput:needs,workflowState,editorChoices});
   const formData={};
   for(const [inputKey,fieldKey] of Object.entries(bankFields)) {
     const value=textValue(payment.values[inputKey],F[fieldKey],fields);formData[F[fieldKey]]=value;
     if(!value&&C.required(fields,F[fieldKey])) needs.push({field:inputKey,message:`请补充${bankLabels[inputKey]}。`});
   }
-  const dept=selectDepartment(input,roster,needs);
+  const dept=selectDepartment(input,roster,needs,editorChoices);
   if(!dept) return pause();
   const cache=new Map();
   async function department(id) {
@@ -202,11 +229,10 @@ async function prepare(input,ctx) {
     [F.projectActive]:rules.defaults[F.projectActive],[F.sameBearing]:same?'HIDDEN':'NORMAL',[F.isProject]:project?'NORMAL':'HIDDEN'});
 
   // Stage 2: reimbursement company/currency, then their dependent choices.
-  const company=Finance.choice(needs,'payment_company','支付公司',input.payment_company,await paymentCompanyChoices(ctx,source('employeePaymentCompanies')));
-  if(!company) return pause();
   formData[F.paymentCompany]=company;formData[F.paymentCompanyMirror]=company;
   const companies=source('companies');
   const companyRows=await query(ctx,'companies',same?{[companies.companyField]:company}:{},[companies.companyField]);
+  editorChoices.bearing_company=distinctValues(companyRows,companies.companyField);
   if(same) {
     C.check(input.bearing_company===undefined||C.normalized(input.bearing_company)===C.normalized(company),'REIMBURSEMENT_INPUT_CONFLICT');
     const options=distinctValues(companyRows,companies.companyField);
@@ -214,18 +240,17 @@ async function prepare(input,ctx) {
     formData[F.bearingCompany]=options.length?C.single(options):'';
   } else formData[F.bearingCompany]=Finance.choice(needs,'bearing_company','承担公司',input.bearing_company,
     distinctValues(companyRows,companies.companyField),C.required(fields,F.bearingCompany));
-  const cs=source('currencies'),currencies=distinctValues(await query(ctx,'currencies',{[cs.companyField]:company},[cs.currencyField]),cs.currencyField);
-  C.check(currencies.length===1,'REIMBURSEMENT_CURRENCY_AMBIGUOUS','支付公司的报销币种未唯一配置，请联系 Finance。');
-  const currency=currencies[0];formData[F.currency]=currency;
-  Object.assign(formData,await businessLines(ctx,fields,needs,input,dept.id,['structure','line','subline']));
+  formData[F.currency]=currency;
+  Object.assign(formData,await businessLines(ctx,fields,needs,input,dept.id,['structure','line','subline'],'',editorChoices));
   if(needs.length) return pause();
 
   // Stage 3: project-bounded classification, gathered for all expense lines.
-  const pd=source('projectDepartments'),scope=await classificationScope(input,ctx,needs),{projectRows}=scope;
+  const pd=source('projectDepartments'),scope=await classificationScope(input,ctx,needs,editorChoices),{projectRows}=scope;
   if(!scope.ready) return pause();
   if(project) {formData[F.project]=scope.projectName;formData[F.projectCategory]=scope.projectCategory;}
   const exchangeRate=createRateResolver({ctx,source:source('rates'),...rateOptions});
   const detailRows=await financeDetails(input,ctx,scope,currency,exchangeRate);
+  Object.assign(editorChoices,detailRows.editorChoices);
   needs.push(...detailRows.needsInput);
   if(needs.length) return pause();
 
@@ -241,7 +266,7 @@ async function prepare(input,ctx) {
       const id=ids[0],d=await department(id);projectIds.push(id);
       if(d.manager&&!projectManagers.includes(d.manager)) projectManagers.push(d.manager);
       row[F.projectDepartmentName]=name;row[F.projectDepartmentId]=id;
-      Object.assign(row,await businessLines(ctx,fields,needs,item,id,['projectStructure','projectLine','projectSubline'],prefix));
+      Object.assign(row,await businessLines(ctx,fields,needs,item,id,['projectStructure','projectLine','projectSubline'],prefix,editorChoices));
       if(needs.length>before) continue;
       row[F.projectAccount]=detailRows.rows[index].account;
       Object.assign(visible,{项目部门:name,业务总架构:row[F.projectStructure],业务线:row[F.projectLine],子业务线:row[F.projectSubline],会计科目:row[F.projectAccount]});
@@ -272,6 +297,8 @@ async function prepare(input,ctx) {
   }
   // Native attachments, draft revisions, preview and submit belong to runner.
   return {formData,departmentId:dept.id,attachmentField:F.attachment,attachmentPreviewField:config.attachments.previewField,workflowState,
+    detailReviewContract:reviewContract(input,company,scope),detailReviewRows:detailRows.rows,
+    editorChoices,
     recommendationContexts:detailRows.recommendationContexts,
     verification:{optionalEmptyFields:Object.entries(formData).filter(([field,value])=>!C.required(fields,field)&&(value===''||Array.isArray(value)&&value.length===0)).map(([field])=>field),
       enumLabels:{[F.isProject]:{HIDDEN:'否',NORMAL:'是'},[F.sameBearing]:{HIDDEN:'是',NORMAL:'否'}}},

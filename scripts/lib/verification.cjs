@@ -150,8 +150,31 @@ function tableEqual(actual, expected) {
           : attachmentsEqual(actualValue,expectedValue);
       }
       if (/^multiSelectField_/.test(field)) return multiSelectEqual(actualValue,expectedValue);
+      if (/^cascadeDateField_/.test(field)) return dateRangeEqual(actualValue,expectedValue);
+      if (/^associationFormField_/.test(field)) {
+        const sources=[field,field+'_id'].filter(key=>Object.hasOwn(actual[index],key));
+        // Never prefer one representation over a conflicting native identifier.
+        return sources.length>0&&sources.every(key=>
+          associationsEqual(associationArray(actual[index][key]),expectedValue));
+      }
       return scalarFieldEqual(field,actualValue,expectedValue);
     })));
+}
+
+function dateRangeEqual(actual,expected) {
+  actual=unpack(actual,'array');
+  return Array.isArray(expected)&&expected.length===2&&actual?.length===2
+    &&expected.every((value,index)=>Number.isSafeInteger(numeric(value))&&numbersEqual(actual[index],value));
+}
+
+function associationArray(value) {
+  // Some native subtable _id values contain a JSON string of a JSON array.
+  // Decode this component only, with fixed size/depth limits and no evaluation.
+  for(let depth=0;typeof value==='string'&&depth<3;depth++) {
+    if(value.length>4*1024*1024)return null;
+    try {value=JSON.parse(value);} catch {return null;}
+  }
+  return Array.isArray(value)?value:null;
 }
 
 function attachmentsEqual(actual, expected) {

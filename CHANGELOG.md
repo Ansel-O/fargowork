@@ -1,5 +1,19 @@
 # 更新记录
 
+## 3.1.0 — 财务编排与明细编辑 / Financial workflows and editable details · 2026-10-20
+
+- 公司及支付／收款币种前置，项目归属未明确时补问；保留员工对合法类别、科目和可改金额的选择。
+- 出差餐补按自然日去重、首尾保留、跨城日归到达段；逐行保留真实行程及关联出差单。
+- 提供离线HTML明细模板，支持手动修改、导出及同草稿导入；旧页面不能覆盖新修订。简单单笔支持简短预览。
+- 说明单字段局部更新、命令内查询复用、短时附件核验复用；提交前仍复核公司维护来源。修正明细回读的日期及关联值比较。
+- 按既定 Skill 和 workflow 直接执行，信息缺失、冲突或执行失败时再排查，减少无关探索。
+- Establish company, currency and project allocation before calculations; retain employee choices within maintained company data.
+- Count travel allowance dates once, including first and last days, using the arrival segment on transfer days.
+- Add local editable detail pages with validated import and stale-page protection; reduce repeated preparation and verification.
+- Follow the defined Skill and workflow; investigate only missing information, conflicts or execution failures.
+
+客户端为3.1.0；五项正式财务流程规则更新为1.0.1，最低客户端3.1.0。其他流程规则独立维护。实际账号权限仍按交付说明跟踪，不将离线测试等同于真人验收。
+
 ## 3.0.0 — 首个正式版 / First stable release · 2026-10-20
 
 中英双语介绍与安装入口、企业适配指南随包提供。普通员工目录读取及本人历史收款检索的真实账号验证将在交付后继续跟踪。

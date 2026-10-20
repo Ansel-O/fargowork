@@ -10,6 +10,8 @@
 
 Requires Windows, Node.js 22+, npm and the official OpenYida CLI (supported versions: `2026.10.16`, `2026.10.19`). To install manually, run `node scripts/setup.cjs` from the complete release package, follow the sign-in prompts, and have your AI client load the returned `skillEntry`. See the [installation instructions](SKILL.md#首次安装) and [troubleshooting guide](references/DEBUG.md) (in Chinese).
 
+**New in 3.1.0:** Financial applications establish the company, payment/reimbursement currency and project status before preparing details. Travel allowances count each date once. Editable detail pages and fewer repeated checks make revisions easier.
+
 ## 1. What it does
 
 FargoWork is an enterprise workflow Skill package built on [OpenYida](https://github.com/openyida/openyida). Describe what you need and provide the materials. The agent helps prepare your application and starts a Yida approval process after you confirm it.
@@ -32,7 +34,9 @@ Try: “I need to claim these receipts. Please help me organize the expense deta
 
 Financial applications follow this sequence:
 
-**Organize materials → Recommend or calculate → Edit and confirm details → Complete the main form → Confirm the full application → Submit.**
+**Establish company, currency and any project allocation → Organize materials and calculate details → Edit and confirm details → Complete the main form → Confirm the full application → Submit.**
+
+Edit details in chat, or open the local detail page and export your changes for the agent to apply. A single straightforward expense can be reviewed in one sentence.
 
 The agent suggests expense categories and accounting codes, with suitable alternatives. You can accept them or change a specific row; fixed codes follow the existing rules. Currencies, exchange rates and other reference data come from company-maintained sources, not replacement values in chat or online market rates. Forms without a detail table, such as medical checkup reimbursement, go straight to confirming the full application.
 

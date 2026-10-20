@@ -13,10 +13,20 @@ const FINANCE = new Set(['FW-PAY-STRUCTURE-MISSING','FW-PAY-STRUCTURE-AMBIGUOUS'
   'PROCUREMENT_CURRENCY_SOURCE_AMBIGUOUS','PROCUREMENT_RATE_NOT_UNIQUE','PROCUREMENT_RATE_INVALID',
   'ASSET_CURRENCY_SOURCE_EMPTY','ASSET_CURRENCY_SOURCE_INVALID',
   'MEAL_SOURCE_MISSING','MEAL_CURRENCY_AMBIGUOUS','MEAL_RATE_INVALID',
-  'PAYMENT_SOURCE_MISSING','PAYMENT_SOURCE_INVALID','PAYMENT_RATE_INVALID','PAYMENT_CONTACT_MISSING','PAYMENT_PROJECT_DEPARTMENT_AMBIGUOUS',
+  'PAYMENT_SOURCE_INVALID','PAYMENT_RATE_INVALID','PAYMENT_CONTACT_MISSING','PAYMENT_PROJECT_DEPARTMENT_AMBIGUOUS',
   'RECOMMENDATION_FIXED_CATEGORY_INVALID','REIMBURSEMENT_CURRENCY_AMBIGUOUS','REIMBURSEMENT_RATE_INVALID',
   'TRAVEL_ALLOWANCE_SOURCE_INVALID','TRAVEL_ALLOWANCE_CURRENCY_UNSUPPORTED','MEDICAL_CURRENCY_CONFLICT']);
 function supportForError(code) {
+  if(code==='REIMBURSEMENT_CURRENCY_MISSING')
+    return {contact:'Finance',nextAction:'check_reimbursement_currency',message:'暂时未能取得这家公司的收款币种。请财务核对维护记录和读取权限；保留材料，核对后继续。'};
+  if(code==='DETAIL_EDITOR_REVISION_CONFLICT')
+    return {nextAction:'refresh_editor',message:'这份草稿后来有过修改。请打开最新明细，再应用本次修改，避免覆盖已改内容。'};
+  if(/^DETAIL_EDITOR_/.test(code))
+    return {nextAction:'check_detail_edit',message:'这次修改有内容需要核对。保留修改文件，请在当前明细的有效选项内调整，或直接在聊天中说明要改哪里。'};
+  if(code==='PAYMENT_COMPANY_NOT_FOUND')
+    return {contact:'IT',nextAction:'check_payment_company_mapping',message:'当前账号暂时未能取得本次申请的支付公司。请维护者核对读取权限和匹配条件；保留已整理的材料，暂停提交，核对后继续办理。'};
+  if(code==='PAYMENT_SOURCE_MISSING')
+    return {contact:'IT',nextAction:'check_finance_source',message:'暂时未能核对本次申请所需的财务资料。请维护者核查原因；保留已整理的材料，暂停提交，核对后继续办理。'};
   if(code==='WORKFLOW_CLIENT_UPDATE_REQUIRED')
     return {nextAction:'update_client',message:'保留材料和草稿，更新完整 FargoWork 包后重新准备；不能手改版本号放行。'};
   if(/^DIRECTORY_/.test(code))
@@ -71,6 +81,6 @@ function supportForError(code) {
     return {nextAction:'revise_input',message:'请检查事由是否符合表单的文字要求，调整后重新预览。'};
   if (/^ATTACHMENT_(FILE_NOT_FOUND|FILE_TOO_LARGE|COUNT_EXCEEDED|TYPE_NOT_ALLOWED_BY_FORM|EXTENSION_NOT_SUPPORTED|LOCAL_ABSOLUTE_PATH_REQUIRED|INPUT_INVALID|DUPLICATE)$/.test(code))
     return {nextAction:'check_files',message:'请检查所选文件及流程支持的格式、大小和数量，再准备草稿。'};
-  return {contact:'IT',message:'操作遇到技术或配置问题，请将错误码提供给 IT 核查。不要修改内部字段或重复提交。'};
+  return {contact:'IT',message:'办理暂时遇到问题，请联系 IT 核查。保留现有材料，不要重复提交。'};
 }
 module.exports = {supportForError};

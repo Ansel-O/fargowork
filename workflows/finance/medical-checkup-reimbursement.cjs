@@ -71,7 +71,6 @@ async function prepare(input,ctx) {
   for(const [inputKey,fieldKey] of Object.entries(bankFields))
     if(Object.hasOwn(input,inputKey)) text(input[inputKey],F[fieldKey],fields);
   if(Object.hasOwn(input,'payment_company')) text(input.payment_company,F.paymentCompany,fields);
-  if(!money) return {needsInput:[{field:'amount',message:'请提供本次人民币体检报销金额。'}]};
 
   const raw=await ctx.roster(policy.rosterFields),roster=C.rosterFields(raw,actor),dept=C.department(roster);
   const reference=await PaymentHistory.resolvePaymentHistory({input,ctx,actor,roster:raw,
@@ -89,7 +88,7 @@ async function prepare(input,ctx) {
     [F.applicant]:[actor.userid],[F.applicantId]:actor.userid,[F.applicationDate]:ctx.todayMs,
     [F.applicationYear]:ctx.today.slice(0,4),[F.contractCompany]:optionalRoster(roster,R.contractCompany),
     // Populate the native validator's input without judging eligibility here.
-    [F.employeeStatus]:optionalRoster(roster,R.employeeStatus,'label'),[F.currency]:rules.currency,[F.amount]:money.value};
+    [F.employeeStatus]:optionalRoster(roster,R.employeeStatus,'label'),[F.currency]:rules.currency,[F.amount]:money?.value};
   for(const [inputKey,fieldKey] of Object.entries(bankFields)) {
     const value=text(defaults.values[inputKey],F[fieldKey],fields);formData[F[fieldKey]]=value;
     if(!value&&C.required(fields,F[fieldKey])) needs.push({field:inputKey,message:`请补充${labels[inputKey]}。`});
@@ -109,13 +108,16 @@ async function prepare(input,ctx) {
     else C.check(company||!Object.hasOwn(input,'payment_company'),'MEDICAL_PAYMENT_COMPANY_INVALID');
   } else if(C.required(fields,F.paymentCompany)) needs.push({field:'payment_company',message:'请选择本次支付公司。',choices});
   formData[F.paymentCompany]=company;formData[F.paymentCompanyMirror]=company;
-  if(needs.length) return {needsInput:needs,workflowState};
+  if(needs.length) return {needsInput:needs,workflowState,
+    preview:{支付公司:company,报销币种:rules.currency},editorChoices:{payment_company:choices}};
   if(company) {
     const cs=sources[config.sources.currencies];
     const currencies=distinctValues(await matchingRows(ctx,cs.formUuid,{[cs.companyField]:company},[cs.currencyField]),cs.currencyField);
     C.check(currencies.length<=1&&(!currencies.length||currencies[0]===rules.currency),
       'MEDICAL_CURRENCY_CONFLICT','体检报销仅支持人民币，当前支付公司的币种配置不一致，请联系 Finance。');
   }
+  if(!money)return {needsInput:[{field:'amount',message:'请提供本次人民币体检报销金额。'}],workflowState,
+    preview:{支付公司:company,报销币种:rules.currency},editorChoices:{payment_company:choices}};
   const hr=sources[config.sources.hr],contacts=sources[config.sources.contacts];
   for(const [field,source,column,value] of [
     [F.hr,hr,hr.annualLeaveAdministratorField,formData[F.contractCompany]],
@@ -126,6 +128,7 @@ async function prepare(input,ctx) {
     C.check(people.ids.length||!C.required(fields,field),'CONTACTS_NOT_FOUND');formData[field]=people.ids;
   }
   return {formData,departmentId:dept.id,attachmentField:F.attachment,attachmentPreviewField:config.attachments.previewField,workflowState,
+    editorChoices:{payment_company:choices},
     verification:{optionalEmptyFields:Object.entries(formData).filter(([field,value])=>!C.required(fields,field)
       &&(value===''||Array.isArray(value)&&!value.length)).map(([field])=>field)},
     preview:{流程:title,申请人:actor.name||actor.userid,申请日期:ctx.today,支付公司:company,报销币种:rules.currency,

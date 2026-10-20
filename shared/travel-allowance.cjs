@@ -38,8 +38,11 @@ function normalizedRegion(value) {
 }
 
 // Rows belong to one payee and one draft. The caller supplies verified dates,
-// standards and region identities; this tool neither reads history nor chooses
-// business currencies. Only explicitly edited amounts belong in row.amount.
+// standards and segment identities; this tool neither reads history nor chooses
+// business currencies. A calendar day belongs to the segment arriving later
+// (latest start date, then the later itinerary segment on the same day).
+// Currency-split rows share that segment's allocation. Explicit employee amounts
+// are retained independently of the default allocation.
 function suggestAllowances(rows,{precision=2}={}) {
   check(Array.isArray(rows),'TRAVEL_ALLOWANCE_ROWS_INVALID');
   Decimal.round(Decimal.decimal(0),precision);
@@ -50,47 +53,61 @@ function suggestAllowances(rows,{precision=2}={}) {
       && Number.isFinite(new Date(value).getTime()) && (value+OFFSET)%DAY===0)
       && end>=start,'TRAVEL_ALLOWANCE_DATE_INVALID');
     check(row.preferred===undefined || typeof row.preferred==='boolean','TRAVEL_ALLOWANCE_PREFERENCE_INVALID');
+    check(row.segmentKey===undefined || typeof row.segmentKey==='string' && row.segmentKey.length>0,
+      'TRAVEL_ALLOWANCE_SEGMENT_INVALID');
+    const region=normalizedRegion(row.region);
     const standard=row.standard==null ? null : Decimal.decimal(row.standard);
     const explicit=Object.hasOwn(row,'amount');
     const nonzero=explicit && row.amount!=='' && row.amount!==null
       && Decimal.decimal(row.amount).coefficient!==0n;
-    return {index,start,end,standard,region:normalizedRegion(row.region),preferred:row.preferred===true,
+    return {index,start,end,standard,region,
+      segmentKey:row.segmentKey??JSON.stringify([region,start,end]),preferred:row.preferred===true,
       days:(end-start)/DAY+1,eligibleDays:0,suggestedAmount:null,
-      amount:explicit?row.amount:null,explicit,nonzero,overlapIndexes:[]};
+      amount:explicit?row.amount:null,explicit,nonzero,overlapIndexes:[],sharedDays:[]};
   });
   const conflicts=[];
-  const explicitCoverage=merge(work.filter(row=>row.nonzero));
-  const disputed=[];
-  for(let i=0;i<work.length;i++) for(let j=i+1;j<work.length;j++) {
-    const left=work[i],right=work[j],start=Math.max(left.start,right.start),end=Math.min(left.end,right.end);
-    if(start>end) continue;
-    left.overlapIndexes.push(j);
-    right.overlapIndexes.push(i);
-    if(left.nonzero && right.nonzero) conflicts.push({code:'EXPLICIT_AMOUNT_OVERLAP',indexes:[i,j],start,end});
-    // Without an explicit owner of these dates, do not choose between distinct
-    // regions silently. The agent resolves the conflict before confirmation.
-    if(!left.explicit && !right.explicit && left.region && right.region && left.region!==right.region) {
-      for(const range of remaining(start,end,explicitCoverage)) {
-        disputed.push(range);
-        conflicts.push({code:'REGION_OVERLAP',indexes:[i,j],...range});
+  const segments=new Map();
+  for(const row of work) {
+    if(!segments.has(row.segmentKey)) segments.set(row.segmentKey,[]);
+    segments.get(row.segmentKey).push(row);
+  }
+  let allocated=[];
+  const ordered=[...segments.values()].sort((a,b)=>b[0].start-a[0].start||b[0].index-a[0].index);
+  for(const segment of ordered) {
+    const first=segment[0],available=remaining(first.start,first.end,allocated);
+    const defaults=segment.filter(row=>!row.explicit).sort((a,b)=>Number(b.preferred)-Number(a.preferred)||a.index-b.index);
+    const owner=segment.find(row=>row.nonzero)??defaults[0]??first;
+    const sharedDays=allocated.flatMap(range=>{
+      const start=Math.max(first.start,range.start),end=Math.min(first.end,range.end);
+      return start<=end?[{start,end,index:range.index}]:[];
+    });
+    for(const row of segment) row.sharedDays=sharedDays;
+    const explicitCoverage=merge(segment.filter(row=>row.nonzero));
+    for(let i=0;i<segment.length;i++) for(let j=i+1;j<segment.length;j++) {
+      const left=segment[i],right=segment[j],start=Math.max(left.start,right.start),end=Math.min(left.end,right.end);
+      if(start>end) continue;
+      left.overlapIndexes.push(right.index);
+      right.overlapIndexes.push(left.index);
+      if(left.nonzero && right.nonzero) {
+        conflicts.push({code:'EXPLICIT_AMOUNT_OVERLAP',indexes:[left.index,right.index],start,end});
       }
     }
+    for(const row of segment.filter(row=>row.explicit)) {
+      row.eligibleDays=row.nonzero?count(available):0;
+      row.suggestedAmount=product(row.standard,row.eligibleDays,precision);
+    }
+    let claimed=explicitCoverage;
+    for(const row of defaults) {
+      const ranges=available.flatMap(range=>remaining(range.start,range.end,claimed));
+      row.eligibleDays=count(ranges);
+      row.suggestedAmount=product(row.standard,row.eligibleDays,precision);
+      row.amount=row.suggestedAmount;
+      claimed=merge([...claimed,...ranges]);
+    }
+    allocated.push(...available.map(range=>({...range,index:owner.index})));
   }
-  for(const row of work.filter(row=>row.explicit)) {
-    row.eligibleDays=row.nonzero?row.days:0;
-    row.suggestedAmount=product(row.standard,row.eligibleDays,precision);
-  }
-  let claimed=merge([...explicitCoverage,...disputed]);
-  const defaults=work.filter(row=>!row.explicit).sort((a,b)=>Number(b.preferred)-Number(a.preferred)||a.index-b.index);
-  for(const row of defaults) {
-    const ranges=remaining(row.start,row.end,claimed);
-    row.eligibleDays=count(ranges);
-    row.suggestedAmount=product(row.standard,row.eligibleDays,precision);
-    row.amount=row.suggestedAmount;
-    claimed=merge([...claimed,...ranges]);
-  }
-  return {rows:work.map(({days,eligibleDays,suggestedAmount,amount,overlapIndexes,explicit})=>
-    ({days,eligibleDays,suggestedAmount,amount,overlapIndexes,explicit})),conflicts};
+  return {rows:work.map(({days,eligibleDays,suggestedAmount,amount,overlapIndexes,explicit,sharedDays})=>
+    ({days,eligibleDays,suggestedAmount,amount,overlapIndexes,explicit,sharedDays})),conflicts};
 }
 
 module.exports={suggestAllowances};

@@ -4,7 +4,8 @@ const {displayText} = Association;
 
 const {
   check,
-  today
+  today,
+  digest
 } = require('./common.cjs');
 const {
   APP,
@@ -44,6 +45,22 @@ function createRuntime(key, {
   const rosterPolicy = Roster.rosterPolicy(w.policy);
   Subject.delegationActors(w.policy);
   const subjectScopes = new WeakSet();
+  // One command may build the same details for review and preparation. Reuse
+  // identical reads only inside this runtime; the next command starts fresh.
+  const readPromises = new Map();
+  async function readOnce(kind, identity, operation) {
+    sameActor();
+    const key = kind + ':' + digest(identity);
+    if (!readPromises.has(key)) readPromises.set(key, Promise.resolve().then(operation));
+    try {
+      const result = await readPromises.get(key);
+      sameActor();
+      return structuredClone(result);
+    } catch (error) {
+      readPromises.delete(key);
+      throw error;
+    }
+  }
   let directoryVersion = 0;
   let directoryUsers = [];
   // A derived role's permission exists only during its internal roster call.
@@ -368,6 +385,13 @@ function createRuntime(key, {
     check(w.policy.dataForms.includes(form), 'SOURCE_NOT_ALLOWED');
     check(Array.isArray(fields) && fields.length > 0 && fields.every(f => /^[A-Za-z0-9_]+$/.test(f)), 'SOURCE_FIELDS_INVALID');
     assertPaymentCompanyScope(form, search, fields, subjectScope);
+    const result = await readOnce('query', {form, search:search??null, fields,
+      subject:subjectScope?.subject.userid??initial.userid},
+    () => queryFresh(form, search, fields, subjectScope));
+    if (subjectScope) assertSubjectScope(subjectScope);
+    return result;
+  }
+  async function queryFresh(form, search, fields, subjectScope) {
     const all = [],
       seen = new Set();
     let total;
@@ -408,6 +432,12 @@ function createRuntime(key, {
   async function related(type, subjectScope) {
     if (subjectScope) assertSubjectScope(subjectScope);
     check(Object.hasOwn(w.policy.relatedSources || {}, type), 'RELATED_SOURCE_NOT_ALLOWED');
+    const subjectId = associationSubject(w.policy.relatedSources[type], subjectScope);
+    const result = await readOnce('related', {type,subjectId}, () => relatedFresh(type, subjectScope));
+    if (subjectScope) assertSubjectScope(subjectScope);
+    return result;
+  }
+  async function relatedFresh(type, subjectScope) {
     const s = w.policy.relatedSources[type],
       constraints = Association.sourceConstraints(s),
       subjectId = associationSubject(s, subjectScope),

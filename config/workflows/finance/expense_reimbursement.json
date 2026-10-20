@@ -94,7 +94,6 @@
     "previewField": "报销附件"
   },
   "rules": {
-    "defaultIsProject": false,
     "defaultSameBearingCompany": true,
     "managerIndex": 0,
     "precision": 2,

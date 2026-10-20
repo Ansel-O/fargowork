@@ -8,7 +8,7 @@ const Department=require('../../shared/department-details.cjs');
 const Finance=require('../../shared/finance-catalog.cjs');
 const Association=require('../../shared/process-association.cjs');
 const {canDelegate}=require('../../shared/workflow-subject.cjs');
-const {paymentCompanyChoices,personalPaymentDefaults}=require('../../shared/reimbursement-info.cjs');
+const {resolveReimbursementContext,personalPaymentDefaults}=require('../../shared/reimbursement-info.cjs');
 const {matchingRows,distinctValues}=require('../../shared/scoped-catalog.cjs');
 const {createRateResolver,convertAmount,sumAmounts}=require('../../shared/exchange-rates.cjs');
 const {suggestAllowances}=require('../../shared/travel-allowance.cjs');
@@ -18,16 +18,17 @@ const bankFields={bank_account:'bankAccount',bank_name:'bankName',bank_city:'ban
 const bankLabels={bank_account:'收款账号',bank_name:'开户银行',bank_city:'开户城市',bank_branch:'开户支行',account_name:'账户名称'};
 const costs={airfare:'airfare',accommodation:'accommodation',local_transport:'localTransport',other_expenses:'otherExpenses'};
 const costLabels={airfare:'飞机、车船票款',accommodation:'住宿费',local_transport:'市内交通费',other_expenses:'其他费用'};
-const requirements={required:['items'],optional:['claimant_query','claimant_user_id','department_id','department_name',
-  'payment_company','same_bearing_company','bearing_company','business_structure','business_line','business_subline',
-  ...Object.keys(bankFields),'description','is_project','project_name','project_expense_category',...PaymentHistory.INPUT_FIELDS],
+const requirements={required:['items','is_project'],optional:['claimant_query','claimant_user_id','department_id','department_name',
+  'payment_company','reimbursement_currency','same_bearing_company','bearing_company','business_structure','business_line','business_subline',
+  ...Object.keys(bankFields),'description','project_name','project_expense_category',...PaymentHistory.INPUT_FIELDS],
   items:{required:['departure','destination','region','start_date','original_currency'],
     optional:['end_date','trip_instance_id',...Object.keys(costs),'allowance_amount','remarks','account','classification_reason',
       'project_department_name','business_structure','business_line','business_subline'],minimumRows:1,maximumRows:50},
   attachments:{required:true,input:'attachments: [绝对文件路径]',maxFiles:20,maxFileSizeMiB:100},
   notes:['办理出差费用报销，不是出差申请。默认本人；仅配置中的代办员可按原生员工候选选择其他报销人，实际发起人保持登录账号。',
-    '每行只有一种原币种和汇率；同一行程的不同币种费用分行，同一日期餐补只建议一次，餐补币种始终跟随报销人的报销币种。',
-    '餐补按地区维护标准和未重复的自然日建议；员工可修改、填0或清空，后续不覆盖。日期含首尾，同日一天。',
+    '每行只有一种原币种和汇率；同一行程段的不同币种费用分行，餐补只建议一次。收款币种CNY对应CNY餐补，其他收款币种对应HKD餐补。',
+    '先确定报销人、合法支付公司与收款币种，并明确是否项目，再计算明细；未明确是否项目时补问，不能默认为非项目。',
+    '餐补按自然日只自动建议一次，日期含首尾、同日一天；跨城共享日归到达的下一段，使用该段地区标准。员工可修改、填0或清空，后续不覆盖。',
     '每行关联本报销人已完成且同意的正式出差单；只有报销人为jefferson.sun时可不填，主动关联仍核验。',
     '先整理材料及可修改行程明细并确认，再补主表/附件；完整申请预览后另等新的提交确认。']};
 const allowed=[...requirements.required,...requirements.optional];
@@ -98,7 +99,7 @@ async function subjectContext(input,ctx,needs) {
   C.check(!selected||selected===actor.userid,'WORKFLOW_DELEGATION_NOT_ALLOWED');
   return {...ctx,subject:{...actor,delegated:false}};
 }
-function contract(project,subject,rows,currency,fields) {
+function contract(project,subject,rows,currency,fields,context={}) {
   const columns=[['departure','出发地',true],['destination','目的地',true],['region','出差地区',true],
     ['startDate','开始日期',true],['endDate','结束日期',true],['days','天数',true],['trip','关联出差流程',false],
     ...Object.keys(costs).map(k=>[k,costLabels[k],false]),['originalCurrency','原币种',true],['rate','汇率',true],
@@ -110,14 +111,14 @@ function contract(project,subject,rows,currency,fields) {
     ['category','项目费用类别',true],['account','项目会计科目',true]);
   return {columns,currencyPreviewKey:'报销币种',rowsPreviewKey:'报销明细',
     context:{claimantUserId:subject?.userid??null,allowanceCurrency:currency,
-      project:!!project,associations:rows.map(row=>row.tripId??null)}};
+      project:project??null,associations:rows.map(row=>row.tripId??null),...context}};
 }
 function displayRows(rows,reviewContract) {
   return rows.map(row=>Object.fromEntries(reviewContract.columns.map(([key,label])=>[label,row[key]??null])));
 }
-async function lines(ctx,fields,needs,input,departmentId,keys,prefix='') {
+async function lines(ctx,fields,needs,input,departmentId,keys,prefix='',editorChoices) {
   const s=source('businessLines');
-  return Finance.businessLines({ctx,source:s,input,departmentId,needs,prefix,steps:keys.map((field,index)=>({
+  return Finance.businessLines({ctx,source:s,input,departmentId,needs,prefix,editorChoices,steps:keys.map((field,index)=>({
     inputKey:['business_structure','business_line','business_subline'][index],field:F[field],
     sourceField:[s.structureField,s.lineField,s.sublineField][index],label:['业务总架构','业务线','子业务线'][index],
     required:C.required(fields,F[field])}))});
@@ -125,9 +126,10 @@ async function lines(ctx,fields,needs,input,departmentId,keys,prefix='') {
 async function projectScope(input,ctx,needs) {
   if(!input.is_project) return {ready:true,pairs:[],projectRows:[],category:rules.fixedCategory};
   const ps=source('projects'),pd=source('projectDepartments'),pairs=await Finance.accountPairs(ctx,source('accounts'));
-  const projectName=Finance.choice(needs,'project_name','项目',input.project_name,distinctValues(
-    await query(ctx,'projects',{[ps.statusField]:rules.defaults[F.projectActive]},[ps.nameField]),ps.nameField));
-  if(!projectName) return {ready:false,pairs:[],projectRows:[]};
+  const projectChoices=distinctValues(
+    await query(ctx,'projects',{[ps.statusField]:rules.defaults[F.projectActive]},[ps.nameField]),ps.nameField);
+  const projectName=Finance.choice(needs,'project_name','项目',input.project_name,projectChoices);
+  if(!projectName) return {ready:false,pairs:[],projectRows:[],projectChoices};
   const projectRows=await query(ctx,'projectDepartments',{[pd.projectField]:projectName},[pd.nameField,pd.departmentIdField,pd.categoryField]);
   const categories=distinctValues(projectRows,pd.categoryField);
   const category=Finance.choice(needs,'project_expense_category','项目费用类别',input.project_expense_category,categories);
@@ -139,27 +141,34 @@ async function projectScope(input,ctx,needs) {
         description:[item.departure,item.destination,item.region,item.remarks].filter(Boolean).join(' / '),pairs:allowedPairs,
         categoryInputKey:'project_expense_category',accountInputKey:'items['+index+'].account'}))});
   }
-  return {ready:!!category,pairs,projectRows,projectName,category};
+  return {ready:!!category,pairs,projectRows,projectName,category,projectChoices,categoryChoices:categories};
 }
 async function buildDetails(input,ctx,fields) {
-  const needs=[],project=input.is_project??false,scoped=await subjectContext(input,ctx,needs);
-  const empty=()=>({rows:[],needsInput:needs,recommendationContexts:[],preview:{报销明细:[],报销币种:null},
-    detailReviewContract:contract(project,scoped?.subject,[],null,fields)});
+  const needs=[],project=input.is_project,scoped=await subjectContext(input,ctx,needs);
+  let company=null,currency=null,allowanceCurrency=null,editorChoices={};
+  const projectPreview=()=>({是否项目:project===undefined?'待确认':project?'是':'否',
+    ...(project?{项目:input.project_name||'',项目费用类别:input.project_expense_category||''}:{})});
+  const empty=()=>({rows:[],needsInput:needs,recommendationContexts:[],editorChoices,
+    preview:{...(scoped?{报销人:scoped.subject.name||scoped.subject.userid}:{}),
+      支付公司:company||'',报销币种:currency,餐补币种:allowanceCurrency,...projectPreview(),报销明细:[]},
+    detailReviewContract:contract(project,scoped?.subject,[],allowanceCurrency,fields,{paymentCompany:company})});
   if(!scoped) return empty();
   const subject=scoped.subject;
-  C.check(project||['project_name','project_expense_category'].every(k=>C.absent(input[k])),'TRIP_REIMBURSEMENT_INPUT_CONFLICT');
-  if(!input.items?.length) {needs.push({field:'items',message:'请提供本次行程及费用材料。'});return empty();}
+  const payment=await resolveReimbursementContext({input,ctx:scoped,needs,
+    companySource:source('employeePaymentCompanies'),currencySource:source('currencies')});
+  ({company,currency}=payment);
+  allowanceCurrency=currency?(rules.allowanceCurrency.byReimbursementCurrency[currency]??rules.allowanceCurrency.otherwise):null;
+  editorChoices={claimant_user_id:[{value:subject.userid,label:subject.name||subject.userid}],
+    payment_company:payment.companyChoices,reimbursement_currency:payment.currencyChoices,
+    is_project:[{value:true,label:'项目'},{value:false,label:'非项目'}],
+    same_bearing_company:[{value:true,label:'是'},{value:false,label:'否'}]};
+  C.check(project!==false||['project_name','project_expense_category'].every(k=>C.absent(input[k])),'TRIP_REIMBURSEMENT_INPUT_CONFLICT');
+  if(project===undefined) needs.push({field:'is_project',message:'本次报销是否属于项目？如是，请选择所属项目。',
+    choices:editorChoices.is_project});
+  if(!input.items?.length) needs.push({field:'items',message:'请提供本次行程及费用材料。'});
+  if(!company||!currency||project===undefined||!input.items?.length) return empty();
   const table=fields.get(F.items).props;
   C.check(input.items.length>=(table.minItems??1)&&input.items.length<=(table.maxItems??50),'TRIP_REIMBURSEMENT_INPUT_INVALID');
-  const company=Finance.choice(needs,'payment_company','支付公司',input.payment_company,
-    await paymentCompanyChoices(scoped,source('employeePaymentCompanies')));
-  let currency=null;
-  if(company) {
-    const cs=source('currencies'),currencies=distinctValues(await query(scoped,'currencies',{[cs.companyField]:company},[cs.currencyField]),cs.currencyField);
-    C.check(currencies.length===1,'REIMBURSEMENT_CURRENCY_AMBIGUOUS','报销人的支付币种未唯一配置，请联系 Finance。');currency=currencies[0];
-    C.check(rules.supportedAllowanceCurrencies.includes(currency),'TRAVEL_ALLOWANCE_CURRENCY_UNSUPPORTED',
-      '当前原表餐补公式与维护标准仅支持人民币或港币报销；请 Finance 核查该报销币种，不能改用港币餐补兜底。');
-  }
   const scope=await projectScope(input,scoped,needs),pd=source('projectDepartments');
   const recommendationContexts=[];
   const classifications=project&&scope.ready?Finance.accountSelections(
@@ -174,12 +183,19 @@ async function buildDetails(input,ctx,fields) {
     related=Association.validateCandidates(await scoped.related('trip'),{...assoc,appType:companyConfig.appType,
       formUuid:assoc.form,actorId:subject.userid,corpId:subject.corp_id});
   }
+  Object.assign(editorChoices,{'items[*].region':regions,'items[*].original_currency':originalCurrencies,
+    'items[*].trip_instance_id':related.map(candidate=>({value:candidate.instance_id,
+      label:[candidate.title,candidate.sub_title].filter(Boolean).join(' · ')})),
+    ...(project?{project_name:scope.projectChoices||[],project_expense_category:scope.categoryChoices||[],
+      'items[*].project_department_name':distinctValues(scope.projectRows,pd.nameField),
+      'items[*].account':scope.pairs.filter(pair=>C.normalized(pair.category)===C.normalized(scope.category))
+        .map(pair=>pair.account)}:{})});
   const rate=createRateResolver({ctx:scoped,source:source('rates'),ratePrecision:rules.ratePrecision,
     errorCode:'REIMBURSEMENT_RATE_INVALID',errorMessage:'报销所需汇率未唯一配置，请联系 Finance。'});
   const rows=[],allowanceInputs=[],ranges=[];
   for(const [index,item] of input.items.entries()) {
     const prefix='items['+index+'].',row={category:scope.category??null,account:project?classifications[index]?.account??null:rules.fixedAccount,
-      remarks:bounded(item.remarks,F.remark,fields),allowanceCurrency:currency};
+      remarks:bounded(item.remarks,F.remark,fields),allowanceCurrency};
     for(const [inputKey,field] of [['departure',F.departure],['destination',F.destination]]) {
       row[inputKey]=bounded(item[inputKey],field,fields);
       if(!row[inputKey]) needs.push({field:prefix+inputKey,message:'请补充第 '+(index+1)+' 行'+(inputKey==='departure'?'出发地':'目的地')+'。'});
@@ -204,10 +220,10 @@ async function buildDetails(input,ctx,fields) {
     row.rate=currency&&row.originalCurrency?await rate(row.originalCurrency,currency):null;
     row.reimbursedAmount=row.rate===null?null:convertAmount(sum(Object.keys(costs).map(name=>row[name]??0)),row.rate,rules.precision);
     row.allowanceStandard=null;
-    if(currency&&row.region) {
+    if(allowanceCurrency&&row.region) {
       const as=source('allowances'),standards=distinctValues(await query(scoped,'allowances',
-        {[as.regionField]:row.region,[as.currencyField]:currency},[as.standardField]),as.standardField);
-      C.check(standards.length<=1,'TRAVEL_ALLOWANCE_SOURCE_INVALID','该地区及报销币种的餐补标准存在歧义，请联系 Finance。');
+        {[as.regionField]:row.region,[as.currencyField]:allowanceCurrency},[as.standardField]),as.standardField);
+      C.check(standards.length<=1,'TRAVEL_ALLOWANCE_SOURCE_INVALID','该地区及餐补币种的餐补标准存在歧义，请联系 Finance。');
       row.allowanceStandard=standards.length?money(standards[0]):null;
     }
     if(project&&scope.ready) {
@@ -215,12 +231,16 @@ async function buildDetails(input,ctx,fields) {
       if(row.projectDepartment) {
         const ids=distinctValues(scope.projectRows.filter(r=>C.exact(r[pd.nameField],row.projectDepartment)),pd.departmentIdField);
         C.check(ids.length===1&&/^\d+$/.test(ids[0]),'PAYMENT_PROJECT_DEPARTMENT_AMBIGUOUS');row.projectDepartmentId=ids[0];
-        const values=await lines(scoped,fields,needs,item,ids[0],['projectStructure','projectLine','projectSubline'],prefix);
+        const values=await lines(scoped,fields,needs,item,ids[0],['projectStructure','projectLine','projectSubline'],prefix,editorChoices);
         row.structure=values[F.projectStructure]??null;row.line=values[F.projectLine]??null;row.subline=values[F.projectSubline]??null;
       } else Object.assign(row,{structure:null,line:null,subline:null});
     } else if(!project) C.check(['project_department_name','business_structure','business_line','business_subline','account']
       .every(name=>C.absent(item[name])),'TRIP_REIMBURSEMENT_INPUT_CONFLICT');
-    allowanceInputs.push({...range,region:row.region,standard:row.allowanceStandard,preferred:row.originalCurrency===currency,
+    // Preserve complete real itinerary dates. The allowance planner allocates
+    // shared dates to the arriving segment before handling currency-split rows.
+    const segmentKey=JSON.stringify([row.tripId,...[row.departure,row.destination,row.region].map(C.normalized),
+      range?.start??null,range?.end??null]);
+    allowanceInputs.push({...range,segmentKey,region:row.region,standard:row.allowanceStandard,preferred:row.originalCurrency===allowanceCurrency,
       ...(Object.hasOwn(item,'allowance_amount')?{amount:item.allowance_amount}:{})});
     rows.push(row);
   }
@@ -230,35 +250,44 @@ async function buildDetails(input,ctx,fields) {
     const planned=plan.rows[position],row=rows[index];
     row.allowanceDays=planned.eligibleDays;
     row.allowanceAmount=C.absent(planned.amount)?null:money(planned.amount);
+    row.allowanceAllocation=planned.sharedDays.map(range=>({
+      startDate:C.dateText(range.start),endDate:C.dateText(range.end),itemIndex:known[range.index].index}));
     if(!planned.explicit&&planned.eligibleDays>0&&row.allowanceStandard===null)
-      needs.push({field:'items['+index+'].allowance_amount',message:'该地区及报销币种缺少餐补标准，无法计算建议；请 Finance 核查，或明确本次实际申领金额（可填0）。'});
+      needs.push({field:'items['+index+'].allowance_amount',message:'该地区及餐补币种缺少餐补标准，无法计算建议；请 Finance 核查，或明确本次实际申领金额（可填0）。'});
   }
   rows.forEach(row=>{if(row.allowanceDays===undefined)Object.assign(row,{allowanceDays:null,allowanceAmount:null});});
   for(const conflict of plan.conflicts) {
     const indexes=conflict.indexes.map(position=>known[position].index);
     needs.push({field:'items['+indexes[0]+'].allowance_amount',message:'第 '+indexes.map(i=>i+1).join('、')+
-      ' 行的餐补日期重叠，请明确餐补归属并保留一处申领，其他行填0；费用币种拆行不重复领取。',
+      ' 行属于同一行程段，请保留一处餐补申领，其他币种拆行填0。',
       indexes,resolver:'clarify_allowance_allocation'});
   }
-  const reviewContract=contract(project,subject,rows,currency,fields);
+  const reviewContract=contract(project,subject,rows,allowanceCurrency,fields,
+    {paymentCompany:company,projectName:scope.projectName??null,projectCategory:project?scope.category??null:null});
   const preview={报销人:subject.name||subject.userid,...(subject.delegated?{实际发起人:ctx.actor.name||ctx.actor.userid}:{}),
-    支付公司:company||'',报销币种:currency,餐补币种:currency,报销明细:displayRows(rows,reviewContract),
+    支付公司:company||'',报销币种:currency,餐补币种:allowanceCurrency,...projectPreview(),
+    ...(project?{项目:scope.projectName||input.project_name||'',项目费用类别:scope.category||input.project_expense_category||''}:{}),
+    报销明细:displayRows(rows,reviewContract),
+    餐补分配说明:rows.flatMap((row,index)=>(row.allowanceAllocation||[]).map(range=>'第 '+(index+1)+' 行的 '+
+      range.startDate+(range.endDate!==range.startDate?' 至 '+range.endDate:'')+' 餐补归第 '+(range.itemIndex+1)+' 行到达段，按该段地区标准建议。')),
     报销总额:rows.every(row=>row.reimbursedAmount!==null)?sum(rows.map(row=>row.reimbursedAmount)):null,
     餐补总额:rows.some((row,index)=>row.allowanceAmount===null&&!Object.hasOwn(input.items[index],'allowance_amount'))
       ?null:sum(rows.map(row=>row.allowanceAmount??0))};
-  return {rows,needsInput:needs,preview,detailReviewContract:reviewContract,recommendationContexts,
-    scoped,subject,company,currency,scope,rate,ranges};
+  return {rows,needsInput:needs,preview,detailReviewContract:reviewContract,recommendationContexts,editorChoices,
+    scoped,subject,company,currency,allowanceCurrency,scope,rate,ranges};
 }
 async function details(input,ctx) {
   validateInput(input);
   const result=await buildDetails(input,ctx,schemaFields(await ctx.schema()));
   return {rows:result.rows,needsInput:result.needsInput,preview:result.preview,detailReviewContract:result.detailReviewContract,
-    recommendationContexts:result.recommendationContexts};
+    recommendationContexts:result.recommendationContexts,editorChoices:result.editorChoices};
 }
-function departmentSelection(input,roster,needs) {
+function departmentSelection(input,roster,needs,editorChoices) {
   const ids=C.rosterDepartmentIds(roster);
   const names=(roster.get(R.departmentNames)||[]).flatMap(row=>C.values(row.label??row.value))
     .flatMap(v=>v.split(/[,，|]/)).map(v=>v.trim());
+  if(editorChoices&&names.length===ids.length&&names.every(Boolean))
+    editorChoices.department_id=ids.map((value,index)=>({value,label:names[index]}));
   let selected=input.department_id;
   if(input.department_name!==undefined||!selected&&ids.length>1) {
     C.check(names.length===ids.length&&names.every(Boolean),'ROSTER_FIELD_MISSING');
@@ -284,8 +313,8 @@ function bankInput(input,previous,subjectId) {
 }
 async function prepare(input,ctx) {
   validateInput(input);const actor=C.identity(ctx),fields=schemaFields(await ctx.schema()),result=await buildDetails(input,ctx,fields);
-  if(result.needsInput.length) return {needsInput:result.needsInput};
-  const {scoped,subject,company,currency,scope,rate,rows}=result,needs=[],project=input.is_project??false;
+  if(result.needsInput.length) return {needsInput:result.needsInput,preview:result.preview,editorChoices:result.editorChoices};
+  const {scoped,subject,company,currency,allowanceCurrency,scope,rate,rows}=result,needs=[],project=input.is_project;
   const same=input.same_bearing_company??true;
   C.option(fields,F.isProject,project?'NORMAL':'HIDDEN',['HIDDEN','NORMAL']);
   C.option(fields,F.sameBearing,same?'HIDDEN':'NORMAL',['HIDDEN','NORMAL']);
@@ -305,12 +334,12 @@ async function prepare(input,ctx) {
     fields:Object.fromEntries(Object.entries(bankFields).map(([inputKey,fieldKey])=>[inputKey,R[fieldKey]])),stringFields:['bank_account']});
   const workflowState={claimantUserId:subject.userid,bankDefaults:payment.state,ignoredBankInputs:bank.ignored,
     bankInput:originalBankInput,...historyState};
-  const pause=()=>({needsInput:needs,workflowState}),formData={};
+  const pause=()=>({needsInput:needs,workflowState,editorChoices:result.editorChoices}),formData={};
   for(const [inputKey,fieldKey] of Object.entries(bankFields)) {
     formData[F[fieldKey]]=bounded(payment.values[inputKey],F[fieldKey],fields);
     if(!formData[F[fieldKey]]&&C.required(fields,F[fieldKey])) needs.push({field:inputKey,message:'请补充报销人的'+bankLabels[inputKey]+'。'});
   }
-  const dept=departmentSelection(input,roster,needs);if(!dept)return pause();
+  const dept=departmentSelection(input,roster,needs,result.editorChoices);if(!dept)return pause();
   const cache=new Map();
   async function department(id) {
     if(cache.has(id))return cache.get(id);
@@ -327,9 +356,10 @@ async function prepare(input,ctx) {
     [F.applicantIsManager]:String(selectedDepartment.manager===subject.userid),[F.office]:optionalRoster(roster,R.office),
     [F.positionLevel]:optionalRoster(roster,R.positionLevel,'label'),[F.hasBankAccount]:rules.defaults[F.hasBankAccount],
     [F.projectActive]:rules.defaults[F.projectActive],[F.sameBearing]:same?'HIDDEN':'NORMAL',[F.isProject]:project?'NORMAL':'HIDDEN',
-    [F.paymentCompany]:company,[F.paymentCompanyMirror]:company,[F.currency]:currency,[F.allowanceCurrency]:currency});
+    [F.paymentCompany]:company,[F.paymentCompanyMirror]:company,[F.currency]:currency,[F.allowanceCurrency]:allowanceCurrency});
   C.check(selectedDepartment.manager||!C.required(fields,F.manager),'DEPARTMENT_MANAGER_MISSING');
   const cs=source('companies'),companyRows=await query(scoped,'companies',same?{[cs.companyField]:company}:{},[cs.companyField]);
+  result.editorChoices.bearing_company=distinctValues(companyRows,cs.companyField);
   if(same) {
     C.check(input.bearing_company===undefined||C.normalized(input.bearing_company)===C.normalized(company),'TRIP_REIMBURSEMENT_INPUT_CONFLICT');
     const options=distinctValues(companyRows,cs.companyField);
@@ -337,16 +367,17 @@ async function prepare(input,ctx) {
     formData[F.bearingCompany]=options.length?C.single(options):'';
   } else formData[F.bearingCompany]=Finance.choice(needs,'bearing_company','承担公司',input.bearing_company,
     distinctValues(companyRows,cs.companyField),C.required(fields,F.bearingCompany));
-  Object.assign(formData,await lines(scoped,fields,needs,input,dept.id,['structure','line','subline']));
+  Object.assign(formData,await lines(scoped,fields,needs,input,dept.id,['structure','line','subline'],'',result.editorChoices));
   if(needs.length)return pause();
   if(project)Object.assign(formData,{[F.project]:scope.projectName,[F.projectCategory]:scope.category});
-  const hkd=rules.defaults[F.hkd],hkdRate=await rate(currency,hkd),nativeRows=[],departmentIds=[],managers=[];
+  const hkd=rules.defaults[F.hkd],hkdRate=await rate(currency,hkd),
+    allowanceHkdRate=await rate(allowanceCurrency,hkd),nativeRows=[],departmentIds=[],managers=[];
   for(const [index,row] of rows.entries()) {
     const range=result.ranges[index],native={[F.departure]:row.departure,[F.destination]:row.destination,[F.region]:row.region,
       [F.dateRange]:[range.start,range.end],[F.days]:row.days,[F.originalCurrency]:row.originalCurrency,[F.originalRate]:row.rate,
       [F.reimbursedAmount]:row.reimbursedAmount,[F.hkd]:hkd,[F.hkdRate]:hkdRate,
       [F.hkdAmount]:convertAmount(row.reimbursedAmount,hkdRate,rules.precision),
-      [F.allowanceHkdAmount]:convertAmount(row.allowanceAmount??0,hkdRate,rules.precision),
+      [F.allowanceHkdAmount]:convertAmount(row.allowanceAmount??0,allowanceHkdRate,rules.precision),
       [F.tripAssociationText]:row.tripNumber,[F.remark]:row.remarks};
     for(const name of Object.keys(costs)) if(row[name]!==null) native[F[costs[name]]]=row[name];
     if(row.allowanceStandard!==null)native[F.allowanceStandard]=row.allowanceStandard;
@@ -375,7 +406,7 @@ async function prepare(input,ctx) {
     ?C.department(C.rosterFields(await ctx.roster([R.mainDepartment,R.departments]),actor)).id:dept.id;
   return {formData,departmentId:originatorDepartment,workflowState,attachmentField:F.attachment,
     attachmentPreviewField:config.attachments.previewField,detailReviewContract:result.detailReviewContract,detailReviewRows:rows,
-    recommendationContexts:result.recommendationContexts,
+    recommendationContexts:result.recommendationContexts,editorChoices:result.editorChoices,
     verification:{optionalEmptyFields:Object.entries(formData).filter(([field,value])=>!C.required(fields,field)
       &&(value===''||Array.isArray(value)&&!value.length)).map(([field])=>field),
       enumLabels:{[F.isProject]:{HIDDEN:'否',NORMAL:'是'},[F.sameBearing]:{HIDDEN:'是',NORMAL:'否'}}},

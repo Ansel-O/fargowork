@@ -111,7 +111,6 @@
     "previewField": "报销附件"
   },
   "rules": {
-    "defaultIsProject": false,
     "defaultSameBearingCompany": true,
     "managerIndex": 0,
     "precision": 2,
@@ -147,13 +146,15 @@
     ],
     "fixedCategory": "13 差旅费 Business Trip",
     "fixedAccount": "1301 差旅费 Business Trip",
-    "allowanceCurrency": "reimbursement",
-    "supportedAllowanceCurrencies": [
-      "CNY",
-      "HKD"
-    ],
+    "allowanceCurrency": {
+      "byReimbursementCurrency": {
+        "CNY": "CNY"
+      },
+      "otherwise": "HKD"
+    },
     "allowanceDatePolicy": "calendar_inclusive",
-    "duplicateAllowance": "within_application_date_coverage"
+    "duplicateAllowance": "once_per_calendar_day",
+    "sharedAllowanceDay": "arriving_segment"
   },
   "policy": {
     "rosterFields": [

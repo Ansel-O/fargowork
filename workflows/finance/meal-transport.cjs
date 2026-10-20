@@ -8,21 +8,21 @@ const Department=require('../../shared/department-details.cjs');
 const Decimal=require('../../shared/decimal-arithmetic.cjs');
 const {createRateResolver,convertAmount}=require('../../shared/exchange-rates.cjs');
 const {localMinute}=require('../../shared/local-datetime.cjs');
-const {paymentCompanyChoices,personalPaymentDefaults}=require('../../shared/reimbursement-info.cjs');
+const {resolveReimbursementContext,personalPaymentDefaults}=require('../../shared/reimbursement-info.cjs');
 const {matchingRows,distinctValues}=require('../../shared/scoped-catalog.cjs');
 const {key,title,target,fields:F,roster:R,policy,rules}=config;
 const bankFields={bank_account:'bankAccount',bank_name:'bankName',bank_city:'bankCity',
   bank_branch:'bankBranch',account_name:'accountName'};
 const labels={bank_account:'收款账号',bank_name:'开户银行',bank_city:'开户城市',bank_branch:'开户支行',account_name:'账户名称'};
 const requirements={required:['items','attendance_attachments'],
-  optional:['department_id','payment_company','same_bearing_company','bearing_company','business_structure',
+  optional:['department_id','payment_company','reimbursement_currency','same_bearing_company','bearing_company','business_structure',
     'business_line','business_subline',...Object.keys(bankFields),'description','expense_attachments',...PaymentHistory.INPUT_FIELDS],
   item:{required:['reason'],optional:['start_time','end_time','transport_amount','remarks'],minimumRows:1,maximumRows:50},
   attachments:{fields:config.attachments.fields.map(f=>({...f,required:f.inputField==='attendance_attachments',maximumCount:20,maximumMiB:100}))},
   notes:['起止时间到分钟；结束时间默认等于开始时间，未提供开始时间时请提供结束时间。',
     '先整理本次材料及可修改加班明细并确认，再补主表及两个附件栏；首轮确认不授权提交。',
     '个人收款资料首次带入后可以修改。支付公司只能从本人映射中选择。','餐补及港币金额自动计算，最终预览后等待新的员工确认。']};
-const inputFields=['items','department_id','payment_company','same_bearing_company','bearing_company',
+const inputFields=['items','department_id','payment_company','reimbursement_currency','same_bearing_company','bearing_company',
   'business_structure','business_line','business_subline',...Object.keys(bankFields),
   'description','attendance_attachments','expense_attachments',...PaymentHistory.INPUT_FIELDS];
 
@@ -39,7 +39,8 @@ function textInput(value,field,fields) {
 }
 function choice(needs,field,label,value,choices,required=true) {
   if(!choices.length) {
-    C.check(!required,'MEAL_SOURCE_MISSING','办理所需的财务资料缺失，请联系 Finance。');
+    C.check(!required,field==='payment_company'?'PAYMENT_COMPANY_NOT_FOUND':'MEAL_SOURCE_MISSING',
+      '当前账号暂时未能核对所需的财务资料，请维护者检查读取权限和匹配条件。');
     C.check(C.absent(value),'MEAL_SOURCE_MISSING');return '';
   }
   if(value===undefined && choices.length===1) return choices[0];
@@ -80,20 +81,15 @@ async function buildDetails(input,ctx,fields) {
   C.check(typeof actor?.userid==='string'&&actor.userid.trim()
     &&typeof actor?.corp_id==='string'&&actor.corp_id.trim(),'CURRENT_IDENTITY_MISSING');
   const table=fields.get(F.items).props;
-  const empty=()=>({rows:[],nativeRows:[],needsInput:needs,company:'',currency:null,
-    detailReviewContract:reviewContract(actor,''),preview:{报销币种:null,加班明细:[],餐补总额:null,交通费总额:null}});
+  const payment=await resolveReimbursementContext({input,ctx,needs,companySource:binding('employeePaymentCompanies'),
+    currencySource:binding('reimbursementCurrencies')}),{company,currency}=payment;
+  const editorChoices={payment_company:payment.companyChoices,reimbursement_currency:payment.currencyChoices};
+  const empty=()=>({rows:[],nativeRows:[],needsInput:needs,company,currency,editorChoices,
+    detailReviewContract:reviewContract(actor,company),preview:{支付公司:company||'',报销币种:currency,加班明细:[],餐补总额:null,交通费总额:null}});
   if(!Array.isArray(input.items)||!input.items.length) {
     needs.push({field:'items',message:'请提供加班起止时间、原因及需要报销的交通费。'});return empty();
   }
   C.check(input.items.length>=(table.minItems??1)&&input.items.length<=(table.maxItems??50),'MEAL_INPUT_INVALID');
-  const company=choice(needs,'payment_company','支付公司',input.payment_company,
-    await paymentCompanyChoices(ctx,binding('employeePaymentCompanies')));
-  let currency=null;
-  if(company) {
-    const currencies=binding('reimbursementCurrencies');
-    const values=distinctValues(await catalog(ctx,'reimbursementCurrencies',{[currencies.companyField]:company},[currencies.currencyField]),currencies.currencyField);
-    C.check(values.length===1,'MEAL_CURRENCY_AMBIGUOUS','报销币种未唯一配置，请联系 Finance。');currency=values[0];
-  }
   const rows=[],nativeRows=[];
   for(const [index,item]of input.items.entries()) {
     C.inputKeys(item,['start_time','end_time','reason','transport_amount','remarks']);
@@ -113,7 +109,7 @@ async function buildDetails(input,ctx,fields) {
     nativeRows.push(native);rows.push(row);
   }
   const detailReviewContract=reviewContract(actor,company);
-  return {rows,nativeRows,needsInput:needs,company,currency,detailReviewContract,
+  return {rows,nativeRows,needsInput:needs,company,currency,detailReviewContract,editorChoices,
     preview:{支付公司:company,报销币种:currency,加班明细:visibleRows(rows,detailReviewContract),
       餐补总额:currency===null?null:sum(rows.map(row=>row.mealAmount)),交通费总额:sum(rows.map(row=>row.transportAmount===''?0:row.transportAmount))}};
 }
@@ -121,13 +117,13 @@ async function details(input,ctx) {
   C.inputKeys(input,inputFields);
   PaymentHistory.validateInput(input);
   const result=await buildDetails(input,ctx,schemaFields(await ctx.schema()));
-  return {rows:result.rows,needsInput:result.needsInput,preview:result.preview,detailReviewContract:result.detailReviewContract};
+  return {rows:result.rows,needsInput:result.needsInput,preview:result.preview,detailReviewContract:result.detailReviewContract,editorChoices:result.editorChoices};
 }
 async function prepare(input,ctx) {
   C.inputKeys(input,inputFields);
   PaymentHistory.validateInput(input);
   const actor=C.identity(ctx),fields=schemaFields(await ctx.schema()),detail=await buildDetails(input,ctx,fields);
-  if(detail.needsInput.length)return {needsInput:detail.needsInput};
+  if(detail.needsInput.length)return {needsInput:detail.needsInput,preview:detail.preview,editorChoices:detail.editorChoices};
   const needs=[],{company,currency}=detail;
   const rosterResponse=await ctx.roster(policy.rosterFields);
   const roster=C.rosterFields(rosterResponse,actor);
@@ -138,6 +134,8 @@ async function prepare(input,ctx) {
   const departmentIds=C.rosterDepartmentIds(roster);
   const departmentNames=(roster.get(R.departmentNames)||[]).flatMap(row=>C.values(row.label??row.value))
     .flatMap(value=>value.split(/[,，|]/)).map(v=>v.trim());
+  if(departmentIds.length===departmentNames.length&&departmentNames.every(Boolean))
+    detail.editorChoices.department_id=departmentIds.map((value,index)=>({value,label:departmentNames[index]}));
   const deptName=typeof response.result.name==='string'&&response.result.name.trim()
     ?response.result.name.trim():departmentIds.length===departmentNames.length?departmentNames[departmentIds.indexOf(dept.id)]:'';
   C.check(deptName,'ROSTER_FIELD_MISSING');
@@ -171,6 +169,7 @@ async function prepare(input,ctx) {
   formData[F.sameBearing]=same?'HIDDEN':'NORMAL';
   const bearing=binding('costBearingCompanies');
   const bearingRows=await catalog(ctx,'costBearingCompanies',same?{[bearing.companyField]:company}:{},[bearing.companyField]);
+  detail.editorChoices.bearing_company=distinctValues(bearingRows,bearing.companyField);
   if(same) {
     C.check(input.bearing_company===undefined||C.normalized(input.bearing_company)===C.normalized(company),'MEAL_INPUT_CONFLICT');
     const found=distinctValues(bearingRows,bearing.companyField);formData[F.bearingCompany]=found.length?C.single(found):'';
@@ -182,6 +181,7 @@ async function prepare(input,ctx) {
     ['business_line','line',structure.lineField,'业务线'],
     ['business_subline','subline',structure.sublineField,'子业务线']]) {
     const rows=await catalog(ctx,'departmentBusinessLines',filters,[sourceField]);
+    detail.editorChoices[inputKey]=distinctValues(rows,sourceField);
     const before=needs.length;
     const value=choice(needs,inputKey,label,input[inputKey],distinctValues(rows,sourceField),C.required(fields,F[fieldKey]));
     formData[F[fieldKey]]=value;filters[sourceField]=value;
@@ -206,6 +206,7 @@ async function prepare(input,ctx) {
     C.check(contacts.ids.length||!C.required(fields,targetField),'CONTACTS_NOT_FOUND');
   }
   return {formData,departmentId:dept.id,attachmentFields:config.attachments.fields,workflowState:state(),
+    editorChoices:detail.editorChoices,
     detailReviewContract:detail.detailReviewContract,detailReviewRows:detail.rows,
     verification:{optionalEmptyFields:Object.entries(formData).filter(([field,value])=>
       !C.required(fields,field)&&(value===''||Array.isArray(value)&&value.length===0)).map(([field])=>field),

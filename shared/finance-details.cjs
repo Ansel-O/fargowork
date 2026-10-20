@@ -86,7 +86,14 @@ async function prepareFinanceDetails({ctx,items,accountSource,pairs,originalCurr
       reimbursedAmount:item.amount===null||exchange===null?null:convertAmount(item.amount,exchange,precision),
       remarks:text(item.remarks),classificationReason:text(item.classification_reason)});
   }
-  return {rows,needsInput,recommendationContexts};
+  const editorChoices={'items[*].original_currency':currencies};
+  for(const [index,item] of normalizedItems.entries()) {
+    editorChoices[`items[${index}].expense_category`]=[...new Set(allowedPairs.map(pair=>pair.category))];
+    const selected=selections[index]?.category||text(item.expense_category)||category;
+    editorChoices[`items[${index}].account`]=[...new Set(allowedPairs
+      .filter(pair=>!selected||normalized(pair.category)===normalized(selected)).map(pair=>pair.account))];
+  }
+  return {rows,needsInput,recommendationContexts,editorChoices};
 }
 
 module.exports={prepareFinanceDetails};

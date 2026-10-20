@@ -1,6 +1,6 @@
 ---
 name: expense-reimbursement
-description: 为当前登录员工整理费用报销材料，推荐科目、匹配汇率，先修改并确认八列明细，再补申请资料并确认完整申请后提交。
+description: 先核对本人支付公司、收款币种和项目归属，再整理费用报销、推荐科目及计算八列明细，确认明细后补主表并确认提交。
 ---
 
 # 费用报销申请表
@@ -21,13 +21,17 @@ node scripts/fargowork.cjs details expense_reimbursement --input <绝对路径�
 
 ## 先整理并确认明细
 
-仅整理员工本次提供的材料，不自动搜索邮箱、聊天或历史报销补材料。优先用员工或宿主已有的 PDF、图片、OCR 和表格能力，能读清就不重复解析或另装同类工具。本包接收整理后的费用事实，不提供专属 OCR 或内置表格编辑器。
+先用 `details` 查询本人支付公司和收款币种，尚无 `items` 也可调用。唯一合法组合直接采用并告知；多个公司或币种时集中让员工选择，分别填 `payment_company`、`reimbursement_currency`，历史习惯只作建议。没有有效结果时，请财务核查维护记录、查看权限和匹配条件，不断言未维护或要求新增。币种未定先保留材料事实，不计算完整报销明细。
+
+在推荐类别／科目前明确 `is_project`：员工已说明则沿用；未说明就问“这笔费用是否属于项目？如是，属于哪个项目？”。不能因未提项目、内部协作或旧习惯自行填 `false`。项目从合法目录选 `project_name`、`project_expense_category`；首版明细明确显示项目／非项目及项目名称。
+
+仅整理员工本次提供的材料，不自动搜索邮箱、聊天或历史报销补材料。优先用员工或宿主已有的 PDF、图片、OCR 和表格能力，能读清就不重复解析或另装同类工具。本包接收整理后的费用事实，展示和手动修改使用[统一明细模板](../../../references/FINANCE-DETAIL-EDITOR.md)。
 
 默认一笔实际费用一行；同笔费用的发票、订单和付款截图合为证据，一张付款单包含多笔费用时可以拆行。区分本次实付金额、套餐标价、折扣和退款；总额已含税时不重复加税。数字、币种或费用归属确实含糊才集中补问，不能从“$”自行猜币种。保留员工纠错、排除和拆分结果，后续重读不得覆盖。
 
 按[财务明细工具](../../../references/FINANCE-DETAILS.md)执行以下顺序：
 
-1. 已解析的内容写入 `items[].description`，原币金额、币种分别写入 `amount`、`original_currency`。用只读 `details` 取得实际科目候选和换算信息；此时不传 `attachments`。只先确定影响明细的本人支付公司、报销币种及必要项目范围，不要求员工先补银行、部门和全部业务线。项目报销使用 `is_project: true`、`project_name`、`project_expense_category`；普通报销不填项目字段。
+1. 支付公司、收款币种和是否项目明确后，已解析内容写入 `items[].description`，原币金额、币种分别写入 `amount`、`original_currency`。用只读 `details` 取得实际科目候选和换算信息；此时不传 `attachments`，不要求员工先补银行、部门和全部业务线。项目报销使用 `is_project: true`；员工明确非项目时填 `false`，不填其他项目字段。
 2. **Agent 根据内容详情，从返回的合法类别与科目完整配对中建议一组，写入 `expense_category`、`account` 和简短 `classification_reason`，再运行 `details`。** 完整合法草稿也读取 `recommendationContexts`，按[科目推荐与独立备选](../../../references/FINANCE-DETAILS.md#科目推荐与独立备选)，有合理备选时在表外按行提示理由及是否替换；不把候选混写进实际字段。员工已有合法明确选择保持。`resolver: agent_recommendation` 由 Agent 处理，用途不足或明确选择冲突时补问业务事实，不让员工翻整个目录。
 3. 汇率由工具按原币种和支付公司的报销币种查维护表并计算。唯一支付公司直接使用；多家公司确需员工选择时才问。不要要求员工手填已有汇率，也不自行使用市场汇率替代。
 4. 用 `review expense_reimbursement --input <明细文件>` 保存首轮草稿，后续修改加 `--draft <同一draftId>`。按返回的 `preview` 展示八列：**费用类别*、会计科目*、内容详情*、原币金额*、原币种*、汇率*、报销金额、备注**。表头标明报销币种，原币分别小计，报销金额合计；建议理由简短附在表后。可用宿主现有可编辑表格，也可让员工直接说“第几行改什么”；不强制 Excel。允许新增、删除/排除、拆分、纠正识别和改选科目。Agent 回写当前明细后重新 `review`，保留其他已改内容，展示受影响行和更新合计。待补草稿可以保存和展示，缺项未解不能确认。
@@ -37,7 +41,7 @@ node scripts/fargowork.cjs details expense_reimbursement --input <绝对路径�
 
 1. 在已确认明细的同一草稿运行 `prepare expense_reimbursement --draft <draftId> --input <业务文件>`。省略 `items` 沿用当前明细；显式传入 `items` 表示替换整张明细表，不能只传改动行。明细1至50行，备注可空，顶层说明用 `description`。金额按原表精确到两位小数，不额外添加正数限制。
 2. 查询本人的必要资料。支付公司来自本人稳定 userid 的映射，不用任意公司代替。收款资料首次从本人花名册带入，允许修改或清空：`bank_account`、`bank_name`、`bank_city`、`bank_branch`、`account_name`。账号必须是字符串，保留前导零及全部数字，不转成数字或科学计数法；来源账号若无法保持原文，需员工补充。脚本保留同一草稿中已修改或清空的收款资料，不以花名册刷新覆盖。
-3. 多个本人任职部门、支付公司或业务线候选时，让员工选择，不静默选第一项。部门可传 `department_name`，脚本返回候选后对应填写 `department_id`，二者同时填写须一致。按返回的层级依次确定 `business_structure`、`business_line`、`business_subline`；唯一候选可以采用并纳入业务预览。报销币种由选定支付公司的配置确定，不接受 Agent 自填汇率或计算结果。
+3. 沿用首轮确定的支付公司、收款币种及项目，不重复询问。多个本人任职部门或业务线候选时，让员工选择，不静默选第一项。部门可传 `department_name`，脚本返回候选后对应填写 `department_id`，二者同时填写须一致。按返回层级确定 `business_structure`、`business_line`、`business_subline`；唯一候选直接采用并纳入预览。报销币种只可从该支付公司的维护候选中选择，不接受手填汇率或计算结果。
 4. `same_bearing_company` 默认 `true`；由另一公司承担时设为 `false`，再从合法候选中选 `bearing_company`。已有明确输入不能静默替换。
 5. 普通报销各行使用 `expense_category`、`account`。项目报销设 `is_project: true`，主表填写 `project_name`、`project_expense_category`；各行填写 `project_department_name` 及其业务层级、`account`。项目部门可以逐行不同，候选限所选项目；不用普通费用类别覆盖项目主表类别。
 6. 复用已确认的类别、科目及 `classification_reason`，不再从头询问。`prepare` 在读取其余资料及上传前复查明细；若目录、公司币种或汇率变化导致明细需要更新，先回到 `review`，按实际合法候选修订、展示受影响行并重新取得明细确认，不能自动接受新金额。理由最多300字符，只用于业务预览，不写表单。合法显式选择保留，冲突先澄清。

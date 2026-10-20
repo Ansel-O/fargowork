@@ -24,7 +24,7 @@ const requirements={
     'business_structure','business_line','business_subline'],minimumRows:1,maximumRows:50},
   attachments:{required:true,input:'attachments: [绝对文件路径]',maxFiles:30,maxFileSizeMiB:100,
     extensions:['.pdf','.jpeg','.png','.doc','.docx','.xls','.xlsx','.jpg']},
-  notes:['是否项目款项默认否；承担公司默认与支付公司相同，也可以选择不同公司。',
+  notes:['先确定支付公司和付款币种，再明确是否项目；不能将未回答默认为非项目。承担公司默认与支付公司相同，也可以选择不同公司。',
     '项目部门按每条付款明细选择。合同公司、开户银行和收款账号由员工提供。',
     '本人有多个任职部门时必须选择；费用类别和科目结合本次用途在合法候选中给建议。',
     '可按收款方或单号查本人历史付款，再由员工选择；仅带入收款方、开户行和字符串账号，仍需最终核对。',
@@ -62,14 +62,14 @@ function validateInput(input) {
     }
   }
 }
-async function businessLines(ctx,fields,needs,input,departmentId,fieldKeys,prefix='') {
+async function businessLines(ctx,fields,needs,input,departmentId,fieldKeys,prefix='',editorChoices) {
   const S=source('businessLines');
   const steps=[
     ['business_structure',fieldKeys[0],S.structureField,'业务总架构'],
     ['business_line',fieldKeys[1],S.lineField,'业务线'],
     ['business_subline',fieldKeys[2],S.sublineField,'子业务线']
   ].map(([inputKey,key,sourceField,label])=>({inputKey,field:F[key],sourceField,label,required:C.required(fields,F[key])}));
-  return Finance.businessLines({ctx,source:S,input,departmentId,steps,needs,prefix});
+  return Finance.businessLines({ctx,source:S,input,departmentId,steps,needs,prefix,editorChoices});
 }
 function assertSchema(schema) {
   const fields=C.assertFields(schema,F);
@@ -84,19 +84,22 @@ function detailContract(project,company,currency,scope,rows,fields) {
   if(project) columns.splice(1,0,...config.detailReview.projectColumns.map(([key,label,required])=>
     [key,label,['structure','line'].includes(key)?C.required(fields,F[key==='structure'?'projectStructure':'projectLine']):required]));
   return {columns,currencyPreviewKey:config.detailReview.currencyPreviewKey,rowsPreviewKey:config.detailReview.rowsPreviewKey,
-    context:{paymentCompany:company||null,project,projectName:scope.projectName||null,
+    context:{paymentCompany:company||null,project:project??null,projectName:scope.projectName||null,
       projectCategory:scope.category||null,paymentCurrency:currency||null,
       projectDepartmentIds:project?rows.map(row=>row.projectDepartmentId??null):[]}};
 }
-async function classificationScope(input,ctx,needs,project) {
+async function classificationScope(input,ctx,needs,project,editorChoices) {
   const pairs=await accountPairs(ctx,source('accounts'));
   if(!project) return {pairs,projectRows:[],ready:true};
   const projects=source('projects'),PD=source('projectDepartments');
-  const projectName=choice(needs,'project_name','项目',input.project_name,distinctValues(
-    await query(ctx,'projects',{[projects.statusField]:rules.defaults[F.projectActive]},[projects.nameField]),projects.nameField));
+  const projectChoices=distinctValues(await query(ctx,'projects',{[projects.statusField]:rules.defaults[F.projectActive]},[projects.nameField]),projects.nameField);
+  editorChoices.project_name=projectChoices;
+  const projectName=choice(needs,'project_name','项目',input.project_name,projectChoices);
   if(!projectName) return {pairs:[],projectRows:[],ready:false};
   const projectRows=await query(ctx,'projectDepartments',{[PD.projectField]:projectName},[PD.nameField,PD.departmentIdField,PD.categoryField]);
   const categories=distinctValues(projectRows,PD.categoryField);
+  editorChoices.project_expense_category=categories;
+  editorChoices['items[*].project_department_name']=distinctValues(projectRows,PD.nameField);
   const category=choice(needs,'project_expense_category','项目费用类别',input.project_expense_category,categories);
   if(!category) {
     const allowed=pairs.filter(pair=>categories.some(value=>C.normalized(value)===C.normalized(pair.category)));
@@ -114,27 +117,36 @@ async function classificationScope(input,ctx,needs,project) {
 async function buildDetails(input,ctx,fields) {
   C.check(typeof ctx.actor?.userid==='string'&&ctx.actor.userid.trim()
     &&typeof ctx.actor?.corp_id==='string'&&ctx.actor.corp_id.trim(),'CURRENT_IDENTITY_MISSING');
-  const needs=[],project=input.is_project??rules.defaultIsProject;
-  C.check(project||requirements.project.every(name=>C.absent(input[name])),'PAYMENT_INPUT_CONFLICT');
+  const needs=[],project=input.is_project,editorChoices={};
+  C.check(project!==false||requirements.project.every(name=>C.absent(input[name])),'PAYMENT_INPUT_CONFLICT');
   const items=input.items||[];
   C.check(items.length<=(fields.get(F.items).props.maxItems??50),'PAYMENT_INPUT_INVALID');
   if(!items.length) needs.push({field:'items',message:'请提供至少一行付款明细。'});
-  for(const item of items) C.check(project?C.absent(item.expense_category):
-    ['project_department_name','business_structure','business_line','business_subline'].every(name=>C.absent(item[name])),
+  for(const item of items) C.check(project===undefined|| (project?C.absent(item.expense_category):
+    ['project_department_name','business_structure','business_line','business_subline'].every(name=>C.absent(item[name]))),
   'PAYMENT_INPUT_CONFLICT');
   const companies=source('companies');
-  const paymentCompany=choice(needs,'payment_company','支付公司',input.payment_company,distinctValues(
-    await query(ctx,'companies',{[companies.hasBankAccountField]:rules.defaults[F.bankFlag]},[companies.companyField]),companies.companyField));
+  editorChoices.payment_company=distinctValues(
+    await query(ctx,'companies',{[companies.hasBankAccountField]:rules.defaults[F.bankFlag]},[companies.companyField]),companies.companyField);
+  const paymentCompany=choice(needs,'payment_company','支付公司',input.payment_company,editorChoices.payment_company);
   const currencies=source('currencies');
-  const currency=paymentCompany?choice(needs,'currency','币种',input.currency,distinctValues(
-    await query(ctx,'currencies',{[currencies.companyField]:paymentCompany},[currencies.currencyField]),currencies.currencyField)):null;
-  const scope=await classificationScope({...input,items},ctx,needs,project),PD=source('projectDepartments');
+  editorChoices.currency=paymentCompany?distinctValues(
+    await query(ctx,'currencies',{[currencies.companyField]:paymentCompany},[currencies.currencyField]),currencies.currencyField):[];
+  const currency=paymentCompany?choice(needs,'currency','付款币种',input.currency,editorChoices.currency):null;
+  if(project===undefined)needs.push({field:'is_project',message:'这笔付款是否属于项目？如是，请说明项目名称。',choices:[{value:false,label:'非项目'},{value:true,label:'项目'}]});
+  const scope=currency&&project!==undefined&&items.length
+    ?await classificationScope({...input,items},ctx,needs,project,editorChoices):{ready:false,pairs:[],projectRows:[]},PD=source('projectDepartments');
   const recommendationContexts=[];
   const selections=scope.ready?accountSelections({items:items.map(item=>({...item,description:item.description||''}))},
     scope.pairs,needs,project?scope.category:undefined,recommendationContexts):items.map(()=>({}));
+  for(const [index,item]of items.entries()) {
+    editorChoices[`items[${index}].expense_category`]=[...new Set(scope.pairs.map(pair=>pair.category))];
+    const selected=selections[index].category||scope.category||item.expense_category;
+    editorChoices[`items[${index}].account`]=[...new Set(scope.pairs.filter(pair=>!selected||C.normalized(pair.category)===C.normalized(selected)).map(pair=>pair.account))];
+  }
   const hkd=rules.defaults[F.hkd],resolveRate=createRateResolver({ctx,source:source('rates'),errorCode:'PAYMENT_RATE_INVALID',
     errorMessage:'付款汇率未唯一配置，请联系 Finance。'});
-  const rate=currency?await resolveRate(currency,hkd):null,rows=[];
+  const rate=currency&&project!==undefined&&items.length?await resolveRate(currency,hkd):null,rows=[];
   for(const [index,item] of items.entries()) {
     const prefix=`items[${index}].`,row={category:selections[index].category||scope.category||item.expense_category||null,
       account:selections[index].account||item.account||null,description:textValue(item.description,F.itemDescription,fields),
@@ -150,7 +162,7 @@ async function buildDetails(input,ctx,fields) {
           const ids=distinctValues(scope.projectRows.filter(record=>C.exact(record[PD.nameField],row.projectDepartment)),PD.departmentIdField);
           C.check(ids.length===1&&/^\d+$/.test(ids[0]),'PAYMENT_PROJECT_DEPARTMENT_AMBIGUOUS','项目部门资料不唯一，请联系 Finance。');
           row.projectDepartmentId=ids[0];
-          const values=await businessLines(ctx,fields,needs,item,ids[0],['projectStructure','projectLine','projectSubline'],prefix);
+          const values=await businessLines(ctx,fields,needs,item,ids[0],['projectStructure','projectLine','projectSubline'],prefix,editorChoices);
           row.structure=values[F.projectStructure]??null;row.line=values[F.projectLine]??null;row.subline=values[F.projectSubline]??null;
         }
       }
@@ -161,8 +173,8 @@ async function buildDetails(input,ctx,fields) {
   const detailReviewContract=detailContract(project,paymentCompany,currency,scope,rows,fields);
   const previewRows=rows.map(row=>({...Object.fromEntries(detailReviewContract.columns.map(([key,label])=>[label,row[key]])),
     ...(row.classificationReason?{分类建议依据:row.classificationReason}:{})}));
-  return {rows,needsInput:needs,detailReviewContract,recommendationContexts,paymentCompany,currency,scope,rate,
-    preview:{支付公司:paymentCompany||'',币种:currency,是否项目款项:project?'是':'否',
+  return {rows,needsInput:needs,detailReviewContract,recommendationContexts,paymentCompany,currency,scope,rate,editorChoices,
+    preview:{支付公司:paymentCompany||'',币种:currency,是否项目款项:project===undefined?'待确认':project?'是':'否',
       ...(project?{项目:scope.projectName||'',项目费用类别:scope.category||''}:{}),付款明细:previewRows,
       付款总额:rows.length&&rows.every(row=>row.amount!==null)?sum(rows.map(row=>row.amount)):null}};
 }
@@ -170,9 +182,9 @@ async function details(input,ctx) {
   validateInput(input);
   const result=await buildDetails(input,ctx,assertSchema(await ctx.schema()));
   return {rows:result.rows.map(({hkdAmount,projectDepartmentId,...row})=>row),preview:result.preview,
-    needsInput:result.needsInput,detailReviewContract:result.detailReviewContract,recommendationContexts:result.recommendationContexts};
+    needsInput:result.needsInput,detailReviewContract:result.detailReviewContract,recommendationContexts:result.recommendationContexts,editorChoices:result.editorChoices};
 }
-async function relations(ctx,input,needs) {
+async function relations(ctx,input,needs,editorChoices={}) {
   const formData={},preview={},labels={contract:'关联合同',seal:'关联用印',expense:'关联对外费用'};
   for(const kind of ['contract','seal','expense']) {
     const spec=policy.relatedSources[kind];
@@ -182,6 +194,7 @@ async function relations(ctx,input,needs) {
     const candidates=Association.validateCandidates(await ctx.related(kind),{
       ...Association.sourceConstraints(spec),appType:companyConfig.appType,formUuid:spec.form,
       actorId:ctx.actor.userid,corpId:ctx.actor.corp_id});
+    editorChoices[kind+'_instance_id']=candidates.map(row=>({value:row.instance_id,label:row.title||row.sub_title||labels[kind]}));
     const found=candidates.find(row=>row.instance_id===selected);
     if(!found) {needs.push({field:kind+'_instance_id',message:candidates.length?`请选择${labels[kind]}，或取消关联。`:'没有可用的关联单，请取消关联。',
       choices:candidates.map(row=>({value:row.instance_id,label:row.title,subtitle:row.sub_title,status:row.instance_status}))});continue;}
@@ -254,12 +267,15 @@ function verifyAccountText(input) {
 async function prepare(input,ctx) {
   validateInput(input);
   const actor=C.identity(ctx),fields=assertSchema(await ctx.schema()),needs=[];
+  const detail=await buildDetails(input,ctx,fields);
+  if(detail.needsInput.length)return {needsInput:detail.needsInput,preview:detail.preview,
+    recommendationContexts:detail.recommendationContexts,editorChoices:detail.editorChoices};
   const reference=await paymentReference(input,ctx);
   if(reference.needsInput) return reference;
   input=reference.input;verifyAccountText(input);
   const workflowState={...(ctx.workflowState||{}),...(reference.workflowState||{})};
-  const pause=()=>({needsInput:needs,workflowState});
-  const project=input.is_project??rules.defaultIsProject,same=input.same_bearing_company??rules.defaultSameBearingCompany;
+  const pause=()=>({needsInput:needs,workflowState,editorChoices:detail.editorChoices});
+  const project=input.is_project,same=input.same_bearing_company??rules.defaultSameBearingCompany;
   for(const [field,code] of [[F.isProject,project?'NORMAL':'HIDDEN'],[F.sameBearing,same?'HIDDEN':'NORMAL']])
     C.option(fields,field,code,['HIDDEN','NORMAL']);
   C.check(project||requirements.project.every(name=>C.absent(input[name])),'PAYMENT_INPUT_CONFLICT');
@@ -277,6 +293,10 @@ async function prepare(input,ctx) {
   const latestDate=C.date(input.latest_payment_date);
   const roster=C.rosterFields(await ctx.roster(policy.rosterFields),actor),ids=C.rosterDepartmentIds(roster);
   const names=(roster.get(R.departmentNames)||[]).flatMap(row=>C.values(row.label??row.value)).flatMap(v=>v.split(/[,，|]/)).map(v=>v.trim());
+  if(names.length===ids.length&&names.every(Boolean)) {
+    detail.editorChoices.department_name=names;
+    detail.editorChoices.department_id=ids.map((value,index)=>({value,label:names[index]}));
+  }
   let selectedDepartment=input.department_id;
   if(input.department_name!==undefined) {
     C.check(names.length===ids.length&&names.every(Boolean),'ROSTER_FIELD_MISSING','本人部门资料不完整，请联系 HR。');
@@ -317,8 +337,6 @@ async function prepare(input,ctx) {
     [F.bankName]:textValue(input.bank_name,F.bankName,fields),[F.bankAccount]:textValue(input.bank_account,F.bankAccount,fields),
     [F.description]:textValue(input.description,F.description,fields)
   };
-  const detail=await buildDetails(input,ctx,fields);
-  needs.push(...detail.needsInput);if(needs.length)return pause();
   const {paymentCompany,currency,scope,rate}=detail;
   formData[F.paymentCompany]=paymentCompany;formData[F.paymentCompanyMirror]=paymentCompany;formData[F.currency]=currency;
   if(same) {
@@ -326,10 +344,10 @@ async function prepare(input,ctx) {
     formData[F.bearingCompany]=paymentCompany;
   } else {
     const companies=source('companies');
-    formData[F.bearingCompany]=choice(needs,'bearing_company','承担公司',input.bearing_company,distinctValues(
-      await query(ctx,'companies',{},[companies.companyField]),companies.companyField),C.required(fields,F.bearingCompany));
+    detail.editorChoices.bearing_company=distinctValues(await query(ctx,'companies',{},[companies.companyField]),companies.companyField);
+    formData[F.bearingCompany]=choice(needs,'bearing_company','承担公司',input.bearing_company,detail.editorChoices.bearing_company,C.required(fields,F.bearingCompany));
   }
-  Object.assign(formData,await businessLines(ctx,fields,needs,input,dept.id,['structure','line','subline']));
+  Object.assign(formData,await businessLines(ctx,fields,needs,input,dept.id,['structure','line','subline'],'',detail.editorChoices));
   if(needs.length)return pause();
   if(project) {formData[F.project]=scope.projectName;formData[F.projectCategory]=scope.category;}
   const hkd=rules.defaults[F.hkd],rows=[],previewRows=detail.preview.付款明细,projectDepartmentIds=[],projectManagers=[];
@@ -355,9 +373,10 @@ async function prepare(input,ctx) {
     C.check(contacts.ids.length||!C.required(fields,field),'PAYMENT_CONTACT_MISSING','支付公司的财务人员配置缺失，请联系 Finance。');
     formData[field]=contacts.ids;
   }
-  const associated=await relations(ctx,input,needs);if(needs.length) return pause();
+  const associated=await relations(ctx,input,needs,detail.editorChoices);if(needs.length) return pause();
   Object.assign(formData,associated.formData);
   return {formData,departmentId:dept.id,attachmentField:F.attachment,workflowState,
+    editorChoices:detail.editorChoices,
     detailReviewContract:detail.detailReviewContract,detailReviewRows:detail.rows,recommendationContexts:detail.recommendationContexts,
     verification:{optionalEmptyFields:Object.entries(formData).filter(([field,value])=>!C.required(fields,field)&&(value===''||Array.isArray(value)&&value.length===0)).map(([field])=>field),
       enumLabels:{[F.isProject]:{HIDDEN:'否',NORMAL:'是'},[F.sameBearing]:{HIDDEN:'是',NORMAL:'否'}}},

@@ -7,6 +7,7 @@
       "sys00-workPlace",
       "sys00-mainDeptId",
       "sys00-deptIds",
+      "sys00-dept",
       "sys05-contractCompanyName"
     ]
   },

@@ -42,6 +42,9 @@ const {
 } = require('./lib/verification.cjs');
 const {supportForError} = require('./lib/support.cjs');
 const DetailReview = require('../shared/detail-review.cjs');
+const LocalUpdate = require('../shared/finance-local-update.cjs');
+const Editor = require('../shared/finance-detail-editor.cjs');
+const {createAttachmentVerifier}=require('./lib/attachment-verification-cache.cjs');
 const Directory = require('./lib/workflow-directory.cjs');
 const {
   attachmentJobs,
@@ -62,7 +65,7 @@ function parse(args) {
   for (let i = 0; i < tail.length; i++) {
     const v = tail[i];
     if (v.startsWith('--')) {
-      check(['--input', '--draft', '--confirm'].includes(v) && !Object.hasOwn(options, v.slice(2)) && tail[i + 1] && !tail[i + 1].startsWith('--'), 'ARGUMENT_INVALID');
+      check(['--input', '--draft', '--confirm', '--output'].includes(v) && !Object.hasOwn(options, v.slice(2)) && tail[i + 1] && !tail[i + 1].startsWith('--'), 'ARGUMENT_INVALID');
       options[v.slice(2)] = tail[++i];
     } else positionals.push(v);
   }
@@ -71,6 +74,8 @@ function parse(args) {
     details: ['input'],
     review: ['input', 'draft'],
     'confirm-details': ['confirm'],
+    editor: ['output'],
+    'apply-edit': ['input'],
     prepare: ['input', 'draft'],
     submit: ['confirm'],
     preview: [],
@@ -84,7 +89,7 @@ function parse(args) {
     directory: [], personal: ['input','confirm']
   };
   check(Object.hasOwn(accepted, command) && Object.keys(options).every(k => accepted[command].includes(k)), 'COMMAND_NOT_ALLOWED');
-  if (['details', 'review', 'confirm-details', 'prepare', 'submit', 'preview', 'result', 'requirements','personal'].includes(command)) check(positionals.length === 1, 'ARGUMENT_INVALID');else check(positionals.length === 0, 'ARGUMENT_INVALID');
+  if (['details', 'review', 'confirm-details', 'prepare', 'submit', 'preview', 'result', 'requirements','personal','editor','apply-edit'].includes(command)) check(positionals.length === 1, 'ARGUMENT_INVALID');else check(positionals.length === 0, 'ARGUMENT_INVALID');
   return {
     command,
     arg: positionals[0],
@@ -297,6 +302,29 @@ function assertPreparedReview(dir,w,info,review,prepared) {
     check(false,'DETAIL_FACTS_CHANGED_REVIEW_REQUIRED');
   }
 }
+function editorContext(dir,id,info) {
+  const maybe=name=>fs.existsSync(path.join(dir,name))?read(path.join(dir,name)):null;
+  const review=maybe('details-review.json'),preparation=maybe('preparation-result.json'),saved=maybe('prepared.json');
+  const prepared=preparation?.revisionId===info.revisionId?preparation.result
+    :saved?.revisionId===info.revisionId?saved.preparedData:null;
+  const storedMaterials=maybe('editor-materials.json');
+  const materials=workflow(info.workflow).detailReview?info.materials||[]
+    :storedMaterials?.filesDigest===digest(info.files||[])?storedMaterials.materials
+    :(info.files||[]).map(file=>({id:'file-'+digest(path.resolve(file)),name:path.basename(file),path:file,
+      status:'included',itemIndexes:(info.input.items||[]).map((_,index)=>index),note:''}));
+  return {review,prepared,materials,baseRevision:digest({
+    content:Editor.revision({workflow:info.workflow,draftId:id,input:info.input,review,prepared,materials}),
+    revisionId:info.revisionId??null,version:info.version})};
+}
+function assertEditorRevision(dir,id,previous,expected) {
+  if(expected) check(expected.draftId===id&&previous
+    &&editorContext(dir,id,previous).baseRevision===expected.baseRevision,'DETAIL_EDITOR_REVISION_CONFLICT');
+}
+function saveEditorRows(dir,info,expected) {
+  if(expected) write(path.join(dir,'editor-rows.json'),{inputDigest:digest(info.input.items||[]),rowIds:expected.rowIds});
+  if(expected?.editorMaterials)write(path.join(dir,'editor-materials.json'),
+    {filesDigest:digest(info.files||[]),materials:expected.editorMaterials});
+}
 async function run(args, deps = {}) {
   const {
       command,
@@ -395,7 +423,7 @@ async function run(args, deps = {}) {
   // upload, nor manufacture a second intent before its detail review exists.
   if (command === 'prepare' && workflow(arg).detailReview === true && !options.draft) return reviewRequired();
   const root = deps.root || dataRoot();
-  if (command === 'preview' || command === 'submit' || command === 'confirm-details') {
+  if (command === 'preview' || command === 'submit' || command === 'confirm-details' || command==='editor' || command==='apply-edit') {
     const info = read(path.join(draftDir(root, arg), 'input.json'));
     assertWorkflowStartAllowed(info.workflow);
   }
@@ -410,6 +438,46 @@ async function run(args, deps = {}) {
     diagnostics: '如需支持，仅提供时间、命令名、错误码和草稿编号。'
   };
   check((await auth.status()).status === 'ready', 'OPENYIDA_LOGIN_REQUIRED');
+  if(command==='apply-edit') {
+    check(options.input&&path.isAbsolute(options.input),'INPUT_FILE_REQUIRED');
+    const dir=draftDir(root,arg);
+    const update=await locked(dir,async()=>{
+      const info=read(path.join(dir,'input.json')),w=workflow(info.workflow),rt=runtime(info.workflow,{auth});
+      check(sameActor(info.actor,rt.actor()),'DRAFT_IDENTITY_MISMATCH');
+      if(fs.existsSync(path.join(dir,'process','state.json'))) {
+        const state=await manager(rt,w,dir).inspect();
+        if(state.status!=='prepared') return {attempted:attemptedResult(state,arg)};
+      }
+      const current=editorContext(dir,arg,info),document=read(path.join(dir,'editor-document.json'));
+      const applied=Editor.applyEdit({document,edit:read(options.input),currentRevision:current.baseRevision,
+        input:info.input,materials:current.materials});
+      const patch=Object.fromEntries(Object.entries(applied.input).filter(([key,value])=>
+        !Object.hasOwn(info.input,key)||digest(value)!==digest(info.input[key])));
+      // Only the editor's project-scope switch may remove these prior values.
+      // Keep this outside the user-edit JSON and recheck the base revision
+      // under the review/prepare lock before applying the removal.
+      const deletedKeys=Object.keys(info.input).filter(key=>!Object.hasOwn(applied.input,key));
+      check(deletedKeys.every(key=>['project_name','project_expense_category','project_department_id'].includes(key))
+        &&(!deletedKeys.length||applied.input.is_project===false&&info.input.is_project!==false),'DETAIL_EDITOR_EDIT_INVALID');
+      const request={...(w.partialUpdates||w.detailReview?patch:applied.input),
+        ...(w.detailReview&&digest(applied.materials)!==digest(info.materials||[])?{materials:applied.materials}:{})};
+      if(!w.detailReview) {
+        check(applied.materials.every(material=>material.status!=='unresolved'),'DETAIL_EDITOR_MATERIAL_INVALID');
+        const files=applied.materials.filter(material=>material.status==='included').map(material=>material.path);
+        if(!w.partialUpdates||digest(files)!==digest(info.files||[]))request.attachments=files;
+      }
+      const file=path.join(dir,'editor-input-'+crypto.randomUUID()+'.json');write(file,request);
+      return {workflow:info.workflow,file,command:w.detailReview&&document.stage==='details'?'review':'prepare',
+        expected:{draftId:arg,baseRevision:current.baseRevision,rowIds:applied.rowIds,deletedKeys,
+          ...(!w.detailReview?{editorMaterials:applied.materials}:{})}};
+    });
+    if(update.attempted) return update.attempted;
+    try {
+      const result=await run([update.command,update.workflow,'--draft',arg,'--input',update.file],
+        {...deps,editorExpected:update.expected});
+      return {...result,editApplied:true,message:result.message||'修改已写入草稿，请核对更新后的内容。'};
+    } finally {fs.unlinkSync(update.file);}
+  }
   if (command === 'review') {
     const w=workflow(arg),rt=runtime(arg,{auth}),actor=rt.actor();
     let id=options.draft,initialData;
@@ -422,6 +490,7 @@ async function run(args, deps = {}) {
       const infoFile=path.join(dir,'input.json'),previous=fs.existsSync(infoFile)?read(infoFile):null;
       if(options.draft) check(previous,'DRAFT_NOT_FOUND');
       if(previous) check(previous.workflow===arg&&sameActor(previous.actor,actor),'DRAFT_IDENTITY_OR_WORKFLOW_MISMATCH');
+      assertEditorRevision(dir,id,previous,deps.editorExpected);
       if(fs.existsSync(path.join(dir,'process','state.json'))) {
         const state=await manager(rt,w,dir).inspect();
         if(state.status!=='prepared') return attemptedResult(state,id);
@@ -431,6 +500,7 @@ async function run(args, deps = {}) {
       // Invalid input on a revision also revokes its old final preview.
       write(reviewFile,{...(prior||{}),status:'pending',confirmedSha256:null});
       const request=initialData||inputData(options,true),input={...previous?.input,...request.input};
+      for(const key of deps.editorExpected?.deletedKeys||[])delete input[key];
       const files=previous&&!request.filesProvided?previous.files:request.files;
       const materials=request.materialsProvided?request.materials:previous?.materials||[];
       const identity=intentIdentity(arg,actor,{input,files});
@@ -440,6 +510,7 @@ async function run(args, deps = {}) {
       if(request.materialUploadsProvided||previous?.materialUploads!==undefined)
         info.materialUploads=request.materialUploadsProvided?request.materialUploads:previous.materialUploads;
       write(infoFile,info);
+      saveEditorRows(dir,info,deps.editorExpected);
       const directoryStatus=await directory.check(arg);
       const review=await refreshReview(dir,w,rt,info,prior);
       return {...DetailReview.response(review,id),directory:directoryStatus,submissionBlocked:directoryStatus.status!=='allowed'};
@@ -463,7 +534,9 @@ async function run(args, deps = {}) {
       const previous = fs.existsSync(infoFile) ? read(infoFile) : null;
       if (options.draft) check(previous, 'DRAFT_NOT_FOUND');
       if (previous) check(previous.workflow === arg && sameActor(previous.actor, actor), 'DRAFT_IDENTITY_OR_WORKFLOW_MISMATCH');
+      assertEditorRevision(dir,id,previous,deps.editorExpected);
       const pm = manager(rt, w, dir);
+      let previousState,previousSaved;
       if (fs.existsSync(path.join(dir, 'process', 'state.json'))) {
         const old = await pm.inspect();
         if (old.status !== 'prepared') return {
@@ -473,6 +546,8 @@ async function run(args, deps = {}) {
           mayRetry: false,
           message: '此草稿已经发出提交尝试，请用 result 查看，不能重新起草或重复提交。'
         };
+        previousState=old;
+        if(fs.existsSync(path.join(dir,'prepared.json'))) previousSaved=read(path.join(dir,'prepared.json'));
       }
       // Persist invalidation before input/source validation or any attachment work.
       // Only the final revision commit can make the new snapshot confirmable.
@@ -499,6 +574,7 @@ async function run(args, deps = {}) {
       try {
         const request = initialData || inputData(options, w.detailReview === true);
         const input = w.partialUpdates || w.detailReview === true ? {...previous?.input,...request.input} : request.input;
+        for(const key of deps.editorExpected?.deletedKeys||[])delete input[key];
         // Workflows with editable initial defaults also accept partial replies.
         // Omission preserves files there; an explicit [] always clears them.
         const files = (w.partialUpdates || w.detailReview === true) && previous && !request.filesProvided ? previous.files : request.files;
@@ -524,18 +600,24 @@ async function run(args, deps = {}) {
         if(w.detailReview===true&&(request.materialUploadsProvided||previous?.materialUploads!==undefined))
           info.materialUploads=request.materialUploadsProvided?request.materialUploads:previous.materialUploads;
         write(infoFile, info);
+        saveEditorRows(dir,info,deps.editorExpected);
         const directoryStatus=await directory.check(arg);
         if(directoryStatus.status!=='allowed') return Directory.blocked(directoryStatus,id);
+        let localPrepared=null;
+        if(LocalUpdate.eligible({workflow:arg,previous,request,saved:previousSaved,state:previousState,version:VERSION,today:today()}))
+          localPrepared=LocalUpdate.applyDescription({workflow:arg,request,saved:previousSaved,schema:await rt.ctx.schema()});
         let detailReview;
         if(w.detailReview === true) {
           const file=path.join(dir,'details-review.json'),prior=fs.existsSync(file)?read(file):null;
           if(!prior) return reviewRequired(id);
-          detailReview=await refreshReview(dir,w,rt,info,prior);
+          detailReview=localPrepared&&prior.status==='ready'&&prior.confirmedSha256===prior.reviewSha256
+            ?prior:await refreshReview(dir,w,rt,info,prior);
           if(detailReview.needsInput.length||detailReview.confirmedSha256!==detailReview.reviewSha256)
             return DetailReview.response(detailReview,id);
         }
-        const prepared = json(await w.prepare(input, {...rt.ctx, workflowState: info.workflowState,
+        const prepared = localPrepared||json(await w.prepare(input, {...rt.ctx, workflowState: info.workflowState,
           inputUpdateKeys:Object.keys(request.input)}));
+        write(path.join(dir,'preparation-result.json'),{revisionId,result:prepared});
         rt.actor();
         if (Object.hasOwn(prepared, 'workflowState')) {
           info.workflowState = prepared.workflowState;
@@ -550,12 +632,15 @@ async function run(args, deps = {}) {
             status: 'needs_input',
             draftId: id,
             needsInput: prepared.needsInput,
+            ...(prepared.preview?{preview:prepared.preview}:{}),
+            ...(prepared.editorChoices?{editorChoices:prepared.editorChoices}:{}),
             ...(prepared.recommendationContexts?{recommendationContexts:prepared.recommendationContexts}:{})
           };
         }
         check(prepared.formData && prepared.departmentId && prepared.preview, 'WORKFLOW_RESULT_INVALID');
         if(detailReview) assertPreparedReview(dir,w,info,detailReview,prepared);
         const schema = await rt.ctx.schema();
+        const preparedData=json(prepared);
         const jobs = attachmentJobs(input, files, prepared, field => attachmentAllowed(APP, w.formUuid, field));
         const resolvedRules = resolveAttachmentRules(prepared, field => attachmentRules(schema, field));
         const groups = attachmentRuleGroups(input, prepared, jobs);
@@ -572,6 +657,8 @@ async function run(args, deps = {}) {
           return {
             status: 'needs_input',
             draftId: id,
+            preview:prepared.preview,
+            ...(prepared.editorChoices?{editorChoices:prepared.editorChoices}:{}),
             needsInput: [{
               field: group.inputField,
               message: group.rowIndex === undefined
@@ -585,6 +672,7 @@ async function run(args, deps = {}) {
           ?DetailReview.assertMaterialUploadScope(detailReview,prepared,jobs,info.materialUploads||[]):null;
         if(materialUploadScope) prepared.preview.附件来源=materialUploadScope.summary;
         const uploaded = [];
+        const verifyAttachment=createAttachmentVerifier({stateDir:dir,actor,workflow:arg,verify:verifyDownload});
         if (jobs.length) {
           const uploaders = new Map();
           for (const job of jobs) {
@@ -611,7 +699,7 @@ async function run(args, deps = {}) {
               ...attempt
             });
             rt.actor();
-            await verifyDownload({
+            await verifyAttachment({
               reference: up.reference,
               expectedSha256: up.sha256,
               tenantOrigin: TENANT,
@@ -656,7 +744,9 @@ async function run(args, deps = {}) {
           attachmentInputs: prepared.attachmentInputs || null,
           attachmentFields: prepared.attachmentFields || null,
           attachmentRequirements: resolvedRules.requirements,
-          attachments: attachmentSummary
+          attachments: attachmentSummary,
+          preparedData,preparedDataSha256:digest(preparedData),schemaSha256:digest(schema),
+          editorChoices:prepared.editorChoices||{}
         });
         check(read(revisionFile).revisionId === revisionId, 'DRAFT_REVISION_CHANGED');
         rt.actor();
@@ -704,6 +794,28 @@ async function run(args, deps = {}) {
     const pm = manager(rt, w, dir);
     const revisionFile = path.join(dir, 'revision.json');
     const revision = fs.existsSync(revisionFile) ? read(revisionFile) : null;
+    if(command==='editor') {
+      check(Editor.definitions[info.workflow],'DETAIL_EDITOR_WORKFLOW_UNSUPPORTED');
+      if(fs.existsSync(path.join(dir,'process','state.json'))) {
+        const state=await pm.inspect();
+        if(state.status!=='prepared') return attemptedResult(state,arg);
+      }
+      const current=editorContext(dir,arg,info),rowFile=path.join(dir,'editor-rows.json');
+      const oldRows=fs.existsSync(rowFile)?read(rowFile):null;
+      const view=Editor.createEditor({workflow:info.workflow,draftId:arg,input:info.input,
+        review:current.review,prepared:current.prepared,materials:current.materials,revision:current.baseRevision,
+        rowIds:oldRows?.inputDigest===digest(info.input.items||[])?oldRows.rowIds:undefined,
+        previousDocument:fs.existsSync(path.join(dir,'editor-document.json'))?read(path.join(dir,'editor-document.json')):undefined,
+        stage:w.detailReview&&current.review?.confirmedSha256!==current.review?.reviewSha256?'details':'application'});
+      const output=options.output||path.join(dir,'finance-details.html');
+      check(path.isAbsolute(output)&&path.extname(output).toLowerCase()==='.html','DETAIL_EDITOR_OUTPUT_INVALID');
+      fs.mkdirSync(path.dirname(output),{recursive:true,mode:0o700});
+      fs.writeFileSync(output,view.html,{encoding:'utf8',mode:0o600});
+      write(path.join(dir,'editor-document.json'),view.document);
+      write(rowFile,{inputDigest:digest(info.input.items||[]),rowIds:view.rowIds});
+      return {status:'editor_ready',draftId:arg,path:output,baseRevision:view.baseRevision,localDraftOnly:true,
+        nextAction:'open_editor',message:'可在页面修改并导出修改文件，再交给 Agent 应用。页面导出不等于草稿已更新或申请已提交。'};
+    }
     if(command === 'confirm-details') {
       check(w.detailReview===true,'WORKFLOW_DETAIL_REVIEW_NOT_SUPPORTED');
       if(fs.existsSync(path.join(dir,'process','state.json'))) {
@@ -720,6 +832,7 @@ async function run(args, deps = {}) {
         current=DetailReview.checkpoint({workflow:w.key,actor:info.actor,previous:prior,
           result:{rows:prior.rows,preview:prior.preview,needsInput:prior.needsInput,
             ...(prior.recommendationContexts?{recommendationContexts:prior.recommendationContexts}:{}),
+            ...(prior.editorChoices?{editorChoices:prior.editorChoices}:{}),
             ...(prior.detailReviewContract===undefined?{}:{detailReviewContract:prior.detailReviewContract})},
       materials:DetailReview.normalizeMaterials(info.materials||[],info.input.items?.length||0,w.materialRoles)});
       } catch(error) {
@@ -829,10 +942,11 @@ async function run(args, deps = {}) {
           return item.field === job.field && (item.rowIndex ?? null) === (job.rowIndex ?? null)
             && fileAttempt(job.filePath).expectedSha256 === item.sha256;
         }), 'BUSINESS_FACTS_CHANGED_REPREPARE');
+        const verifyAttachment=createAttachmentVerifier({stateDir:dir,actor:info.actor,workflow:info.workflow,verify:verifyDownload});
         for (const item of saved.attachments) {
           const ref = referenceFor(state.snapshot,saved,item);
           check(ref, 'ATTACHMENT_SNAPSHOT_MISMATCH');
-          await verifyDownload({
+          await verifyAttachment({
             reference: ref,
             expectedSha256: item.sha256,
             tenantOrigin: TENANT,

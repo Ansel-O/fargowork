@@ -70,7 +70,10 @@ async function prepare(input,ctx) {
     if(!after&&C.required(fields,F[newField])) needsInput.push({field:inputKey,message:`请补充新${label}。`});
   }
   if(!changes.length) needsInput.push({field:'change',message:'当前资料没有变化，请说明需要补录或修改哪项收款信息。'});
-  if(needsInput.length) return {needsInput,workflowState};
+  const preview={流程:title,申请人:actor.name||actor.userid,申请日期:ctx.today,
+    原收款资料:oldPreview,新收款资料:newPreview,本次变更:changes,
+    生效说明:'提交的是资料变更申请；默认收款资料是否生效，以审批和后续维护结果为准。'};
+  if(needsInput.length) return {needsInput,workflowState,preview};
   const company=oneRosterValue(map,R.contractCompany),source=sources[config.cashierSource];
   formData[F.contractCompany]=text(company,F.contractCompany,fields);
   const contacts=company?await C.contacts(ctx,{form:source.formUuid,key:source.companyField,admin:source.cashierField},company):{ids:[]};
@@ -80,8 +83,6 @@ async function prepare(input,ctx) {
   return {formData,departmentId:dept.id,workflowState,
     verification:{optionalEmptyFields:Object.entries(formData).filter(([id,value])=>!C.required(fields,id)
       &&(value===''||Array.isArray(value)&&!value.length)).map(([id])=>id)},
-    preview:{流程:title,申请人:actor.name||actor.userid,申请日期:ctx.today,
-      原收款资料:oldPreview,新收款资料:newPreview,本次变更:changes,
-      生效说明:'提交的是资料变更申请；默认收款资料是否生效，以审批和后续维护结果为准。'}};
+    preview};
 }
 module.exports={key,title,formUuid:target.formUuid,policy,requirements,prepare,partialUpdates:true};

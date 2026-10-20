@@ -103,7 +103,6 @@
   "rules": {
     "managerIndex": 0,
     "precision": 2,
-    "defaultIsProject": false,
     "defaultSameBearingCompany": true,
     "defaults": {
       "textField_m8g2zuug": "是",
