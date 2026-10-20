@@ -66,11 +66,14 @@ function control(field,values,options){
   const current=hasValue?values[field.key]:field.value;
   let input;
   if(field.type==='select'||field.type==='boolean'){
-    input=el('select');const empty=el('option',field.type==='boolean'?'请选择':'请选择或保留当前值');empty.value='';
+    input=el('select');const empty=el('option',field.type==='boolean'?'未填写，请选择':'请选择或保留当前值');empty.value='';
     if(field.type==='boolean')empty.disabled=true;input.append(empty);
     const choices=field.type==='boolean'?[{value:true,label:'是'},{value:false,label:'否'}]:field.choices||[];
-    choices.forEach((option,index)=>{const node=el('option',option.label);node.value=String(index);input.append(node);
-      if(option.value===current)node.selected=true;});
+    choices.forEach((option,index)=>{const node=el('option',option.label);node.value=String(index);input.append(node);});
+    // A disabled placeholder is otherwise skipped by the browser and an
+    // untouched boolean looks like "yes". Select the actual value explicitly.
+    const selectedIndex=choices.findIndex(option=>option.value===current);
+    input.value=selectedIndex<0?'':String(selectedIndex);
     input.addEventListener('change',()=>{
       if(input.value===''){if(field.type==='boolean'){delete values[field.key];}else values[field.key]='';}
       else values[field.key]=choices[Number(input.value)].value;

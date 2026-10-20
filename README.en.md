@@ -10,7 +10,7 @@
 
 Requires Windows, Node.js 22+, npm and the official OpenYida CLI (supported versions: `2026.10.16`, `2026.10.19`). To install manually, run `node scripts/setup.cjs` from the complete release package, follow the sign-in prompts, and have your AI client load the returned `skillEntry`. See the [installation instructions](SKILL.md#首次安装) and [troubleshooting guide](references/DEBUG.md) (in Chinese).
 
-**New in 3.1.0:** Financial applications establish the company, payment/reimbursement currency and project status before preparing details. Travel allowances count each date once. Editable detail pages and fewer repeated checks make revisions easier.
+**New in 3.1.1:** Every financial review automatically includes an HTML page tailored to its workflow. Describe changes in chat, or edit the page and return the exported file. The agent recalculates and shows the latest draft for your confirmation.
 
 ## 1. What it does
 
@@ -36,7 +36,7 @@ Financial applications follow this sequence:
 
 **Establish company, currency and any project allocation → Organize materials and calculate details → Edit and confirm details → Complete the main form → Confirm the full application → Submit.**
 
-Edit details in chat, or open the local detail page and export your changes for the agent to apply. A single straightforward expense can be reviewed in one sentence.
+The agent automatically provides the workflow's HTML page when it is time to review. Describe changes in chat, or edit the page and return the exported file. The agent recalculates and shows the updated draft before you confirm. Even a single expense gets a page, accompanied by a brief summary.
 
 The agent suggests expense categories and accounting codes, with suitable alternatives. You can accept them or change a specific row; fixed codes follow the existing rules. Currencies, exchange rates and other reference data come from company-maintained sources, not replacement values in chat or online market rates. Forms without a detail table, such as medical checkup reimbursement, go straight to confirming the full application.
 

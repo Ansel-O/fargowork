@@ -305,8 +305,10 @@ function assertPreparedReview(dir,w,info,review,prepared) {
 function editorContext(dir,id,info) {
   const maybe=name=>fs.existsSync(path.join(dir,name))?read(path.join(dir,name)):null;
   const review=maybe('details-review.json'),preparation=maybe('preparation-result.json'),saved=maybe('prepared.json');
-  const prepared=preparation?.revisionId===info.revisionId?preparation.result
+  let prepared=preparation?.revisionId===info.revisionId?preparation.result
     :saved?.revisionId===info.revisionId?saved.preparedData:null;
+  if(prepared&&saved?.revisionId===info.revisionId&&saved.editorPreview)
+    prepared={...prepared,preview:saved.editorPreview};
   const storedMaterials=maybe('editor-materials.json');
   const materials=workflow(info.workflow).detailReview?info.materials||[]
     :storedMaterials?.filesDigest===digest(info.files||[])?storedMaterials.materials
@@ -324,6 +326,35 @@ function saveEditorRows(dir,info,expected) {
   if(expected) write(path.join(dir,'editor-rows.json'),{inputDigest:digest(info.input.items||[]),rowIds:expected.rowIds});
   if(expected?.editorMaterials)write(path.join(dir,'editor-materials.json'),
     {filesDigest:digest(info.files||[]),materials:expected.editorMaterials});
+}
+function generateDetailEditor(dir,id,info,output) {
+  check(Editor.definitions[info.workflow],'DETAIL_EDITOR_WORKFLOW_UNSUPPORTED');
+  const current=editorContext(dir,id,info),rowFile=path.join(dir,'editor-rows.json');
+  const oldRows=fs.existsSync(rowFile)?read(rowFile):null;
+  const stage=workflow(info.workflow).detailReview
+    &&current.review?.confirmedSha256!==current.review?.reviewSha256?'details':'application';
+  output=output||path.join(dir,'finance-details.html');
+  check(path.isAbsolute(output)&&path.extname(output).toLowerCase()==='.html','DETAIL_EDITOR_OUTPUT_INVALID');
+  try {
+    const view=Editor.createEditor({workflow:info.workflow,draftId:id,input:info.input,
+      review:current.review,prepared:current.prepared,materials:current.materials,revision:current.baseRevision,
+      rowIds:oldRows?.inputDigest===digest(info.input.items||[])?oldRows.rowIds:undefined,
+      previousDocument:fs.existsSync(path.join(dir,'editor-document.json'))?read(path.join(dir,'editor-document.json')):undefined,
+      stage});
+    fs.mkdirSync(path.dirname(output),{recursive:true,mode:0o700});
+    fs.writeFileSync(output,view.html,{encoding:'utf8',mode:0o600});
+    write(path.join(dir,'editor-document.json'),view.document);
+    write(rowFile,{inputDigest:digest(info.input.items||[]),rowIds:view.rowIds});
+    return {status:'editor_ready',workflow:info.workflow,draftId:id,path:output,baseRevision:view.baseRevision,stage,
+      localDraftOnly:true,nextAction:'open_editor',
+      message:'请直接打开或链接这份 HTML 供员工核对。员工可口述修改，也可在页面编辑、导出修改文件后交给 Agent 应用；应用后展示新版，再等待员工明确确认。导出不等于保存或提交。'};
+  } catch(cause) {
+    const error=new Error('草稿已保留，但 HTML 明细生成失败。请修复生成问题后重开页面，不要将旧页面当作本次明细或宣称已展示。');
+    error.code='DETAIL_EDITOR_RENDER_FAILED';error.draftId=id;error.cause=cause;throw error;
+  }
+}
+function withDetailEditor(result,dir,id,info) {
+  return Editor.definitions[info.workflow]?{...result,detailEditor:generateDetailEditor(dir,id,info)}:result;
 }
 async function run(args, deps = {}) {
   const {
@@ -513,7 +544,8 @@ async function run(args, deps = {}) {
       saveEditorRows(dir,info,deps.editorExpected);
       const directoryStatus=await directory.check(arg);
       const review=await refreshReview(dir,w,rt,info,prior);
-      return {...DetailReview.response(review,id),directory:directoryStatus,submissionBlocked:directoryStatus.status!=='allowed'};
+      return withDetailEditor({...DetailReview.response(review,id),directory:directoryStatus,
+        submissionBlocked:directoryStatus.status!=='allowed'},dir,id,info);
     }).catch(error=>{error.draftId=id;throw error;});
   }
   if (command === 'prepare') {
@@ -613,7 +645,7 @@ async function run(args, deps = {}) {
           detailReview=localPrepared&&prior.status==='ready'&&prior.confirmedSha256===prior.reviewSha256
             ?prior:await refreshReview(dir,w,rt,info,prior);
           if(detailReview.needsInput.length||detailReview.confirmedSha256!==detailReview.reviewSha256)
-            return DetailReview.response(detailReview,id);
+            return withDetailEditor(DetailReview.response(detailReview,id),dir,id,info);
         }
         const prepared = localPrepared||json(await w.prepare(input, {...rt.ctx, workflowState: info.workflowState,
           inputUpdateKeys:Object.keys(request.input)}));
@@ -628,14 +660,14 @@ async function run(args, deps = {}) {
             ...pending,
             code: 'PREPARATION_NEEDS_INPUT'
           });
-          return {
+          return withDetailEditor({
             status: 'needs_input',
             draftId: id,
             needsInput: prepared.needsInput,
             ...(prepared.preview?{preview:prepared.preview}:{}),
             ...(prepared.editorChoices?{editorChoices:prepared.editorChoices}:{}),
             ...(prepared.recommendationContexts?{recommendationContexts:prepared.recommendationContexts}:{})
-          };
+          },dir,id,info);
         }
         check(prepared.formData && prepared.departmentId && prepared.preview, 'WORKFLOW_RESULT_INVALID');
         if(detailReview) assertPreparedReview(dir,w,info,detailReview,prepared);
@@ -654,7 +686,7 @@ async function run(args, deps = {}) {
             ...pending,
             code: 'PREPARATION_NEEDS_INPUT'
           });
-          return {
+          return withDetailEditor({
             status: 'needs_input',
             draftId: id,
             preview:prepared.preview,
@@ -665,7 +697,7 @@ async function run(args, deps = {}) {
                 ? group.previewField ? `请补充“${group.previewField}”要求的本地文件。` : '这个流程要求附件，请提供需要随申请提交的本地文件。'
                 : `请补充第 ${group.rowIndex + 1} 行要求的文件。`
             }]
-          };
+          },dir,id,info);
           }
         }
         const materialUploadScope=detailReview&&w.materialRoles!==undefined
@@ -746,7 +778,7 @@ async function run(args, deps = {}) {
           attachmentRequirements: resolvedRules.requirements,
           attachments: attachmentSummary,
           preparedData,preparedDataSha256:digest(preparedData),schemaSha256:digest(schema),
-          editorChoices:prepared.editorChoices||{}
+          editorChoices:prepared.editorChoices||{},editorPreview:preview
         });
         check(read(revisionFile).revisionId === revisionId, 'DRAFT_REVISION_CHANGED');
         rt.actor();
@@ -756,7 +788,7 @@ async function run(args, deps = {}) {
           identity,
           draftSha256: receipt.draftSha256
         });
-        return {
+        return withDetailEditor({
           status: 'prepared',
           draftId: id,
           nextAction: 'preview',
@@ -765,11 +797,14 @@ async function run(args, deps = {}) {
           ...(prepared.recommendationContexts?{recommendationContexts:prepared.recommendationContexts}:{}),
           localDraftOnly: true,
           message: '草稿已准备。先读取并展示最终预览，然后等待员工回复；本步骤不授权提交。'
-        };
+        },dir,id,info);
       } catch (error) {
         // This is inside command.lock, so a failed older prepare cannot clobber
         // the completion/error marker of a newer revision.
-        if (read(revisionFile).revisionId === revisionId) {
+        // HTML rendering is local presentation after the business snapshot.
+        // Keep that snapshot recoverable through editor/preview; no preview
+        // receipt has been granted by prepare or by a failed preview.
+        if (read(revisionFile).revisionId === revisionId && safeCode(error)!=='DETAIL_EDITOR_RENDER_FAILED') {
           write(revisionFile, {
             ...pending,
             code: safeCode(error)
@@ -800,21 +835,7 @@ async function run(args, deps = {}) {
         const state=await pm.inspect();
         if(state.status!=='prepared') return attemptedResult(state,arg);
       }
-      const current=editorContext(dir,arg,info),rowFile=path.join(dir,'editor-rows.json');
-      const oldRows=fs.existsSync(rowFile)?read(rowFile):null;
-      const view=Editor.createEditor({workflow:info.workflow,draftId:arg,input:info.input,
-        review:current.review,prepared:current.prepared,materials:current.materials,revision:current.baseRevision,
-        rowIds:oldRows?.inputDigest===digest(info.input.items||[])?oldRows.rowIds:undefined,
-        previousDocument:fs.existsSync(path.join(dir,'editor-document.json'))?read(path.join(dir,'editor-document.json')):undefined,
-        stage:w.detailReview&&current.review?.confirmedSha256!==current.review?.reviewSha256?'details':'application'});
-      const output=options.output||path.join(dir,'finance-details.html');
-      check(path.isAbsolute(output)&&path.extname(output).toLowerCase()==='.html','DETAIL_EDITOR_OUTPUT_INVALID');
-      fs.mkdirSync(path.dirname(output),{recursive:true,mode:0o700});
-      fs.writeFileSync(output,view.html,{encoding:'utf8',mode:0o600});
-      write(path.join(dir,'editor-document.json'),view.document);
-      write(rowFile,{inputDigest:digest(info.input.items||[]),rowIds:view.rowIds});
-      return {status:'editor_ready',draftId:arg,path:output,baseRevision:view.baseRevision,localDraftOnly:true,
-        nextAction:'open_editor',message:'可在页面修改并导出修改文件，再交给 Agent 应用。页面导出不等于草稿已更新或申请已提交。'};
+      return generateDetailEditor(dir,arg,info,options.output);
     }
     if(command === 'confirm-details') {
       check(w.detailReview===true,'WORKFLOW_DETAIL_REVIEW_NOT_SUPPORTED');
@@ -842,7 +863,7 @@ async function run(args, deps = {}) {
       }
       if(current.reviewSha256!==prior.reviewSha256) {
         revisionPending(dir,w.key,info.actor);write(file,current);
-        return DetailReview.response(current,arg);
+        return withDetailEditor(DetailReview.response(current,arg),dir,arg,info);
       }
       check(sameActor(info.actor,rt.actor()),'IDENTITY_CHANGED');
       write(file,{...current,confirmedSha256:current.reviewSha256});
@@ -859,8 +880,10 @@ async function run(args, deps = {}) {
       check(revision.version === VERSION && revision.workflow === info.workflow && sameActor(revision.actor, info.actor) && revision.revisionId === info.revisionId && revision.revisionId === saved.revisionId && revision.identity === info.identity && revision.identity === saved.identity && revision.draftSha256 === state.draftSha256 && revision.draftSha256 === saved.draftSha256, 'DRAFT_REVISION_INCOMPLETE');
     }
     if (command === 'preview') {
+      if(state.status==='prepared') check(state.snapshot.businessDate===today(),'PROCESS_DRAFT_EXPIRED');
+      const detailEditor=state.status==='prepared'&&Editor.definitions[info.workflow]
+        ?generateDetailEditor(dir,arg,info):null;
       if (state.status === 'prepared') {
-        check(state.snapshot.businessDate === today(), 'PROCESS_DRAFT_EXPIRED');
         // Records that this exact visible preview was requested, not human consent.
         write(path.join(dir, 'prepared.json'), {...saved, previewedDraftSha256: state.draftSha256});
       }
@@ -871,6 +894,7 @@ async function run(args, deps = {}) {
         preview: state.snapshot.preview,
         processInstanceId: state.processInstanceId,
         requiresConfirmation: state.status === 'prepared',
+        ...(detailEditor?{detailEditor}:{}),
         nextAction: state.status === 'prepared' ? 'wait_for_user_reply' : 'result',
         ...(state.status === 'prepared' ? {
           message: '向员工展示这份业务预览并结束本轮操作，等待员工下一条明确确认。此前提出申请或说提交，不代替此处确认。'
@@ -897,7 +921,7 @@ async function run(args, deps = {}) {
           catch(error) {revisionPending(dir,w.key,info.actor);throw error;}
           if(detailReview.needsInput.length||detailReview.confirmedSha256!==detailReview.reviewSha256) {
             revisionPending(dir,w.key,info.actor);
-            return DetailReview.response(detailReview,arg);
+            return withDetailEditor(DetailReview.response(detailReview,arg),dir,arg,info);
           }
         }
         const fresh = json(await w.prepare(info.input, {...rt.ctx, workflowState: info.workflowState || null,inputUpdateKeys:[]}));

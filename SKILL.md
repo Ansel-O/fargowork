@@ -109,11 +109,13 @@ description: 官方 OpenYida CLI 的 FargoWork 附加技能包。办理固定公
 
 公司维护的科目、币种、汇率和计算规则优先于用户建议及个人记忆。不得联网补造公司目录，也不能用用户指定汇率替代维护值。类别／科目允许员工在工具返回的合法范围内选择：草稿每行一组推荐，合理备选在独立说明区按行号列出；接受则继续，明确替换后只修改相应行并回显，固定科目不开放更换。参见[财务明细](references/FINANCE-DETAILS.md)。
 
+七个财务入口默认按[HTML 明细与修改](references/FINANCE-DETAIL-EDITOR.md)展示本流程自己的模板，不等待用户要求。`review`、`prepare`、`preview` 和 `apply-edit` 返回 `detailEditor.path`，直接打开或链接展示；宿主不能内嵌时提供本地 HTML 链接供浏览器打开。单笔也提供 HTML，可附一句摘要。自然语言修改回写同一草稿后展示新版；手动编辑通过导出文件交给 `apply-edit` 校验重算，再展示新版并取得确认。导出、应用修改不等于确认，不新增体检、默认卡或 Demo 的确认轮次；详见各流程 Skill。
+
 1. 从持久包根执行 `node scripts/fargowork.cjs status`；仅需要登录时使用官方登录。读取对应流程的 `requirements`，按语义字段收集输入，不编造事由、金额或内部事实。
 2. 费用报销、出差费用报销、正式对外费用和餐费交通补贴按[财务明细](references/FINANCE-DETAILS.md)先解析本次材料、完成必要建议和计算，再用 `review <workflow-key>` 保存并展示对应流程的可修改明细。费用报销使用八列；其余分别使用行程实报餐补、正式单币种付款、分钟级加班和交通各自明细。餐补打卡证明与报销凭据分用途、分附件栏。收到员工对当前明细的新确认后执行 `confirm-details`，才在同一草稿补主表并 `prepare <workflow-key> --draft <draftId> --input <绝对路径UTF-8业务JSON>`。`details` 仍是只读查询入口，不能代替明细确认。体检报销等无明细子表的流程沿其 Skill 调用 `prepare <workflow-key> --input <文件>`，已有草稿加 `--draft <draftId>`。`needsInput` 中的 Agent 推荐项先由 Agent 处理，只合并询问员工能回答的业务问题。附件由[共用附件模块](references/ATTACHMENTS.md)处理。
-3. 返回 `nextAction: preview` 后调用 `preview <draftId>`，只展示 `preview` 中的业务内容。**展示后结束当前操作，等待员工下一条明确确认；不得把 prepare、preview、submit 连成脚本一次执行。**
+3. 返回 `nextAction: preview` 后调用 `preview <draftId>`，只展示 `preview` 中的业务内容；财务流程打开本次 `detailEditor.path` 展示完整申请 HTML，必要说明附在页面外。**展示后结束当前操作，等待员工下一条明确确认；不得把 prepare、preview、submit 连成脚本一次执行。**
 4. 起初“帮我申请名片”“帮我提交”不代替看完最终预览后的确认。只有收到这份预览之后的新确认，才执行 `submit <draftId> --confirm <本次preview返回的draftSha256>` 一次。摘要用于绑定草稿，不是人类同意的证据。不得自行生成员工确认或让其他Agent代为确认。
-5. 用户修改、草稿过期或账号变化后重新准备并展示预览；同一份已确认且未变化的草稿无需再次询问。允许为空的隐藏字段不额外提示或确认。
+5. 用户修改、草稿过期或账号变化后重新准备并展示预览，财务流程使用工具新返回的 HTML，不能沿用旧页面或旧摘要；同一份已确认且未变化的草稿无需再次询问。允许为空的隐藏字段不额外提示或确认。
 6. 取得成功回执后简短报告“已提交”及编号，不等于审批通过。`result <draftId>` 的提交状态与内容核验分开；部分回读未核对不能改说提交失败。结果未知时核查原草稿，禁止重提或重传。
 
 以上命令均为 `node scripts/fargowork.cjs <命令>`。脚本固定的查询、计算和字段映射保留；不执行下载自网页的任意JS。遇阻塞按 [CHECKS](references/CHECKS.md) 和 [DEBUG](references/DEBUG.md) 处理，不向员工索取凭据。

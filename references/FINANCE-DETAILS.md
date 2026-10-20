@@ -15,7 +15,7 @@
 
 ## 读取和整理本次材料
 
-优先使用员工或宿主已有的 PDF、图片、OCR、表格及文件处理能力；只要结果足以整理费用，就不重复解析或另装指定工具。本包不提供专属 OCR；手动修改可使用随包提供的离线 HTML 明细模板。只处理本次提供的资料，不自动搜索邮箱、聊天或历史报销补材料。
+优先使用员工或宿主已有的 PDF、图片、OCR、表格及文件处理能力；只要结果足以整理费用，就不重复解析或另装指定工具。本包不提供专属 OCR；草稿核对默认使用随包提供的本流程 HTML 明细模板。只处理本次提供的资料，不自动搜索邮箱、聊天或历史报销补材料。
 
 一笔实际费用一行，同笔费用的发票、订单、付款截图归为同一组证据；一张付款单含多笔实际费用时可拆行。区分本次付款、套餐标价、折扣和退款，总额已含税就不再加税。内容用途足够时直接建议分类；金额、币种、费用归属或用途确实不明才补问，不把所有识别数字相加，不从“$”猜币种。
 
@@ -51,7 +51,7 @@ node scripts/fargowork.cjs details expense_reimbursement --input <绝对路径UT
 - `recommendationContexts` 是供 Agent 使用的合法候选上下文，完整合法草稿也会返回；`rowNumber` 对应当前明细行，`currentSelection` 是当前合法配对。`allowedPairs` 与 `alternativePairs` 都没有按适用性排序，工具不替员工或财务判断用途。
 - 每行推荐草稿只写一组类别与科目。Agent 结合本次用途，有合理备选时，在明细表外按行号同时说明，例如：“第2行另一个可能适用的是XX，理由是……是否替换？”不要凑前三、编造百分比、把整个目录丢给员工，或把两种科目混写进同一字段。无合理备选可以不提示。备选、候选上下文及评分都不能写进业务输入或提交字段。
 - 员工已有合法明确选择时保留，不反复推销另一个选项。员工可以改为另一组合法类别／科目，仍由工具验证真实目录和配对；本次新选择不修改公司目录。项目类别属于主表共用值，正常备选仅在当前项目类别内。显式改共同类别时重新核对全部受影响行，不能假称只改某行；固定规则不放开。
-- 首轮展示推荐明细及备选后，员工说“按推荐继续”，可确认当前明细；明确说“第2行换成刚才的XX，其他保持”也覆盖其看到并指定的替换。Agent 回写同一草稿、重新校验，核对新旧结果只有这项明确变更且金额、材料、主表共用类别及其他行没有额外变化后，简短回显，用本次新 `reviewSha256` 执行 `confirm-details` 并继续补主表。不重复问未改行，不沿用旧摘要。仅打开、编辑或保存表格仍不等于员工确认；答复不清楚时澄清其具体选择。
+- 首轮展示推荐明细及备选后，员工说“按推荐继续”，可确认当前明细；明确说“第2行换成刚才的XX，其他保持”也覆盖其看到并指定的替换。Agent 回写同一草稿、重新校验，核对新旧结果只有这项明确变更且金额、材料、主表共用类别及其他行没有额外变化后，展示新版 HTML 并简短回显，用本次新 `reviewSha256` 执行 `confirm-details` 并继续补主表。不重复问未改行，不沿用旧摘要。仅打开、编辑、导出或应用修改仍不等于员工确认；答复不清楚时澄清其具体选择。
 - 若重查发现汇率、金额、来源、材料或共同类别产生额外影响，展示这些实际变化并取得相应确认，不能借一句替换指令确认员工没看过的内容。**明细选择只允许继续准备；完整申请最终预览后仍必须等待新的提交确认。** Demo 保留原有一次最终完整确认；接受或替换科目后继续准备更新预览，不能把科目选择当作最终提交授权。
 
 供应商主表的科目候选单独标为“供应商分类”，按该供应商维护的完整配对处理，不混成某条费用明细。正常财务审核仍按原流程，不因为 Agent 推荐或员工接受而跳过。
@@ -63,7 +63,7 @@ node scripts/fargowork.cjs review expense_reimbursement --input <绝对路径UTF
 node scripts/fargowork.cjs review expense_reimbursement --draft <draftId> --input <绝对路径UTF-8明细JSON>
 ```
 
-第一次 `review` 保存本地首轮草稿并返回 `draftId`、`reviewSha256`、`preview` 和 `needsInput`；后续在同一草稿修订。此阶段只读业务来源，材料文件只在本机检查，不上传或提交。
+第一次 `review` 保存本地首轮草稿并返回 `draftId`、`reviewSha256`、`preview`、`needsInput` 及 `detailEditor.path`；后续在同一草稿修订，自动生成新版 HTML。此阶段只读业务来源，材料文件只在本机检查，不上传或提交。
 
 本次材料可用可选 `materials` 数组记录。每项如下；这些字段由 Agent 整理，不要求外部解析工具输出专属格式：
 
@@ -81,19 +81,19 @@ node scripts/fargowork.cjs review expense_reimbursement --draft <draftId> --inpu
 
 ## 展示与修改
 
-财务明细使用[通用明细编辑模板](FINANCE-DETAIL-EDITOR.md)。保留流程原列名、行级关联和金额含义；建议理由与备选放表外。支持自然语言修改或本地HTML导出修改文件后应用到同一草稿。简单单笔可一句话，但不能省略币种、必要分类、关联或餐补。手动修改尚未应用前不得声称草稿已更新。
+财务明细默认使用[本流程 HTML 模板](FINANCE-DETAIL-EDITOR.md)，直接打开或链接展示工具返回的 `detailEditor.path`，不等用户提醒，也不再额外运行生成命令。七个入口各自保留原字段、行级关联和金额含义，共用页面外壳；建议理由与备选放表外。单笔也提供 HTML，可配一句摘要，不省略币种、必要分类、关联或餐补。宿主不能内嵌时提供本地 HTML 链接供浏览器打开，不静默改成纯文字。
 
 展示当前 `preview` 的八列：**费用类别*、会计科目*、内容详情*、原币金额*、原币种*、汇率*、报销金额、备注**，标明报销币种、各原币小计和报销总额。多币种不能直接相加。分类依据简短附在表后；隐藏路由、主管、内部标识正常时不展示。
 
-可使用宿主已有的可编辑表格，或让员工在聊天中按行增删、修改、排除、拆分和纠正 OCR。Agent 将修改回写语义输入，重新 `review`，只重核受影响行及更新合计，保留其他已改内容。汇率和报销金额由工具重算，用户可以提出异议，但不把表格中的手改汇率当作维护表来源。员工直接提供的合规明细也走同样检查，不要求先生成或重读票据。
+员工可以在聊天中按行增删、修改、排除、拆分和纠正 OCR；Agent 将修改回写同一草稿，重新 `review` 并展示返回的新版 HTML，只突出受影响行及更新合计，保留其他已改内容。手动修改时，员工在 HTML 导出修改文件，Agent 用 `apply-edit <draftId> --input <修改文件>` 应用并展示重算后的新版 HTML，再取得对这一版的新确认。导出或成功应用都不等于确认；尚未应用不能说草稿已更新。汇率和报销金额由工具重算，用户可以提出异议，但不把手改汇率当作维护表来源。员工直接提供的合规明细也走同样检查，不要求先生成或重读票据。
 
 `needs_input` 不等于每项都要问员工，先完成 Agent 能解决的建议。`details_ready` 是只读结果；`awaiting_detail_confirmation` 表示首轮草稿可以展示，两者都不是员工已经确认。缺项未解时可展示待补明细，不能把原币小计称为报销合计。
 
 ## 两次确认与继续办理
 
-1. 展示当前八列、材料范围及合理备选后停止，等待员工新答复。收到对这一版明细的明确接受，或按“科目推荐与独立备选”核对过的明确替换后，执行 `node scripts/fargowork.cjs confirm-details <draftId> --confirm <本次reviewSha256>`。返回 `details_confirmed` 后继续补主表；编辑、保存、最初的办理意图或另一个 Agent 的答复不能代替本人确认。
+1. 用当前 HTML 展示八列、材料范围，合理备选附在表外，然后停止，等待员工新答复。收到对这一版明细的明确接受，或按“科目推荐与独立备选”核对过并展示新版 HTML 的明确替换后，执行 `node scripts/fargowork.cjs confirm-details <draftId> --confirm <本次reviewSha256>`。返回 `details_confirmed` 后继续补主表；编辑、导出、应用修改、最初的办理意图或另一个 Agent 的答复不能代替本人确认。
 2. 按[费用报销 Skill](../skills/finance/expense-reimbursement/SKILL.md)补齐主表和最终附件，使用 `prepare expense_reimbursement --draft <同一draftId> --input <业务文件>`。`items` 省略时保留已确认明细；不应让员工重新填写。准备过程复查目录和汇率，明细变化则回到首轮预览与确认。只改收款等不影响明细的主表信息可保留首轮确认。
-3. 准备完成后调用 `preview <draftId>`，展示完整申请及最终文件，停止并等待新的提交确认。之后才执行 `submit <draftId> --confirm <本次draftSha256>` 一次。第一次明细确认不是提交许可，不能将两次确认合成一次执行。
+3. 准备完成后调用 `preview <draftId>`，打开本次 `detailEditor.path` 展示完整申请及最终文件，停止并等待新的提交确认。之后才执行 `submit <draftId> --confirm <本次draftSha256>` 一次。第一次明细确认不是提交许可，不能将两次确认合成一次执行。
 
 修改八列、报销币种、材料范围或对应关系后，旧摘要不能继续使用。员工对已展示备选的明确替换按本节处理，校验无额外变化后回显并继续；其余实际新增变化需展示并取得确认。仅将相同证据转换或合并为合规上传文件、不改变原材料语义及费用范围时，保留首轮确认，最终预览展示文件变化。提交前再次检查导致可见明细变化时也需返回确认，不能自动接受新金额或重试提交。
 
@@ -101,7 +101,7 @@ node scripts/fargowork.cjs review expense_reimbursement --draft <draftId> --inpu
 
 ## 出差费用报销
 
-出差费用报销使用 `trip_expense_reimbursement`，完整步骤见[出差费用报销 Skill](../skills/finance/trip-expense-reimbursement/SKILL.md)。顺序同样为 `details` → `review` → 展示并等待新确认 → `confirm-details` → 同草稿 `prepare` → `preview` → 等待新的提交确认 → `submit`。
+出差费用报销使用 `trip_expense_reimbursement`，完整步骤见[出差费用报销 Skill](../skills/finance/trip-expense-reimbursement/SKILL.md)。顺序同样为 `details` → `review` → 展示本流程 HTML 并等待新确认 → `confirm-details` → 同草稿 `prepare` → `preview` → 展示完整申请 HTML 并等待新的提交确认 → `submit`。
 
 - 明细列按返回的本流程 `preview` 展示，包含行程/日期、关联出差、各项实报、原币及换算、餐补和备注，不套八列。可空字段保留空值，0是有效的明确金额。
 - 默认本人；获准代办时先按姓名查询并明确选择候选，再按选定报销人的支付公司、币种、关联出差和必要资料办理。关联单限该报销人已结束且审批通过的正式出差；原表例外只免关联必填，不改变有效候选范围。
@@ -113,7 +113,7 @@ node scripts/fargowork.cjs review expense_reimbursement --draft <draftId> --inpu
 
 ## 正式对外付款
 
-使用 `external_expense_application`，详见[正式对外费用 Skill](../skills/finance/external-expense-application/SKILL.md)。顺序为 `details` → `review` → 展示并等待明细确认 → `confirm-details` → 同草稿补主表与附件 → `prepare` → `preview` → 等待新的提交确认 → `submit`。
+使用 `external_expense_application`，详见[正式对外费用 Skill](../skills/finance/external-expense-application/SKILL.md)。顺序为 `details` → `review` → 展示本流程 HTML 并等待明细确认 → `confirm-details` → 同草稿补主表与附件 → `prepare` → `preview` → 展示完整申请 HTML 并等待新的提交确认 → `submit`。
 
 - 普通款展示费用类别、会计科目、付款内容、本次付款金额和备注，并标明本单币种及合计。项目款另有逐行项目部门与业务归属，共用项目主表类别，不改成逐行独立类别。
 - 每笔实际付款一行，同笔合同、账单、发票与付款截图只作证据归并。区分合同总额、已付、订金、尾款与本次付款；`items[].amount` 只填本次申请额，不将这些数字相加。

@@ -158,4 +158,5 @@ async function prepare(input,ctx){
     关联流程:associated.preview,
   }};
 }
-module.exports={key:'external_expense_request',title:workflowConfig.title,formUuid:FORM,policy,requirements,prepare};
+module.exports={key:'external_expense_request',title:workflowConfig.title,formUuid:FORM,policy,requirements,
+  partialUpdates:true,prepare};

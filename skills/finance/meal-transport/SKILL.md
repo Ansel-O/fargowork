@@ -19,9 +19,9 @@ description: 先核对本人支付公司和收款币种，再整理到分钟的�
 
 先将明细写为本地 JSON，运行 `node scripts/fargowork.cjs details meal_transport --input <绝对路径>`。工具仅查询本人的支付公司映射和报销币种，不因银行、部门或联系人未补齐而阻止明细整理。多支付公司时仅选择本人合法候选；餐补按原表币种公式计算，不取票据金额，交通费保持员工本次申领金额，可空或为0。固定内部科目和后台港币换算不放进员工的明细表。
 
-用 `node scripts/fargowork.cjs review meal_transport --input <绝对路径>` 保存当前明细及材料范围；后续修订沿用 `--draft <draftId>`。按[统一明细模板](../../../references/FINANCE-DETAIL-EDITOR.md)展示本流程六列：**开始时间、结束时间、加班事由、餐费补贴、交通费、备注**，注明报销币种，分别展示餐补和交通费合计。允许自然语言或手动修改原可编辑项；公式餐补与固定科目保持只读。传入 `items` 时替换整表；增删行时同步调整材料对应关系，不只回传发生变化的一行。
+用 `node scripts/fargowork.cjs review meal_transport --input <绝对路径>` 保存当前明细及材料范围；后续修订沿用 `--draft <draftId>`。**默认打开返回的 `detailEditor.path` 展示本流程 HTML，不等待用户要求**；宿主不能内嵌时提供本地 HTML 链接供浏览器打开。按[HTML 明细与修改](../../../references/FINANCE-DETAIL-EDITOR.md)保留本流程六列：**开始时间、结束时间、加班事由、餐费补贴、交通费、备注**，注明报销币种，分别展示餐补和交通费合计。口述修改回写同一草稿并重新 `review`；手动修改由员工导出文件交 Agent 执行 `apply-edit`。两种方式都展示工具新返回的 HTML，手动应用后取得对新版的新确认；导出或应用不代替确认。公式餐补与固定科目保持只读。传入 `items` 时替换整表；增删行时同步调整材料对应关系，不只回传发生变化的一行。
 
-缺项可以先保存和展示待补明细，解决后展示当前完整范围，**停止并等待员工确认这版明细**。收到明确答复才运行 `node scripts/fargowork.cjs confirm-details <draftId> --confirm <本次reviewSha256>`；保存、编辑及最初办理意图都不等于确认。第一次确认只允许继续准备申请，不授权提交。
+缺项可以先保存和展示待补 HTML，解决后展示当前完整范围，**停止并等待员工确认这版明细**。收到明确答复才运行 `node scripts/fargowork.cjs confirm-details <draftId> --confirm <本次reviewSha256>`；保存、编辑及最初办理意图都不等于确认。第一次确认只允许继续准备申请，不授权提交。
 
 `attendance_attachments` 是必需的打卡证明文件路径数组；`expense_attachments` 是可选的报销附件路径数组，均为员工提供的本地绝对路径。两个栏分别最多20件、单件100 MiB，格式遵循表单与上传脚本检查；不用顶层 `attachments` 混装，不自行调用上传接口。细节见[附件规则](../../../references/ATTACHMENTS.md)。
 
@@ -39,7 +39,7 @@ description: 先核对本人支付公司和收款币种，再整理到分钟的�
 
 明细、分钟时间、事由、交通金额、报销币种或材料范围发生变化时，回到同一草稿重新核对并确认；仅改收款等不影响明细的主表内容，保留第一次确认，更新最终预览。同一草稿复用已知上传结果，不因修改重新上传未知结果的文件。
 
-准备完成后运行 `node scripts/fargowork.cjs preview <draftId>`，展示本人部门、公司和业务归属、完整收款资料、全部分钟明细、餐补及交通费各自合计、两个附件栏名称，以及每份最终文件的用途和来源材料名称，并说明首轮之后的业务变化。**到此停止，等待员工下一条针对完整申请的新提交确认。** 第一次明细确认、选择候选或最初“帮我提交”不能替代本次答复。收到新确认再运行 `node scripts/fargowork.cjs submit <draftId> --confirm <本次preview的draftSha256>` 一次；不能将准备、预览和提交合并执行，修改后旧最终确认失效。
+准备完成后运行 `node scripts/fargowork.cjs preview <draftId>`，打开本次 `detailEditor.path` 展示完整申请 HTML：本人部门、公司和业务归属、完整收款资料、全部分钟明细、餐补及交通费各自合计、两个附件栏名称，以及每份最终文件的用途和来源材料名称，并说明首轮之后的业务变化。主表修改也回到同一草稿，重算后展示新版 HTML。**到此停止，等待员工下一条针对完整申请的新提交确认。** 第一次明细确认、选择候选或最初“帮我提交”不能替代本次答复。收到新确认再运行 `node scripts/fargowork.cjs submit <draftId> --confirm <本次preview的draftSha256>` 一次；不能将准备、预览和提交合并执行，修改后旧最终确认失效。
 
 提交成功只报告结果和编号。上传或提交结果未知时核查原草稿，不重传、不重提；确实影响办理的问题按[资料检查](../../../references/CHECKS.md)处理。
 

@@ -1,5 +1,18 @@
 # 更新记录
 
+## 3.1.1 — 财务默认 HTML 核对 / Automatic HTML financial reviews · 2026-10-20
+
+- 七个财务入口在核对草稿时自动生成对应模板的 HTML；单笔也提供页面，不再等待用户提醒。
+- 口述修改和手动导出回传都更新同一草稿，重算后提供最新页面；保留各流程原有确认步骤。
+- HTML 不能内嵌时提供本地文件入口；生成失败明确提示，草稿仍保留。导出修改不等于确认或提交。
+- 修复付款 Demo 局部修改丢失其他字段，以及最终 HTML 遗漏附件名称、结构化关联资料的问题。
+- All seven finance workflows automatically provide their own HTML review, including single-item applications.
+- Chat edits and returned page exports update the same draft, recalculate results and refresh the page before confirmation.
+- Existing confirmation steps remain in place. Local file links support hosts without embedded HTML; exporting changes does not confirm or submit an application.
+- Preserve unrelated fields when editing the payment Demo and retain final attachment names and structured association details in HTML.
+
+本版修复默认展示与编辑衔接，业务规则版本不变；七项财务入口最低客户端更新为3.1.1。
+
 ## 3.1.0 — 财务编排与明细编辑 / Financial workflows and editable details · 2026-10-20
 
 - 公司及支付／收款币种前置，项目归属未明确时补问；保留员工对合法类别、科目和可改金额的选择。

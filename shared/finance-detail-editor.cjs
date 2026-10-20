@@ -157,6 +157,12 @@ function readOnlyRow(row,contract,editable) {
   const columns=contract?.columns||Object.keys(row).map(key=>[key,labels[key]||key,false]);
   return columns.filter(([key])=>!mapped.has(key)).map(([key,label])=>({key,label,value:row[key]??null}));
 }
+function previewText(value) {
+  if(value===null||value===undefined||value==='')return '未填写';
+  if(Array.isArray(value))return value.map(previewText).join('、');
+  if(object(value))return Object.entries(value).map(([key,item])=>`${key}：${previewText(item)}`).join('；');
+  return String(value);
+}
 function createEditor({workflow,draftId,input={},review,prepared,materials=review?.materials||[],
   revision:providedRevision,rowIds,previousDocument,choices={},stage='details'}) {
   const definition=definitions[workflow];
@@ -171,6 +177,7 @@ function createEditor({workflow,draftId,input={},review,prepared,materials=revie
     ||(workflow==='external_expense_request'?preview.明细?.map(row=>({category:row.expense_category,account:row.account,
       description:row.description,amount:row.amount,amount_hkd:row.amount_hkd,remarks:row.remarks})):[])||[];
   const contract=review?.detailReviewContract||prepared?.detailReviewContract;
+  const rowsPreviewKey=contract?.rowsPreviewKey||(workflow==='external_expense_request'?'明细':null);
   const fields=[...definition.main,...(stage==='application'?definition.application:[])];
   // Non-project trip classification is fixed by its workflow, not editable.
   const labels=new Map(contract?.columns?.map(([key,label])=>[key,label])||[]);
@@ -180,7 +187,7 @@ function createEditor({workflow,draftId,input={},review,prepared,materials=revie
   const mainPreview={...preview,...(preview.收款资料||{}),...(preview.新收款资料||{})};
   if(preview.币种!==undefined)mainPreview.付款币种=preview.币种;
   if(workflow==='external_expense_request')Object.assign(mainPreview,{付款币种:preview.币种,
-    说明:preview.付款说明,收款账号:preview.银行账户,开户银行:preview.开户行,
+    说明:preview.付款说明,申请部门:preview.发起部门,收款账号:preview.银行账户,开户银行:preview.开户行,
     项目:preview.项目?.名称,项目部门:preview.项目?.部门,项目费用类别:preview.项目?.费用类别});
   const visibleMain=presentFields(fields,input,mainPreview,combined);
   const baseRevision=providedRevision||revision({workflow,draftId,input,review,prepared,materials});
@@ -194,8 +201,11 @@ function createEditor({workflow,draftId,input={},review,prepared,materials=revie
       readonly:readOnlyRow(rows[index]||{},contract,rowFields)})),
     summary:Object.entries(preview).filter(([key,value])=>!Array.isArray(value)&&value!==undefined
       &&!visibleMain.some(field=>scalarPreviewKeys[field.key]===key)).map(([label,value])=>({label,value})),
-    notes:Object.entries(preview).filter(([,value])=>Array.isArray(value)&&value.every(item=>typeof item==='string'))
-      .flatMap(([label,value])=>value.map(text=>({label,text}))),
+    // Use only the canonical business preview. Final uploads can differ from
+    // source materials and may be object arrays (name/size), not just strings.
+    // The main detail array is already rendered as editable rows.
+    notes:Object.entries(preview).filter(([key,value])=>Array.isArray(value)&&key!==rowsPreviewKey)
+      .flatMap(([label,value])=>value.map(item=>({label,text:previewText(item)}))),
     needsInput:copy([...(review?.needsInput||[]),...(prepared?.needsInput||[])]).map(({message})=>String(message||'')),
     materialRoles:copy(contract?.materialRoles||[]),materials:materials.map(material=>({
       id:material.id,name:material.name,status:material.status,note:material.note??'',
