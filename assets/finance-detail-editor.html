@@ -36,10 +36,10 @@ button:hover{background:#eef4fb}button:disabled{cursor:default;opacity:.45}.prim
   <div class="eyebrow">FARGOWORK / 申请明细</div>
   <h1 id="title">申请明细</h1>
   <p class="muted">可以直接修改下方内容，也可以回到对话告诉 Agent 要改什么。两种方式更新同一份申请。</p>
-  <div class="notice">这是本地编辑页面。修改后请<strong>导出修改文件并交回 Agent</strong>，由原流程校验、重算并更新草稿。此页面不会保存到宜搭，也不会提交申请。</div>
+  <div class="notice">金额和日期修改后会立即计算。完成后请<strong>导出修改文件并交回 Agent</strong>，更新同一份草稿，再确认申请。此页面不会保存到宜搭，也不会提交申请。</div>
   <section id="needs" class="notice" hidden></section>
   <section class="card"><div class="head"><h2 id="main-heading">公司、币种与项目</h2></div><div id="main-fields" class="grid"></div></section>
-  <section id="summary-section" class="card"><div class="head"><h2>当前核算结果</h2><span class="hint">修改后的金额由 Agent 重算</span></div><div id="summary" class="summary"></div></section>
+  <section id="summary-section" class="card"><div class="head"><h2>当前核算结果</h2><span class="hint">代码即时计算 · 使用本草稿已取得的公司资料</span></div><div id="summary" class="summary"></div><p id="calculation-notice" class="hint" role="status"></p></section>
   <section id="notes" class="notice" hidden></section>
   <section id="rows-section"><div class="head"><h2>申请明细</h2><button id="add-row" type="button">＋ 添加明细</button></div><div id="rows"></div></section>
   <section id="materials-section" class="card"><div class="head"><h2>材料与对应明细</h2><span class="hint">补充新材料请交给 Agent</span></div><div id="materials"></div></section>
@@ -49,13 +49,14 @@ button:hover{background:#eef4fb}button:disabled{cursor:default;opacity:.45}.prim
 <!--FARGOWORK_EDITOR_DATA-->
 <script>
 'use strict';
+/*FARGOWORK_SHARED_CALCULATIONS*/
 const documentData=JSON.parse(document.getElementById('editor-data').textContent);
 const clone=value=>JSON.parse(JSON.stringify(value));
 const state={main:clone(documentData.mainValues),rows:clone(documentData.rows),materials:clone(documentData.materials)};
 const $=id=>document.getElementById(id);
 function el(tag,text,className){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;}
 function pretty(value){return value===null||value===undefined||value===''?'未填写':typeof value==='object'?JSON.stringify(value,null,2):String(value);}
-function dirty(){ $('status').textContent='有待应用的修改。导出并交回 Agent 后，才能更新草稿与计算结果。'; }
+function dirty(){ recalculate();$('status').textContent='金额预览已更新。导出并交回 Agent 后，才能保存到草稿；尚未确认或提交。'; }
 function rowId(){return 'row-'+(globalThis.crypto?.randomUUID?crypto.randomUUID():Array.from({length:32},()=>Math.floor(Math.random()*16).toString(16)).join(''));}
 function projectVisibility(){document.querySelectorAll('[data-project]').forEach(node=>{node.hidden=state.main.is_project!==true;});}
 function control(field,values,options){
@@ -90,7 +91,7 @@ function control(field,values,options){
     input.value=current===undefined||current===null?'':String(current);
     input.addEventListener('input',()=>{values[field.key]=input.value;dirty();});
   }
-  input.id=id;input.autocomplete='off';wrapper.append(input);return wrapper;
+  input.id=id;input.autocomplete='off';input.dataset.key=field.key;wrapper.append(input);return wrapper;
 }
 function renderMain(){
   $('main-fields').replaceChildren(...documentData.mainFields.map(field=>control(field,state.main)));
@@ -117,7 +118,7 @@ function renderRows(){
   $('rows-section').hidden=!documentData.hasRows;
   $('rows').replaceChildren();$('add-row').disabled=state.rows.length>=documentData.maxRows;
   state.rows.forEach((row,index)=>{
-    const card=el('article',undefined,'card'),head=el('div',undefined,'head'),actions=el('div',undefined,'actions');
+    const card=el('article',undefined,'card'),head=el('div',undefined,'head'),actions=el('div',undefined,'actions');card.dataset.rowId=row.id;
     head.append(el('h3','第 '+(index+1)+' 条'));
     const up=button('上移',()=>{[state.rows[index-1],state.rows[index]]=[state.rows[index],state.rows[index-1]];renderRows();materialRowsChanged();});
     const down=button('下移',()=>{[state.rows[index+1],state.rows[index]]=[state.rows[index],state.rows[index+1]];renderRows();materialRowsChanged();});
@@ -127,13 +128,41 @@ function renderRows(){
     actions.append(up,down,duplicate,button('删除',()=>{state.rows.splice(index,1);renderRows();materialRowsChanged();},'danger'));
     head.append(actions);card.append(head);
     const grid=el('div',undefined,'grid');row.fields.forEach(field=>grid.append(control(field,row.values)));card.append(grid);
-    if(row.readonly.length){const derived=el('div',undefined,'readonly grid');
-      for(const field of row.readonly){const block=el('div',undefined,'field');block.append(el('label',field.label),el('div',pretty(field.value),'value'));derived.append(block);}
-      card.append(derived);}
+    const derived=el('div',undefined,'readonly grid');derived.dataset.derived='true';card.append(derived);
     $('rows').append(card);
   });
   if(!state.rows.length)$('rows').append(el('p','尚无明细，可以添加一条。','empty'));
   projectVisibility();
+}
+const calculationLabels={days:'行程天数',rate:'公司汇率',reimbursedAmount:'报销金额',hkdRate:'折港币汇率',hkdAmount:'港币金额',
+  allowanceCurrency:'差旅津贴币种',allowanceStandard:'每日差旅津贴标准',allowanceDays:'差旅津贴建议天数',
+  allowanceHkdAmount:'差旅津贴港币金额',mealAmount:'餐费补贴',mealHkd:'餐费补贴港币金额',transportHkd:'交通费港币金额',amount_hkd:'港币金额'};
+function effectiveValues(fields,values){const result={};for(const field of fields)if(field.value!==null&&field.value!==undefined&&!['allowance_amount','end_date','end_time'].includes(field.key))result[field.key]=field.value;return {...result,...values};}
+function recalculate(){
+  let calculation;
+  try{calculation=FinanceCalculations.calculateEditor(documentData.calculationContext,
+    effectiveValues(documentData.mainFields,state.main),state.rows.map(row=>effectiveValues(row.fields,row.values)));}
+  catch(error){calculation={rows:state.rows.map(()=>Object.fromEntries(Object.keys(calculationLabels).map(key=>[key,null]))),summary:{},missing:['金额或日期尚未填写完整，请修正后继续。']};
+    for(const item of documentData.summary)if(/金额|总额|合计|汇率/.test(item.label))calculation.summary[item.label]=null;}
+  const cells=new Map(documentData.summary.map(item=>[item.label,item.value]));
+  for(const [label,value]of Object.entries(calculation.summary))cells.set(label,value);
+  $('summary').replaceChildren();$('summary-section').hidden=!cells.size&&!calculation.missing.length;
+  for(const [label,value]of cells){const cell=el('div',undefined,'cell');cell.append(el('span',label,'hint'),el('strong',pretty(value)));$('summary').append(cell);}
+  $('calculation-notice').textContent=calculation.missing.join(' ');
+  state.rows.forEach((row,index)=>{
+    const card=Array.from($('rows').children).find(node=>node.dataset.rowId===row.id);if(!card)return;
+    const values=calculation.rows[index]||{},fields=new Map(row.readonly.map(field=>[field.key,{...field,value:Object.hasOwn(values,field.key)?values[field.key]:field.value}]));
+    for(const [key,value]of Object.entries(values))if(calculationLabels[key]&&!fields.has(key)&&!(key==='amount_hkd'&&fields.has('hkdAmount'))&&!(key==='hkdAmount'&&fields.has('amount_hkd')))
+      fields.set(key,{key,label:calculationLabels[key],value});
+    const target=card.querySelector('[data-derived]');target.replaceChildren();target.hidden=!fields.size;
+    for(const field of fields.values()){const block=el('div',undefined,'field');block.dataset.computed=field.key;block.append(el('label',calculationLabels[field.key]||field.label),el('div',pretty(field.value),'value'));target.append(block);}
+    if(!Object.prototype.hasOwnProperty.call(row.values,'allowance_amount')){
+      const input=card.querySelector('[data-key="allowance_amount"]');if(input)input.value=values.allowanceAmount===null||values.allowanceAmount===undefined?'':String(values.allowanceAmount);
+    }
+    for(const [end,start]of [['end_date','start_date'],['end_time','start_time']])if(!Object.prototype.hasOwnProperty.call(row.values,end)){
+      const input=card.querySelector('[data-key="'+end+'"]');if(input)input.value=row.values[start]??row.fields.find(field=>field.key===start)?.value??'';
+    }
+  });
 }
 function renderMaterials(){
   $('materials-section').hidden=!state.materials.length;$('materials').replaceChildren();
@@ -171,7 +200,7 @@ $('summary-section').hidden=!documentData.summary.length;
 for(const item of documentData.summary){const cell=el('div',undefined,'cell');cell.append(el('span',item.label,'hint'),el('strong',pretty(item.value)));$('summary').append(cell);}
 if(documentData.notes.length){$('notes').hidden=false;for(const item of documentData.notes)$('notes').append(el('p',item.label+'：'+item.text));}
 $('add-row').addEventListener('click',()=>addRow());$('export').addEventListener('click',exportEdit);
-renderMain();renderRows();renderMaterials();projectVisibility();
+renderMain();renderRows();renderMaterials();projectVisibility();recalculate();
 </script>
 </body>
 </html>

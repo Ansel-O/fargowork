@@ -64,15 +64,18 @@ function extract(response) {
   return validate(value);
 }
 function assess(directory,key,{version=VERSION,rules=config.rules}={}) {
-  const base={catalogRevision:directory.catalogRevision,publishedAt:directory.publishedAt};
-  if(!workflowKeys.includes(key)) return {...base,status:'blocked',code:'WORKFLOW_CLIENT_UPDATE_REQUIRED'};
+  const base={catalogRevision:directory.catalogRevision,publishedAt:directory.publishedAt,actualClientVersion:version};
+  if(!workflowKeys.includes(key)) return {...base,status:'blocked',code:'WORKFLOW_CLIENT_UPDATE_REQUIRED',
+    blockingReasons:['WORKFLOW_NOT_SUPPORTED']};
   if(!workflowAvailability(key).canStart) return {...base,status:'blocked',code:'WORKFLOW_UNAVAILABLE'};
   const row=directory.records.find(record=>record.key===key);
   if(!row) return {...base,status:'blocked',code:'DIRECTORY_WORKFLOW_MISSING'};
-  const details={...base,ruleVersion:row.ruleVersion,minimumClientVersion:row.minimumClientVersion};
+  const details={...base,ruleVersion:row.ruleVersion,localRuleVersion:rules[key],minimumClientVersion:row.minimumClientVersion};
   if(row.status!=='active') return {...details,status:'blocked',code:'DIRECTORY_WORKFLOW_UNAVAILABLE',workflowStatus:row.status};
-  if(semver(rules[key])[0]!==semver(row.ruleVersion)[0] || compare(version,row.minimumClientVersion)<0)
-    return {...details,status:'blocked',code:'WORKFLOW_CLIENT_UPDATE_REQUIRED'};
+  const blockingReasons=[];
+  if(semver(rules[key])[0]!==semver(row.ruleVersion)[0]) blockingReasons.push('RULE_MAJOR_INCOMPATIBLE');
+  if(compare(version,row.minimumClientVersion)<0) blockingReasons.push('CLIENT_BELOW_MINIMUM');
+  if(blockingReasons.length) return {...details,status:'blocked',code:'WORKFLOW_CLIENT_UPDATE_REQUIRED',blockingReasons};
   return {...details,status:'allowed'};
 }
 function createDirectoryClient({auth=require('./auth.cjs')}={}) {
@@ -99,10 +102,15 @@ function createDirectoryClient({auth=require('./auth.cjs')}={}) {
   };
 }
 function blocked(directory,draftId) {
+  let updateMessage='这个流程需要新版 FargoWork 支持。材料和草稿已保留。';
+  if(directory.blockingReasons?.includes('CLIENT_BELOW_MINIMUM'))
+    updateMessage=`当前运行 FargoWork ${directory.actualClientVersion}，此流程最低要求 ${directory.minimumClientVersion}。请更新客户端；材料和草稿已保留。`;
+  else if(directory.blockingReasons?.includes('RULE_MAJOR_INCOMPATIBLE'))
+    updateMessage=`此流程规则主版本已变更（${directory.localRuleVersion} → ${directory.ruleVersion}），当前客户端尚不支持。请更新 FargoWork；材料和草稿已保留。`;
   return {status:'directory_blocked',code:directory.code,directory,...(draftId?{draftId}:{}),
     submissionBlocked:true,requiresConfirmation:false,localDraftOnly:true,mayRetry:false,
     message:directory.code==='WORKFLOW_CLIENT_UPDATE_REQUIRED'
-      ?'这个流程要求更新 FargoWork。材料和草稿已保留；升级后重新准备并确认。'
+      ?updateMessage
       :directory.code==='DIRECTORY_WORKFLOW_UNAVAILABLE'?'公司目录已停用或迁移这个流程。草稿已保留，请按公司指引办理。'
         :'暂时不能完成流程目录核对。材料和草稿已保留，暂停提交；恢复核对后继续。'};
 }

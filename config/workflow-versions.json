@@ -26,7 +26,7 @@
     "external_expense_request": "1.0.0",
     "external_expense_application": "1.0.1",
     "expense_reimbursement": "1.0.1",
-    "trip_expense_reimbursement": "1.0.1",
+    "trip_expense_reimbursement": "1.1.0",
     "medical_checkup_reimbursement": "1.0.1",
     "default_bank_change": "1.0.0",
     "contract": "1.0.0",

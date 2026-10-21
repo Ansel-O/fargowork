@@ -1,6 +1,7 @@
 'use strict';
 
 const Decimal=require('./decimal-arithmetic.cjs');
+const {convertAmount,sumAmounts}=require('./finance-calculations.cjs');
 const {matchingRows,distinctValues}=require('./scoped-catalog.cjs');
 const text=value=>typeof value==='string'&&value.trim().length>0;
 const normalized=value=>value.normalize('NFKC').trim().toLocaleLowerCase('en-US');
@@ -48,13 +49,4 @@ function createRateResolver({ctx,source,ratePrecision,errorCode='EXCHANGE_RATE_I
 
 // Callers choose every rounding boundary, including whether conversion is per
 // line or after summing. These helpers do not select currencies or rate chains.
-function convertAmount(amount,rate,precision) {
-  return Decimal.number(Decimal.round(Decimal.multiply(Decimal.decimal(amount),Decimal.decimal(rate)),precision));
-}
-function sumAmounts(values,precision) {
-  check(Array.isArray(values),'DECIMAL_INVALID');
-  const total=values.reduce((sum,value)=>Decimal.add(sum,Decimal.decimal(value)),Decimal.decimal(0));
-  return Decimal.number(Decimal.round(total,precision));
-}
-
 module.exports={createRateResolver,convertAmount,sumAmounts};

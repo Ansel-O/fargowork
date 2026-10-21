@@ -5,7 +5,7 @@ const sources=require('../../config/sources.json');
 const companyConfig=require('../../config/company.json');
 const PaymentHistory=require('../../shared/payment-history.cjs');
 const Department=require('../../shared/department-details.cjs');
-const Decimal=require('../../shared/decimal-arithmetic.cjs');
+const {rounded,mealAmount,sumAmounts}=require('../../shared/finance-calculations.cjs');
 const {createRateResolver,convertAmount}=require('../../shared/exchange-rates.cjs');
 const {localMinute}=require('../../shared/local-datetime.cjs');
 const {resolveReimbursementContext,personalPaymentDefaults}=require('../../shared/reimbursement-info.cjs');
@@ -56,9 +56,9 @@ async function catalog(ctx,name,filters,columns) {
   const source=binding(name);
   return matchingRows(ctx,source.formUuid,filters,columns);
 }
-function amount(value) { return Decimal.number(Decimal.round(Decimal.decimal(value),rules.precision)); }
+function amount(value) { return rounded(value,rules.precision); }
 function hkd(value,rate) {return convertAmount(value,rate,rules.precision);}
-function sum(values) {return Decimal.number(Decimal.round(values.reduce((a,b)=>Decimal.add(a,Decimal.decimal(b)),Decimal.decimal(0)),rules.precision));}
+function sum(values) {return sumAmounts(values,rules.precision);}
 
 function schemaFields(schema) {
   const fields=C.assertFields(schema,F);
@@ -94,7 +94,7 @@ async function buildDetails(input,ctx,fields) {
   for(const [index,item]of input.items.entries()) {
     C.inputKeys(item,['start_time','end_time','reason','transport_amount','remarks']);
     const native={},row={startTime:'',endTime:'',reason:textInput(item.reason,F.reason,fields),
-      mealAmount:currency===null?null:rules.mealAmounts[currency]??rules.otherCurrencyMealAmount,
+      mealAmount:mealAmount(currency,rules.mealAmounts,rules.otherCurrencyMealAmount),
       transportAmount:C.absent(item.transport_amount)?'':amount(item.transport_amount),
       remarks:textInput(item.remarks,F.remark,fields)};
     if(!C.absent(item.start_time)) {

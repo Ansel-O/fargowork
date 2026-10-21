@@ -5,6 +5,8 @@ description: 仅在员工明确要求测试对外付款示例时使用，核对�
 
 # 对外付款申请（Demo测试）
 
+升级后建议新开会话；继续当前会话时重新加载新版入口和本流程说明。草稿按[24小时复用与刷新](../../../references/WORKFLOW-DIRECTORY.md#办理行为)：首个可核对草稿起24小时，编辑不续期、提交不全量重查；过期或用户要求用 `refresh <draftId>`，保留输入、材料和回执，展示并确认实际差异。
+
 **仅用于员工明确要求的对外付款Demo测试，分类为 demo。** 普通对外费用或对外付款请求请读[正式对外费用 Skill](../external-expense-application/SKILL.md)。本示例固定目标为 `FORM-AEE70BC941234A97B25DE3D5340B7DA7IXT3`，有独立的供应商目录及字段规则；不能把正式申请或已有草稿改投本表，也不能因正式入口受阻而改用示例。
 
 Demo 同样遵守[公司维护源与个人选择](../../../references/FINANCE-DETAILS.md#公司维护源与个人选择)：费用明细和供应商分类各用自己的公司维护配对，汇率不能被口述、网络或 personal 覆盖；合法选择由员工决定，最终完整确认保持。
@@ -38,7 +40,7 @@ node scripts/fargowork.cjs preview <draftId>
 
 项目付款按候选选择 `project_name`、`project_department_id`、`project_expense_category`，再核对明细科目。仅当用户要求关联已有合同或用印时，设置 `include_contract` 或 `include_seal`，从脚本返回的本人候选中选择对应 `contract_instance_id` 或 `seal_instance_id`；不能搜索其他流程、他人实例或任意输入关联 ID。
 
-已有草稿补充资料、调整候选或附件时，使用 `prepare external_expense_request --input <文件> --draft <draftId>` 复用同一草稿。上传结果未知时停止，不自动重传。账号切换、跨日或业务内容改变后，必须重新核对预览；已提交或结果未知的草稿不能重新起草来重复提交。
+已有草稿补充资料、调整候选或附件时，用 `prepare external_expense_request --input <文件> --draft <draftId>` 复用；24小时内编辑不全量重查，仅跨午夜不失效。过期或用户要求用 `refresh <draftId>`；实际业务变化需展示新预览，账号切换不能沿用旧草稿。上传或提交未知先核查，不自动重传、另建草稿或重提。
 
 准备成功后调用 `preview <draftId>`，打开本次 `detailEditor.path` 展示完整申请 HTML：付款公司、供应商、银行、币种、明细及合计、汇率、最晚付款日期、项目、关联流程、附件文件名。取得一次明确确认后，使用该草稿的 `draftId` 和 `draftSha256` 提交。成功时只报告结果与流程编号；结果未知时先查 `result`，不要再次提交。
 

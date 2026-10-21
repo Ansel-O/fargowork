@@ -100,5 +100,12 @@ function decimal(value) {
 function cents(d) { if(d.s<=2)return d.n*10n**BigInt(2-d.s);const divisor=10n**BigInt(d.s-2), sign=d.n<0n?-1n:1n,n=d.n*sign; return sign*(n/divisor+(n%divisor*2n>=divisor?1n:0n)); }
 function money(n) { if(n>9007199254740991n || n < -9007199254740991n) fail('FW-PAY-AMOUNT-RANGE');return Number(n)/100; }
 function sum(ds) { const scale=Math.max(...ds.map(d=>d.s),0); return {s:scale,n:ds.reduce((n,d)=>n+d.n*10n**BigInt(scale-d.s),0n)}; }
-function calculations(amounts, rateValue) { const rate=decimal(rateValue);if(rate.n<=0n)fail('FW-PAY-RATE');const raw=amounts.map(decimal), converted=raw.map(a=>cents({n:a.n*rate.n,s:a.s+rate.s}));return {rate:Number(rateValue),amounts:amounts.map(v=>Number(v)),converted:converted.map(money),total:money(cents(sum(raw))),hkdTotal:money(converted.reduce((a,b)=>a+b,0n))}; }
+function calculations(amounts, rateValue) {
+  const rate=decimal(rateValue);if(rate.n<=0n)fail('FW-PAY-RATE');
+  // Preserve the Demo's input/range contract, then share the arithmetic with HTML.
+  const raw=amounts.map(decimal);raw.forEach(value=>money(cents(value)));
+  const result=require('../shared/finance-calculations.cjs').paymentAmounts(amounts,rateValue,2);
+  money(cents(sum(raw)));result.converted.forEach(value=>money(cents(decimal(value))));
+  money(cents(decimal(result.hkdTotal)));return result;
+}
 module.exports={APP,FORM,TABLES,RELATIONS,F,fail,text,required,unique,same,choose,choosePair,rows,rosterValues,memberIds,date,decimal,calculations};

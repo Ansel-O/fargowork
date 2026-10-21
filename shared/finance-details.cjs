@@ -5,6 +5,7 @@
 // supplies semantic classification, and this module validates legal choices.
 const Finance=require('./finance-catalog.cjs');
 const Decimal=require('./decimal-arithmetic.cjs');
+const {rounded}=require('./finance-calculations.cjs');
 const {buildRecommendationContext}=require('./account-recommendation.cjs');
 const {matchingRows,distinctValues}=require('./scoped-catalog.cjs');
 const {createRateResolver,convertAmount}=require('./exchange-rates.cjs');
@@ -51,7 +52,7 @@ async function prepareFinanceDetails({ctx,items,accountSource,pairs,originalCurr
     check(absent(item.classification_reason)||item.classification_reason.length<=300,'FINANCE_DETAILS_INPUT_INVALID');
     check(fixedCategory===undefined||absent(item.expense_category)
       ||normalized(item.expense_category)===normalized(fixedCategory),'FINANCE_DETAILS_INPUT_CONFLICT');
-    const amount=absent(item.amount)?null:Decimal.number(Decimal.round(Decimal.decimal(item.amount),precision));
+    const amount=absent(item.amount)?null:rounded(item.amount,precision);
     return {...item,description:text(item.description),amount,
       ...(item.expense_category===null?{expense_category:undefined}:{}),
       ...(item.account===null?{account:undefined}:{}),

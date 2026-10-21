@@ -1,5 +1,18 @@
 # 更新记录
 
+## 3.2.0 — 草稿复用与即时计算 / Draft reuse and live calculations · 2026-10-21
+
+- 所有可办理流程从首版可核对草稿起，连续 24 小时复用已取得的公司资料；修改不顺延有效期，新增缺项按需补取，用户可主动刷新。
+- 财务 HTML 和聊天修改共用计算代码；页面改数即时显示金额，每个流程保留自己的字段模板和确认步骤。
+- 出差统一使用“差旅津贴”；按实际行程顺序计入尚未覆盖的日期，重叠日归前段，支持一单多次出差；用户修改的金额（包括 0）保留至最终申请。
+- 新办理自动检查最新版，最多两次短请求，失败跳过；版本提示区分实际运行版、建议最新版、最低客户端和规则版本。最低客户端要求保持原值。
+- All startable workflows reuse validated company data for 24 hours from the first reviewable draft. Edits do not extend expiry; missing new data is fetched as needed, and users can request a refresh.
+- Financial HTML and chat edits share calculation code. Pages show updated amounts immediately and retain each workflow’s fields and confirmation steps.
+- Travel allowances count only dates not covered by earlier itinerary rows, support multiple trips per claim, and preserve explicit user amounts, including zero, through the final application.
+- New applications check for updates with at most two short requests and skip unavailable checks. Installed, recommended, minimum and rule versions are reported separately; existing minimum client versions remain unchanged.
+
+客户端为 3.2.0，出差报销规则为 1.1.0；其他规则版本及所有最低客户端门槛保持原值。
+
 ## 3.1.1 — 财务默认 HTML 核对 / Automatic HTML financial reviews · 2026-10-20
 
 - 七个财务入口在核对草稿时自动生成对应模板的 HTML；单笔也提供页面，不再等待用户提醒。

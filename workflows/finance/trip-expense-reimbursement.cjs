@@ -12,6 +12,7 @@ const {resolveReimbursementContext,personalPaymentDefaults}=require('../../share
 const {matchingRows,distinctValues}=require('../../shared/scoped-catalog.cjs');
 const {createRateResolver,convertAmount,sumAmounts}=require('../../shared/exchange-rates.cjs');
 const {suggestAllowances}=require('../../shared/travel-allowance.cjs');
+const {tripCost}=require('../../shared/finance-calculations.cjs');
 const {buildRecommendationContext}=require('../../shared/account-recommendation.cjs');
 const {key,title,target,fields:F,roster:R,policy,rules}=config;
 const bankFields={bank_account:'bankAccount',bank_name:'bankName',bank_city:'bankCity',bank_branch:'bankBranch',account_name:'accountName'};
@@ -26,9 +27,9 @@ const requirements={required:['items','is_project'],optional:['claimant_query','
       'project_department_name','business_structure','business_line','business_subline'],minimumRows:1,maximumRows:50},
   attachments:{required:true,input:'attachments: [绝对文件路径]',maxFiles:20,maxFileSizeMiB:100},
   notes:['办理出差费用报销，不是出差申请。默认本人；仅配置中的代办员可按原生员工候选选择其他报销人，实际发起人保持登录账号。',
-    '每行只有一种原币种和汇率；同一行程段的不同币种费用分行，餐补只建议一次。收款币种CNY对应CNY餐补，其他收款币种对应HKD餐补。',
+    '每行只有一种原币种和汇率；同一行程段的不同币种费用分行，差旅津贴只建议一次。收款币种CNY对应CNY差旅津贴，其他收款币种对应HKD差旅津贴。',
     '先确定报销人、合法支付公司与收款币种，并明确是否项目，再计算明细；未明确是否项目时补问，不能默认为非项目。',
-    '餐补按自然日只自动建议一次，日期含首尾、同日一天；跨城共享日归到达的下一段，使用该段地区标准。员工可修改、填0或清空，后续不覆盖。',
+    '差旅津贴按自然日只自动建议一次，日期含首尾、同日一天；按实际行程顺序，前序行已覆盖日期不再自动计算，重叠日归前段。员工可修改、填0或清空，后续不覆盖。',
     '每行关联本报销人已完成且同意的正式出差单；只有报销人为jefferson.sun时可不填，主动关联仍核验。',
     '先整理材料及可修改行程明细并确认，再补主表/附件；完整申请预览后另等新的提交确认。']};
 const allowed=[...requirements.required,...requirements.optional];
@@ -101,10 +102,10 @@ async function subjectContext(input,ctx,needs) {
 }
 function contract(project,subject,rows,currency,fields,context={}) {
   const columns=[['departure','出发地',true],['destination','目的地',true],['region','出差地区',true],
-    ['startDate','开始日期',true],['endDate','结束日期',true],['days','天数',true],['trip','关联出差流程',false],
+    ['startDate','开始日期',true],['endDate','结束日期',true],['days','行程天数',true],['trip','关联出差流程',false],
     ...Object.keys(costs).map(k=>[k,costLabels[k],false]),['originalCurrency','原币种',true],['rate','汇率',true],
-    ['reimbursedAmount','报销金额',true],['allowanceCurrency','餐补币种',true],['allowanceStandard','每日餐补标准',false],
-    ['allowanceDays','餐补建议天数',false],['allowanceAmount','餐补金额',false],['remarks','备注',false]];
+    ['reimbursedAmount','报销金额',true],['allowanceCurrency','差旅津贴币种',true],['allowanceStandard','每日差旅津贴标准',false],
+    ['allowanceDays','差旅津贴建议天数',false],['allowanceAmount','差旅津贴金额',false],['remarks','备注',false]];
   if(project) columns.push(['projectDepartment','项目部门',fields?C.required(fields,F.projectDepartmentName):false],
     ['structure','项目业务总架构',fields?C.required(fields,F.projectStructure):false],
     ['line','项目业务线',fields?C.required(fields,F.projectLine):false],['subline','项目子业务线',true],
@@ -150,7 +151,7 @@ async function buildDetails(input,ctx,fields) {
     ...(project?{项目:input.project_name||'',项目费用类别:input.project_expense_category||''}:{})});
   const empty=()=>({rows:[],needsInput:needs,recommendationContexts:[],editorChoices,
     preview:{...(scoped?{报销人:scoped.subject.name||scoped.subject.userid}:{}),
-      支付公司:company||'',报销币种:currency,餐补币种:allowanceCurrency,...projectPreview(),报销明细:[]},
+      支付公司:company||'',报销币种:currency,差旅津贴币种:allowanceCurrency,...projectPreview(),报销明细:[]},
     detailReviewContract:contract(project,scoped?.subject,[],allowanceCurrency,fields,{paymentCompany:company})});
   if(!scoped) return empty();
   const subject=scoped.subject;
@@ -218,12 +219,12 @@ async function buildDetails(input,ctx,fields) {
     for(const name of Object.keys(costs)) row[name]=money(item[name]);
     row.originalCurrency=Finance.choice(needs,prefix+'original_currency','本行费用原币种',item.original_currency,originalCurrencies)||null;
     row.rate=currency&&row.originalCurrency?await rate(row.originalCurrency,currency):null;
-    row.reimbursedAmount=row.rate===null?null:convertAmount(sum(Object.keys(costs).map(name=>row[name]??0)),row.rate,rules.precision);
+    row.reimbursedAmount=row.rate===null?null:convertAmount(tripCost(item,rules.precision),row.rate,rules.precision);
     row.allowanceStandard=null;
     if(allowanceCurrency&&row.region) {
       const as=source('allowances'),standards=distinctValues(await query(scoped,'allowances',
         {[as.regionField]:row.region,[as.currencyField]:allowanceCurrency},[as.standardField]),as.standardField);
-      C.check(standards.length<=1,'TRAVEL_ALLOWANCE_SOURCE_INVALID','该地区及餐补币种的餐补标准存在歧义，请联系 Finance。');
+      C.check(standards.length<=1,'TRAVEL_ALLOWANCE_SOURCE_INVALID','该地区及差旅津贴币种的差旅津贴标准存在歧义，请联系 Finance。');
       row.allowanceStandard=standards.length?money(standards[0]):null;
     }
     if(project&&scope.ready) {
@@ -237,10 +238,10 @@ async function buildDetails(input,ctx,fields) {
     } else if(!project) C.check(['project_department_name','business_structure','business_line','business_subline','account']
       .every(name=>C.absent(item[name])),'TRIP_REIMBURSEMENT_INPUT_CONFLICT');
     // Preserve complete real itinerary dates. The allowance planner allocates
-    // shared dates to the arriving segment before handling currency-split rows.
+    // inclusive dates to the first row before later journeys/currency splits.
     const segmentKey=JSON.stringify([row.tripId,...[row.departure,row.destination,row.region].map(C.normalized),
       range?.start??null,range?.end??null]);
-    allowanceInputs.push({...range,segmentKey,region:row.region,standard:row.allowanceStandard,preferred:row.originalCurrency===allowanceCurrency,
+    allowanceInputs.push({...range,segmentKey,region:row.region,standard:row.allowanceStandard,
       ...(Object.hasOwn(item,'allowance_amount')?{amount:item.allowance_amount}:{})});
     rows.push(row);
   }
@@ -253,25 +254,25 @@ async function buildDetails(input,ctx,fields) {
     row.allowanceAllocation=planned.sharedDays.map(range=>({
       startDate:C.dateText(range.start),endDate:C.dateText(range.end),itemIndex:known[range.index].index}));
     if(!planned.explicit&&planned.eligibleDays>0&&row.allowanceStandard===null)
-      needs.push({field:'items['+index+'].allowance_amount',message:'该地区及餐补币种缺少餐补标准，无法计算建议；请 Finance 核查，或明确本次实际申领金额（可填0）。'});
+      needs.push({field:'items['+index+'].allowance_amount',message:'该地区及差旅津贴币种缺少差旅津贴标准，无法计算建议；请 Finance 核查，或明确本次实际申领金额（可填0）。'});
   }
   rows.forEach(row=>{if(row.allowanceDays===undefined)Object.assign(row,{allowanceDays:null,allowanceAmount:null});});
   for(const conflict of plan.conflicts) {
     const indexes=conflict.indexes.map(position=>known[position].index);
     needs.push({field:'items['+indexes[0]+'].allowance_amount',message:'第 '+indexes.map(i=>i+1).join('、')+
-      ' 行属于同一行程段，请保留一处餐补申领，其他币种拆行填0。',
+      ' 行属于同一行程段，请保留一处差旅津贴申领，其他币种拆行填0。',
       indexes,resolver:'clarify_allowance_allocation'});
   }
   const reviewContract=contract(project,subject,rows,allowanceCurrency,fields,
     {paymentCompany:company,projectName:scope.projectName??null,projectCategory:project?scope.category??null:null});
   const preview={报销人:subject.name||subject.userid,...(subject.delegated?{实际发起人:ctx.actor.name||ctx.actor.userid}:{}),
-    支付公司:company||'',报销币种:currency,餐补币种:allowanceCurrency,...projectPreview(),
+    支付公司:company||'',报销币种:currency,差旅津贴币种:allowanceCurrency,...projectPreview(),
     ...(project?{项目:scope.projectName||input.project_name||'',项目费用类别:scope.category||input.project_expense_category||''}:{}),
     报销明细:displayRows(rows,reviewContract),
-    餐补分配说明:rows.flatMap((row,index)=>(row.allowanceAllocation||[]).map(range=>'第 '+(index+1)+' 行的 '+
-      range.startDate+(range.endDate!==range.startDate?' 至 '+range.endDate:'')+' 餐补归第 '+(range.itemIndex+1)+' 行到达段，按该段地区标准建议。')),
+    差旅津贴分配说明:rows.flatMap((row,index)=>(row.allowanceAllocation||[]).map(range=>'第 '+(index+1)+' 行的 '+
+      range.startDate+(range.endDate!==range.startDate?' 至 '+range.endDate:'')+' 差旅津贴归第 '+(range.itemIndex+1)+' 行，按该行地区标准建议。')),
     报销总额:rows.every(row=>row.reimbursedAmount!==null)?sum(rows.map(row=>row.reimbursedAmount)):null,
-    餐补总额:rows.some((row,index)=>row.allowanceAmount===null&&!Object.hasOwn(input.items[index],'allowance_amount'))
+    差旅津贴总额:rows.some((row,index)=>row.allowanceAmount===null&&!Object.hasOwn(input.items[index],'allowance_amount'))
       ?null:sum(rows.map(row=>row.allowanceAmount??0))};
   return {rows,needsInput:needs,preview,detailReviewContract:reviewContract,recommendationContexts,editorChoices,
     scoped,subject,company,currency,allowanceCurrency,scope,rate,ranges};
@@ -373,6 +374,7 @@ async function prepare(input,ctx) {
   const hkd=rules.defaults[F.hkd],hkdRate=await rate(currency,hkd),
     allowanceHkdRate=await rate(allowanceCurrency,hkd),nativeRows=[],departmentIds=[],managers=[];
   for(const [index,row] of rows.entries()) {
+    row.hkdRate=hkdRate;row.allowanceHkdRate=allowanceHkdRate;
     const range=result.ranges[index],native={[F.departure]:row.departure,[F.destination]:row.destination,[F.region]:row.region,
       [F.dateRange]:[range.start,range.end],[F.days]:row.days,[F.originalCurrency]:row.originalCurrency,[F.originalRate]:row.rate,
       [F.reimbursedAmount]:row.reimbursedAmount,[F.hkd]:hkd,[F.hkdRate]:hkdRate,

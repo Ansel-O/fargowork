@@ -10,7 +10,7 @@
 
 Requires Windows, Node.js 22+, npm and the official OpenYida CLI (supported versions: `2026.10.16`, `2026.10.19`). To install manually, run `node scripts/setup.cjs` from the complete release package, follow the sign-in prompts, and have your AI client load the returned `skillEntry`. See the [installation instructions](SKILL.md#首次安装) and [troubleshooting guide](references/DEBUG.md) (in Chinese).
 
-**New in 3.1.1:** Every financial review automatically includes an HTML page tailored to its workflow. Describe changes in chat, or edit the page and return the exported file. The agent recalculates and shows the latest draft for your confirmation.
+**New in 3.2.0:** Drafts reuse company reference data for 24 hours, with refresh on request. Financial HTML pages calculate edits immediately, and travel allowances count overlapping dates only once. Update notices are separate from minimum-version requirements.
 
 ## 1. What it does
 
@@ -36,7 +36,7 @@ Financial applications follow this sequence:
 
 **Establish company, currency and any project allocation → Organize materials and calculate details → Edit and confirm details → Complete the main form → Confirm the full application → Submit.**
 
-The agent automatically provides the workflow's HTML page when it is time to review. Describe changes in chat, or edit the page and return the exported file. The agent recalculates and shows the updated draft before you confirm. Even a single expense gets a page, accompanied by a brief summary.
+The agent automatically provides the workflow's HTML page when it is time to review. Describe changes in chat, or edit the page and return the exported file. Page edits and chat edits share the same calculation code. The page updates amounts immediately; return its export to update the draft before confirming. Even a single expense gets a page, accompanied by a brief summary.
 
 The agent suggests expense categories and accounting codes, with suitable alternatives. You can accept them or change a specific row; fixed codes follow the existing rules. Currencies, exchange rates and other reference data come from company-maintained sources, not replacement values in chat or online market rates. Forms without a detail table, such as medical checkup reimbursement, go straight to confirming the full application.
 
@@ -46,7 +46,7 @@ Payment details default to the employee roster. Only an explicit request to chan
 
 **Remember preferences while preserving company rules.** With your permission, the agent can save common purposes, language and display preferences. You can view, edit or delete them, and they survive upgrades. Bank details, credentials and original documents are not stored in long-term memory. See [personal preferences](references/PERSONAL.md).
 
-**Check for workflow changes.** The agent reads the company’s online directory before processing and submitting an application. If a workflow is disabled, versions are incompatible or the check fails, it keeps the draft and pauses submission. Company maintainers publish rules and versions; Finance and HR maintain their respective data. Employees personalize through application choices and preferences. See [version handling](references/WORKFLOW-DIRECTORY.md).
+**Reuse data and refresh when needed.** New applications check the company directory and required reference data. A draft reuses that data for 24 hours from its first reviewable version; edits do not extend this period. Ask to refresh company data when needed. Changes made by maintainers during this period do not automatically enter an existing draft. Expired drafts or failed initial checks preserve your work until verification can resume. New applications check for updates with at most two attempts and skip the notice if the network is unavailable. Recommended releases and minimum supported versions are maintained separately. See [version handling](references/WORKFLOW-DIRECTORY.md).
 
 **Adapt the structure for your company.** `config/` contains company and workflow configuration, `workflows/` contains processing logic, `skills/` contains interaction instructions, and `shared/` contains common tools. Workflow folders are organized into Finance, Leave, Assets, Business and HR. The [adaptation guide](references/ADAPTING.md) lists the files to change and checks to perform. The public package does not include the directory page template or build tools; another company’s version needs adaptation and verification before use. These detailed guides are currently in Chinese.
 

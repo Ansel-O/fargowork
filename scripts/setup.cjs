@@ -28,6 +28,7 @@ function verify(root, manifest) {
     'scripts/lib/common.cjs','scripts/lib/auth.cjs','scripts/lib/official-cli.cjs','scripts/lib/policy.cjs','scripts/lib/runtime.cjs',
     'scripts/lib/process.cjs','scripts/lib/native-attachment.cjs','scripts/lib/verification.cjs','scripts/lib/support.cjs',
     'scripts/lib/personal.cjs','scripts/lib/workflow-directory.cjs','scripts/lib/attachment-verification-cache.cjs',
+    'scripts/lib/draft-snapshot.cjs','scripts/lib/update-notice.cjs','shared/finance-calculations.cjs',
     'shared/finance-local-update.cjs','shared/finance-detail-editor.cjs','assets/finance-detail-editor.html','references/FINANCE-DETAIL-EDITOR.md',
     'shared/local-datetime.cjs','shared/scoped-catalog.cjs','shared/account-recommendation.cjs','shared/finance-catalog.cjs',
     'shared/finance-details.cjs','shared/detail-review.cjs','shared/exchange-rates.cjs','shared/leave-calendar.cjs',
@@ -113,6 +114,7 @@ async function setup(args) {
     skillEntry: path.join(dest, 'SKILL.md'),
     skills: manifest.files.filter(f => /^skills\/(finance|leave|assets|business|hr)\/[^/]+\/SKILL\.md$/.test(f.path))
       .map(f => path.join(dest,f.path)),
+    agentNextStep: '先读取本次返回的 skillEntry，再读取本次办理流程对应的新版本 Skill；后续使用本次 command，不沿用旧安装路径或旧流程说明。',
     command: [process.execPath, path.join(dest, 'scripts', 'fargowork.cjs')],
     message: identity.status === 'ready' ? '已安装并登录，可以办理包内固定流程。' : '安装完成，办理前需要登录。'
   };

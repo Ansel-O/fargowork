@@ -46,6 +46,7 @@ const LocalUpdate = require('../shared/finance-local-update.cjs');
 const Editor = require('../shared/finance-detail-editor.cjs');
 const {createAttachmentVerifier}=require('./lib/attachment-verification-cache.cjs');
 const Directory = require('./lib/workflow-directory.cjs');
+const DraftSnapshot = require('./lib/draft-snapshot.cjs');
 const {
   attachmentJobs,
   attachmentGroupKey,
@@ -79,6 +80,8 @@ function parse(args) {
     prepare: ['input', 'draft'],
     submit: ['confirm'],
     preview: [],
+    refresh: [],
+    'check-update': [],
     result: [],
     status: [],
     login: [],
@@ -89,7 +92,7 @@ function parse(args) {
     directory: [], personal: ['input','confirm']
   };
   check(Object.hasOwn(accepted, command) && Object.keys(options).every(k => accepted[command].includes(k)), 'COMMAND_NOT_ALLOWED');
-  if (['details', 'review', 'confirm-details', 'prepare', 'submit', 'preview', 'result', 'requirements','personal','editor','apply-edit'].includes(command)) check(positionals.length === 1, 'ARGUMENT_INVALID');else check(positionals.length === 0, 'ARGUMENT_INVALID');
+  if (['details', 'review', 'confirm-details', 'prepare', 'submit', 'preview', 'refresh', 'result', 'requirements','personal','editor','apply-edit'].includes(command)) check(positionals.length === 1, 'ARGUMENT_INVALID');else check(positionals.length === 0, 'ARGUMENT_INVALID');
   return {
     command,
     arg: positionals[0],
@@ -143,7 +146,8 @@ function manager(rt, w, dir) {
     formUuid: w.formUuid,
     processCode: processCode(w.key),
     stateDir: path.join(dir, 'process'),
-    currentActorResolver: rt.actor
+    currentActorResolver: rt.actor,
+    ...(rt.draftNow?{now:rt.draftNow}:{})
   });
 }
 function attachmentRules(schema, field) {
@@ -274,8 +278,9 @@ function readonlyDetailContext(rt,actor,w) {
 }
 async function refreshReview(dir,w,rt,info,prior) {
   const file=path.join(dir,'details-review.json');
-  // Failure cannot leave a previously confirmed but now unverified review live.
-  write(file,{...(prior||{}),status:'pending',confirmedSha256:null});
+  // Replace a complete review atomically. In particular, a terminated submit
+  // must not erase consent merely because it started a local calculation.
+  try {
   const materials=DetailReview.normalizeMaterials(info.materials||[],info.input.items?.length||0,w.materialRoles);
   if(info.materialUploads!==undefined) DetailReview.normalizeMaterialUploads(info.materialUploads,w.materialRoles);
   const result=json(await w.details(info.input,readonlyDetailContext(rt,info.actor,w)));
@@ -285,8 +290,13 @@ async function refreshReview(dir,w,rt,info,prior) {
   check(!['draftId','draftSha256','authorization','requiresConfirmation','formData','processInstanceId']
     .some(key=>Object.hasOwn(result,key)),'WORKFLOW_DETAILS_RESULT_INVALID');
   const review=DetailReview.checkpoint({workflow:w.key,actor:info.actor,result,materials,previous:prior});
-  write(file,review);
+  write(file,{...review,inputDigest:digest(info.input)});
   return review;
+  }catch(error){
+    if(/^DETAIL_MATERIAL/.test(safeCode(error)))
+      write(file,{...(prior||{}),status:'pending',confirmedSha256:null});
+    throw error;
+  }
 }
 function attemptedResult(state,id) {
   return {status:state.status,draftId:id,processInstanceId:state.processInstanceId,mayRetry:false,
@@ -354,9 +364,40 @@ function generateDetailEditor(dir,id,info,output) {
   }
 }
 function withDetailEditor(result,dir,id,info) {
+  const file=path.join(dir,'source-snapshot.json');
+  if(fs.existsSync(file)) {
+    const saved=read(file);
+    result={...result,draftValidity:{startedAt:saved.startedAt,expiresAt:saved.expiresAt},
+      refreshAction:{command:'refresh',draftId:id}};
+  }
   return Editor.definitions[info.workflow]?{...result,detailEditor:generateDetailEditor(dir,id,info)}:result;
 }
-async function run(args, deps = {}) {
+function draftRuntime({runtime,auth,dir,key,actor,previous,deps}) {
+  const live=runtime(key,{auth});
+  check(sameActor(actor,live.actor())&&sameActor(actor,live.ctx.actor),'IDENTITY_CHANGED');
+  const snapshot=DraftSnapshot.createDraftSnapshot({stateDir:dir,workflow:key,actor,
+    now:deps.now||Date.now,legacy:!!previous});
+  snapshot.assertValid();
+  const rt=DraftSnapshot.bindRuntime(live,snapshot);
+  return {...rt,draftSnapshot:snapshot,draftNow:()=>new Date((deps.now||Date.now)())};
+}
+async function run(args,deps={}) {
+  const parsed=parse(args),isEntry=['requirements','details'].includes(parsed.command)
+    ||['review','prepare'].includes(parsed.command)&&!parsed.options.draft;
+  const eligible=isEntry&&workflowAvailability(parsed.arg).canStart;
+  let update=Promise.resolve(null);
+  if(parsed.command==='check-update'||eligible) {
+    // Injected adapters are offline unless their caller also injects the update
+    // checker. Product invocations use the fixed public endpoint independently.
+    const checker=deps.updateChecker || (!Object.hasOwn(deps,'auth')&&!Object.hasOwn(deps,'runtime')
+      ?require('./lib/update-notice.cjs').createUpdateChecker({root:deps.root||dataRoot(),version:VERSION}):null);
+    if(checker) update=Promise.resolve().then(()=>checker.check({force:parsed.command==='check-update'})).catch(()=>null);
+  }
+  if(parsed.command==='check-update') return await update||{status:'skipped'};
+  const result=await runCommand(args,deps),notice=(await update)?.notice;
+  return notice?{...result,updateNotice:notice}:result;
+}
+async function runCommand(args, deps = {}) {
   const {
       command,
       arg,
@@ -454,7 +495,7 @@ async function run(args, deps = {}) {
   // upload, nor manufacture a second intent before its detail review exists.
   if (command === 'prepare' && workflow(arg).detailReview === true && !options.draft) return reviewRequired();
   const root = deps.root || dataRoot();
-  if (command === 'preview' || command === 'submit' || command === 'confirm-details' || command==='editor' || command==='apply-edit') {
+  if (command === 'preview' || command === 'submit' || command === 'confirm-details' || command==='editor' || command==='apply-edit'||command==='refresh') {
     const info = read(path.join(draftDir(root, arg), 'input.json'));
     assertWorkflowStartAllowed(info.workflow);
   }
@@ -469,6 +510,39 @@ async function run(args, deps = {}) {
     diagnostics: '如需支持，仅提供时间、命令名、错误码和草稿编号。'
   };
   check((await auth.status()).status === 'ready', 'OPENYIDA_LOGIN_REQUIRED');
+  if(command==='refresh') {
+    const dir=draftDir(root,arg);
+    const refresh=await locked(dir,async()=>{
+      const info=read(path.join(dir,'input.json')),w=workflow(info.workflow),rt=runtime(info.workflow,{auth});
+      check(sameActor(info.actor,rt.actor()),'DRAFT_IDENTITY_MISMATCH');
+      const hadPrepared=fs.existsSync(path.join(dir,'process','state.json'));
+      if(hadPrepared) {
+        const state=await manager(rt,w,dir).inspect();
+        if(state.status!=='prepared') return {attempted:attemptedResult(state,arg)};
+      }
+      const before=editorContext(dir,arg,info);
+      DraftSnapshot.createDraftSnapshot({stateDir:dir,workflow:info.workflow,actor:info.actor,
+        now:deps.now||Date.now,refresh:true});
+      revisionPending(dir,w.key,info.actor);
+      const inputFile=path.join(dir,'refresh-input-'+crypto.randomUUID()+'.json');
+      write(inputFile,{...info.input,attachments:info.files||[],
+        ...(w.detailReview?{materials:info.materials||[],
+          ...(info.materialUploads!==undefined?{materialUploads:info.materialUploads}:{})}:{})});
+      return {workflow:info.workflow,inputFile,command:w.detailReview&&!hadPrepared?'review':'prepare',
+        before:{prepared:before.prepared?.preview||null,review:before.review?.preview||null}};
+    });
+    if(refresh.attempted)return refresh.attempted;
+    try {
+      const result=await run([refresh.command,refresh.workflow,'--draft',arg,'--input',refresh.inputFile],deps);
+      const info=read(path.join(dir,'input.json')),current=editorContext(dir,arg,info);
+      const usePrepared=!!current.prepared?.preview;
+      const changes=DraftSnapshot.differences(usePrepared?refresh.before.prepared:refresh.before.review,
+        usePrepared?current.prepared.preview:current.review?.preview||null);
+      return {...result,refreshed:result.status!=='directory_blocked',changes,
+        message:result.status==='directory_blocked'?'暂未能核对公司目录，输入和材料已保留；核对恢复后再继续。'
+          :changes.length?'公司资料已刷新，输入和材料已保留。请核对列出的变化及更新后的草稿。':'公司资料已刷新，输入和材料已保留，当前业务预览没有变化。'};
+    }finally{fs.unlinkSync(refresh.inputFile);}
+  }
   if(command==='apply-edit') {
     check(options.input&&path.isAbsolute(options.input),'INPUT_FILE_REQUIRED');
     const dir=draftDir(root,arg);
@@ -510,7 +584,7 @@ async function run(args, deps = {}) {
     } finally {fs.unlinkSync(update.file);}
   }
   if (command === 'review') {
-    const w=workflow(arg),rt=runtime(arg,{auth}),actor=rt.actor();
+    const w=workflow(arg),actor=runtime(arg,{auth}).actor();
     let id=options.draft,initialData;
     if(!id) {
       initialData=inputData(options,true);
@@ -523,13 +597,14 @@ async function run(args, deps = {}) {
       if(previous) check(previous.workflow===arg&&sameActor(previous.actor,actor),'DRAFT_IDENTITY_OR_WORKFLOW_MISMATCH');
       assertEditorRevision(dir,id,previous,deps.editorExpected);
       if(fs.existsSync(path.join(dir,'process','state.json'))) {
-        const state=await manager(rt,w,dir).inspect();
+        const state=await manager(runtime(arg,{auth}),w,dir).inspect();
         if(state.status!=='prepared') return attemptedResult(state,id);
       }
+      const rt=draftRuntime({runtime,auth,dir,key:arg,actor,previous,deps}),snapshot=rt.draftSnapshot;
       const pending=revisionPending(dir,arg,actor);
       const reviewFile=path.join(dir,'details-review.json'),prior=fs.existsSync(reviewFile)?read(reviewFile):null;
-      // Invalid input on a revision also revokes its old final preview.
-      write(reviewFile,{...(prior||{}),status:'pending',confirmedSha256:null});
+      // revisionPending already makes the old final application unsubmitable.
+      // Retain the prior completed detail review until its replacement exists.
       const request=initialData||inputData(options,true),input={...previous?.input,...request.input};
       for(const key of deps.editorExpected?.deletedKeys||[])delete input[key];
       const files=previous&&!request.filesProvided?previous.files:request.files;
@@ -542,18 +617,16 @@ async function run(args, deps = {}) {
         info.materialUploads=request.materialUploadsProvided?request.materialUploads:previous.materialUploads;
       write(infoFile,info);
       saveEditorRows(dir,info,deps.editorExpected);
-      const directoryStatus=await directory.check(arg);
+      const directoryStatus=await snapshot.get('directory',{workflow:arg},()=>directory.check(arg),{cacheWhen:value=>value.status==='allowed'});
       const review=await refreshReview(dir,w,rt,info,prior);
+      snapshot.activate();
       return withDetailEditor({...DetailReview.response(review,id),directory:directoryStatus,
         submissionBlocked:directoryStatus.status!=='allowed'},dir,id,info);
     }).catch(error=>{error.draftId=id;throw error;});
   }
   if (command === 'prepare') {
     const w = workflow(arg);
-    const rt = runtime(arg, {
-        auth
-      }),
-      actor = rt.actor();
+    const actor = runtime(arg,{auth}).actor();
     let id = options.draft;
     let initialData;
     if (!id) {
@@ -567,10 +640,9 @@ async function run(args, deps = {}) {
       if (options.draft) check(previous, 'DRAFT_NOT_FOUND');
       if (previous) check(previous.workflow === arg && sameActor(previous.actor, actor), 'DRAFT_IDENTITY_OR_WORKFLOW_MISMATCH');
       assertEditorRevision(dir,id,previous,deps.editorExpected);
-      const pm = manager(rt, w, dir);
       let previousState,previousSaved;
       if (fs.existsSync(path.join(dir, 'process', 'state.json'))) {
-        const old = await pm.inspect();
+        const old = await manager(runtime(arg,{auth}),w,dir).inspect();
         if (old.status !== 'prepared') return {
           status: old.status,
           draftId: id,
@@ -581,6 +653,8 @@ async function run(args, deps = {}) {
         previousState=old;
         if(fs.existsSync(path.join(dir,'prepared.json'))) previousSaved=read(path.join(dir,'prepared.json'));
       }
+      const rt=draftRuntime({runtime,auth,dir,key:arg,actor,previous,deps}),snapshot=rt.draftSnapshot;
+      const pm=manager(rt,w,dir);
       // Persist invalidation before input/source validation or any attachment work.
       // Only the final revision commit can make the new snapshot confirmable.
       const revisionFile = path.join(dir, 'revision.json');
@@ -633,10 +707,10 @@ async function run(args, deps = {}) {
           info.materialUploads=request.materialUploadsProvided?request.materialUploads:previous.materialUploads;
         write(infoFile, info);
         saveEditorRows(dir,info,deps.editorExpected);
-        const directoryStatus=await directory.check(arg);
+        const directoryStatus=await snapshot.get('directory',{workflow:arg},()=>directory.check(arg),{cacheWhen:value=>value.status==='allowed'});
         if(directoryStatus.status!=='allowed') return Directory.blocked(directoryStatus,id);
         let localPrepared=null;
-        if(LocalUpdate.eligible({workflow:arg,previous,request,saved:previousSaved,state:previousState,version:VERSION,today:today()}))
+        if(LocalUpdate.eligible({workflow:arg,previous,request,saved:previousSaved,state:previousState,version:VERSION,today:snapshot.metadata().businessDate}))
           localPrepared=LocalUpdate.applyDescription({workflow:arg,request,saved:previousSaved,schema:await rt.ctx.schema()});
         let detailReview;
         if(w.detailReview === true) {
@@ -649,6 +723,7 @@ async function run(args, deps = {}) {
         }
         const prepared = localPrepared||json(await w.prepare(input, {...rt.ctx, workflowState: info.workflowState,
           inputUpdateKeys:Object.keys(request.input)}));
+        snapshot.activate();
         write(path.join(dir,'preparation-result.json'),{revisionId,result:prepared});
         rt.actor();
         if (Object.hasOwn(prepared, 'workflowState')) {
@@ -731,13 +806,13 @@ async function run(args, deps = {}) {
               ...attempt
             });
             rt.actor();
-            await verifyAttachment({
+            await snapshot.get('attachment-verification',{reference:up.reference,sha256:up.sha256},()=>verifyAttachment({
               reference: up.reference,
               expectedSha256: up.sha256,
               tenantOrigin: TENANT,
               rootOrigin: ROOT,
               getAccessToken: rt.getAccessToken
-            });
+            }));
             rt.actor();
             check(!uploaded.some(x => attachmentGroupKey(x) === attachmentGroupKey(job)
               && x.reference.fileUuid === up.reference.fileUuid), 'ATTACHMENT_DUPLICATE_CONTENT');
@@ -756,7 +831,9 @@ async function run(args, deps = {}) {
           deptId: String(prepared.departmentId),
           preview: json(preview),
           verification: prepared.verification || {},
-          validBusinessDate: today()
+          validBusinessDate:snapshot.metadata().businessDate,
+          draftStartedAt:snapshot.metadata().startedAt,
+          validUntil:snapshot.metadata().expiresAt
         });
         write(path.join(dir, 'prepared.json'), {
           version: VERSION,
@@ -821,11 +898,20 @@ async function run(args, deps = {}) {
   return locked(dir, async () => {
     const info = read(path.join(dir, 'input.json'));
     if (command !== 'result') assertWorkflowStartAllowed(info.workflow);
-    const w = workflow(info.workflow),
-      rt = runtime(info.workflow, {
+    const w = workflow(info.workflow);
+    let rt = runtime(info.workflow, {
         auth
       });
     check(sameActor(info.actor, rt.actor()), 'DRAFT_IDENTITY_MISMATCH');
+    let snapshot;
+    const processStateFile=path.join(dir,'process','state.json');
+    const attempted=fs.existsSync(processStateFile)&&read(processStateFile).status!=='prepared';
+    if(!attempted&&!['result','editor'].includes(command)) {
+      snapshot=DraftSnapshot.createDraftSnapshot({stateDir:dir,workflow:info.workflow,actor:info.actor,
+        now:deps.now||Date.now,legacy:true});
+      snapshot.assertValid();
+      rt={...DraftSnapshot.bindRuntime(rt,snapshot),draftNow:()=>new Date((deps.now||Date.now)())};
+    }
     const pm = manager(rt, w, dir);
     const revisionFile = path.join(dir, 'revision.json');
     const revision = fs.existsSync(revisionFile) ? read(revisionFile) : null;
@@ -847,6 +933,7 @@ async function run(args, deps = {}) {
       check(fs.existsSync(file),'DETAIL_REVIEW_REQUIRED');
       const prior=read(file);
       check(prior.status==='ready'&&options.confirm&&options.confirm===prior.reviewSha256,'DETAIL_EXPLICIT_CONFIRMATION_REQUIRED');
+      check(!prior.inputDigest||prior.inputDigest===digest(info.input),'DETAIL_EXPLICIT_CONFIRMATION_REQUIRED');
       check(!prior.needsInput.length,'DETAIL_REVIEW_INCOMPLETE');
       let current;
       try {
@@ -866,7 +953,7 @@ async function run(args, deps = {}) {
         return withDetailEditor(DetailReview.response(current,arg),dir,arg,info);
       }
       check(sameActor(info.actor,rt.actor()),'IDENTITY_CHANGED');
-      write(file,{...current,confirmedSha256:current.reviewSha256});
+      write(file,{...current,inputDigest:digest(info.input),confirmedSha256:current.reviewSha256});
       return DetailReview.response({...current,confirmedSha256:current.reviewSha256},arg);
     }
     if (!fs.existsSync(path.join(dir, 'process', 'state.json'))) {
@@ -880,7 +967,7 @@ async function run(args, deps = {}) {
       check(revision.version === VERSION && revision.workflow === info.workflow && sameActor(revision.actor, info.actor) && revision.revisionId === info.revisionId && revision.revisionId === saved.revisionId && revision.identity === info.identity && revision.identity === saved.identity && revision.draftSha256 === state.draftSha256 && revision.draftSha256 === saved.draftSha256, 'DRAFT_REVISION_INCOMPLETE');
     }
     if (command === 'preview') {
-      if(state.status==='prepared') check(state.snapshot.businessDate===today(),'PROCESS_DRAFT_EXPIRED');
+      if(state.status==='prepared') snapshot.assertValid();
       const detailEditor=state.status==='prepared'&&Editor.definitions[info.workflow]
         ?generateDetailEditor(dir,arg,info):null;
       if (state.status === 'prepared') {
@@ -892,6 +979,7 @@ async function run(args, deps = {}) {
         draftId: arg,
         draftSha256: state.draftSha256,
         preview: state.snapshot.preview,
+        ...(snapshot?{draftValidity:snapshot.metadata(),refreshAction:{command:'refresh',draftId:arg}}:{}),
         processInstanceId: state.processInstanceId,
         requiresConfirmation: state.status === 'prepared',
         ...(detailEditor?{detailEditor}:{}),
@@ -904,11 +992,12 @@ async function run(args, deps = {}) {
     if (command === 'submit') {
       check(options.confirm && options.confirm === state.draftSha256, 'PROCESS_EXPLICIT_CONFIRMATION_REQUIRED');
       if (state.status === 'prepared') {
-        const directoryStatus=await directory.check(info.workflow);
+        snapshot.onlyCached();
+        const directoryStatus=await snapshot.get('directory',{workflow:info.workflow},()=>directory.check(info.workflow),{readOnly:true});
         if(directoryStatus.status!=='allowed') return Directory.blocked(directoryStatus,arg);
         check(saved.previewedDraftSha256 === state.draftSha256, 'PROCESS_PREVIEW_REQUIRED');
         check(saved.version === VERSION && info.version === VERSION, 'DRAFT_VERSION_CHANGED');
-        check(state.snapshot.businessDate === today(), 'PROCESS_DRAFT_EXPIRED');
+        snapshot.assertValid();
         check(saved.workflowStateDigest === digest(info.workflowState || null), 'DRAFT_WORKFLOW_STATE_CHANGED');
         let detailReview;
         if(w.detailReview===true) {
@@ -917,8 +1006,7 @@ async function run(args, deps = {}) {
           const prior=read(file);
           check(prior.status==='ready'&&prior.confirmedSha256===prior.reviewSha256
             &&saved.detailReviewSha256===prior.reviewSha256,'DETAIL_REVIEW_REQUIRED');
-          try {detailReview=await refreshReview(dir,w,rt,info,prior);}
-          catch(error) {revisionPending(dir,w.key,info.actor);throw error;}
+          detailReview=await refreshReview(dir,w,rt,info,prior);
           if(detailReview.needsInput.length||detailReview.confirmedSha256!==detailReview.reviewSha256) {
             revisionPending(dir,w.key,info.actor);
             return withDetailEditor(DetailReview.response(detailReview,arg),dir,arg,info);
@@ -970,17 +1058,16 @@ async function run(args, deps = {}) {
         for (const item of saved.attachments) {
           const ref = referenceFor(state.snapshot,saved,item);
           check(ref, 'ATTACHMENT_SNAPSHOT_MISMATCH');
-          await verifyAttachment({
+          await snapshot.get('attachment-verification',{reference:ref,sha256:item.sha256},()=>verifyAttachment({
             reference: ref,
             expectedSha256: item.sha256,
             tenantOrigin: TENANT,
             rootOrigin: ROOT,
             getAccessToken: rt.getAccessToken
-          });
+          }),{readOnly:true});
         }
         rt.actor();
-        const finalDirectoryStatus=await directory.check(info.workflow);
-        if(finalDirectoryStatus.status!=='allowed') return Directory.blocked(finalDirectoryStatus,arg);
+        snapshot.assertValid();
       }
       const receipt = await pm.submit({
         draftSha256: options.confirm,

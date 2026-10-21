@@ -5,6 +5,8 @@ description: 先核对本人支付公司、收款币种和项目归属，再整�
 
 # 费用报销申请表
 
+升级后建议新开会话；继续当前会话时重新加载新版入口和本流程说明。草稿按[24小时复用与刷新](../../../references/WORKFLOW-DIRECTORY.md#办理行为)：首个可核对草稿起24小时，编辑不续期、提交不全量重查；过期或用户要求用 `refresh <draftId>`，保留输入、材料和回执，展示并确认实际差异。
+
 本 Skill 办理费用报销，固定目标为 `FORM-6EB2E57A94CF4445BB28508DC45262E3MDDX`，workflow key 为 `expense_reimbursement`。不能当作出差报销、对外付款或餐费补贴的替代入口。
 
 办理时优先遵守[公司维护源与个人选择](../../../references/FINANCE-DETAILS.md#公司维护源与个人选择)：汇率及合法目录按公司来源核对，用户口述、网络或 personal 不能覆盖；类别／科目仍由员工在合法范围内接受或改选，财务按原流程审核。
@@ -44,7 +46,7 @@ node scripts/fargowork.cjs details expense_reimbursement --input <绝对路径�
 3. 沿用首轮确定的支付公司、收款币种及项目，不重复询问。多个本人任职部门或业务线候选时，让员工选择，不静默选第一项。部门可传 `department_name`，脚本返回候选后对应填写 `department_id`，二者同时填写须一致。按返回层级确定 `business_structure`、`business_line`、`business_subline`；唯一候选直接采用并纳入预览。报销币种只可从该支付公司的维护候选中选择，不接受手填汇率或计算结果。
 4. `same_bearing_company` 默认 `true`；由另一公司承担时设为 `false`，再从合法候选中选 `bearing_company`。已有明确输入不能静默替换。
 5. 普通报销各行使用 `expense_category`、`account`。项目报销设 `is_project: true`，主表填写 `project_name`、`project_expense_category`；各行填写 `project_department_name` 及其业务层级、`account`。项目部门可以逐行不同，候选限所选项目；不用普通费用类别覆盖项目主表类别。
-6. 复用已确认的类别、科目及 `classification_reason`，不再从头询问。`prepare` 在读取其余资料及上传前复查明细；若目录、公司币种或汇率变化导致明细需要更新，先回到 `review`，按实际合法候选修订、展示受影响行并重新取得明细确认，不能自动接受新金额。理由最多300字符，只用于业务预览，不写表单。合法显式选择保留，冲突先澄清。
+6. 复用已确认类别、科目和 `classification_reason`，不从头问。`prepare` 在24小时内复用目录及来源，只补取尚缺的主表资料；不因补主表全量重查。主动刷新或新选择带来实际明细变化时，展示受影响行并确认，不能自动接受新金额。理由最多300字符，只用于预览，不写表单；合法显式选择保留，冲突先澄清。
 7. 每行先按配置汇率从原币换算到报销币种，再由脚本计算后台所需金额。合计使用每行已舍入的报销额；不能由 Agent 自算总额覆盖脚本。公司、项目或业务归属变化后重新准备，复查依赖项。
 
 收款账号、账户名称按原表必填；其他可空资料不额外设置门禁。部门主管、财务、出纳及内部计算等隐藏资料正常时不展示、不确认。原表的付款状态、实际付款日期属于后续节点，不在发起时填写。确实阻断办理时按[资料检查](../../../references/CHECKS.md)引导联系 HR、Finance 或 IT。
@@ -63,7 +65,7 @@ node scripts/fargowork.cjs details expense_reimbursement --input <绝对路径�
 
 准备完成后调用 `preview <draftId>`，打开本次 `detailEditor.path` 展示完整申请 HTML：本人部门、支付和承担公司、业务归属、完整收款资料、八列明细、报销总额和附件名称。完整内容应可查看，简短说明首轮之后的变化；主表修改也回到同一草稿，重算后展示新版 HTML。**展示后停止，等待员工下一条针对完整申请的明确提交确认。** 首次明细确认、最初“帮我报销”“提交吧”或选择某项候选，都不能代替这次确认。
 
-收到新确认后执行 `node scripts/fargowork.cjs submit <draftId> --confirm <本次preview返回的draftSha256>` 一次；不能把准备、预览、提交串成一次执行。修改、账号变化或草稿过期后重新准备与预览。成功只简短报告结果和编号，不代表审批通过。结果未知用 `result <draftId>` 核查，不能重提；回读内容核验与提交状态分开报告。
+收到新确认后执行 `node scripts/fargowork.cjs submit <draftId> --confirm <本次preview返回的draftSha256>` 一次，不能将准备、预览、提交串成一次执行。修改后展示本地重算结果；过期用 `refresh <draftId>`，账号变化不能沿用原账号草稿。成功简短报告结果和编号，不代表审批通过。未知结果用 `result` 核查，不重提；回读与提交状态分开报告。
 
 本次报销提交成功后，仅在补录或修改了收款资料、且员工未说明是否长期使用时，简短问一次是否另提[默认银行卡变更申请](../default-bank-change/SKILL.md)。已说“就这一次／仅本次”的不再询问。这是可选后续，不自动创建或提交第二单，不改写花名册；愿意办理后仍需独立展示变更预览并取得新确认。变更申请提交成功不代表默认资料已经生效。
 

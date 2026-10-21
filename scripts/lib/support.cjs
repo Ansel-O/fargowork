@@ -30,7 +30,11 @@ function supportForError(code) {
   if(code==='PAYMENT_SOURCE_MISSING')
     return {contact:'IT',nextAction:'check_finance_source',message:'暂时未能核对本次申请所需的财务资料。请维护者核查原因；保留已整理的材料，暂停提交，核对后继续办理。'};
   if(code==='WORKFLOW_CLIENT_UPDATE_REQUIRED')
-    return {nextAction:'update_client',message:'保留材料和草稿，更新完整 FargoWork 包后重新准备；不能手改版本号放行。'};
+    return {nextAction:'update_client',message:'当前版本不满足该流程的最低客户端或规则兼容要求。保留材料和草稿，更新完整 FargoWork 包后继续；不能手改版本号放行。'};
+  if(code==='PROCESS_DRAFT_EXPIRED')
+    return {nextAction:'refresh_draft',message:'草稿的 24 小时有效期已结束，输入和材料已保留。请刷新公司资料，核对变化后继续。'};
+  if(['DRAFT_REFRESH_REQUIRED','DRAFT_SOURCE_REFRESH_REQUIRED','DRAFT_SOURCE_SNAPSHOT_CHANGED','DRAFT_SOURCE_SNAPSHOT_INVALID'].includes(code))
+    return {nextAction:'refresh_draft',message:'这份草稿需要刷新公司资料才能继续。保留输入、材料和已有上传结果，刷新后只核对发生变化的内容。'};
   if(/^DIRECTORY_/.test(code))
     return {contact:'IT',nextAction:'restore_directory_check',message:'流程目录暂时不能核对或已停用。保留草稿并暂停提交，请联系维护者核实目录与读取权限。'};
   if(/^PAYMENT_HISTORY_/.test(code))
@@ -60,7 +64,7 @@ function supportForError(code) {
   if (FINANCE.has(code)) return {contact:'Finance', message:'办理所需的财务基础资料不完整或无法确定，请联系 Finance 核查后继续。'};
   if (['PROCESS_PREVIEW_REQUIRED','PROCESS_EXPLICIT_CONFIRMATION_REQUIRED'].includes(code))
     return {nextAction:'preview_then_wait_for_user',message:'请先展示本次业务预览，等待员工明确确认后再提交。'};
-  if (['BUSINESS_FACTS_CHANGED_REPREPARE','PROCESS_DRAFT_EXPIRED','DRAFT_VERSION_CHANGED'].includes(code))
+  if (['BUSINESS_FACTS_CHANGED_REPREPARE','DRAFT_VERSION_CHANGED'].includes(code))
     return {nextAction:'prepare_then_preview',message:'草稿需要更新。重新准备并展示业务预览，等员工确认后再提交。'};
   if (code === 'OPENYIDA_LOGIN_REQUIRED') return {nextAction:'official_login',message:'请使用官方 OpenYida 完成登录后继续。'};
   if (code === 'OPENYIDA_REFRESH_REQUIRED') return {nextAction:'official_refresh',message:'请先使用官方 OpenYida 刷新登录状态；未能恢复时再由本人登录。'};

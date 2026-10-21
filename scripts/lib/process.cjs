@@ -152,7 +152,7 @@ function createProcessTrial({ client, appType, formUuid, processCode, stateDir,
     };
   }
 
-  async function prepare({ formData, deptId, preview, verification = {}, validBusinessDate } = {}) {
+  async function prepare({ formData, deptId, preview, verification = {}, validBusinessDate, draftStartedAt, validUntil } = {}) {
     assertTargetStartAllowed(appType, formUuid, processCode);
     return locked(async () => {
       const prior = loadState();
@@ -160,8 +160,12 @@ function createProcessTrial({ client, appType, formUuid, processCode, stateDir,
       if (!formData || Object.getPrototypeOf(formData) !== Object.prototype || !Object.keys(formData).length
           || !validId(deptId) || !preview || typeof preview !== 'object') fail('PROCESS_DRAFT_INPUT_INVALID');
       const instant = now();
-      const day = businessDate(instant);
-      if (validBusinessDate !== undefined && validBusinessDate !== day) fail('PROCESS_DRAFT_DATE_INVALID');
+      const day = validUntil ? validBusinessDate : businessDate(instant);
+      if(validUntil) {
+        const start=Date.parse(draftStartedAt),end=Date.parse(validUntil);
+        if(!Number.isFinite(start)||!Number.isFinite(end)||end-start!==24*3600000
+          ||instant.getTime()<start||instant.getTime()>=end||!/^\d{4}-\d{2}-\d{2}$/.test(day)) fail('PROCESS_DRAFT_EXPIRED');
+      } else if (validBusinessDate !== undefined && validBusinessDate !== day) fail('PROCESS_DRAFT_DATE_INVALID');
       let actor;
       try { actor = actorIdentity(await currentActorResolver()); }
       catch { fail('PROCESS_ACTOR_UNAVAILABLE'); }
@@ -172,6 +176,7 @@ function createProcessTrial({ client, appType, formUuid, processCode, stateDir,
       const snapshot = copy({
         version: 1, target, actor, businessDate: day, timeZone: 'Asia/Shanghai',
         preparedAt: instant.toISOString(), formData, deptId, preview, verification,
+        ...(validUntil?{draftStartedAt,validUntil}:{}),
       });
       const draftSha256 = sha(snapshot);
       const snapshotFile = path.join(root, `draft-${draftSha256}.json`);
@@ -197,7 +202,9 @@ function createProcessTrial({ client, appType, formUuid, processCode, stateDir,
       }
       if (state.status === 'unknown') fail('PROCESS_SUBMISSION_UNKNOWN_DO_NOT_RETRY');
       if (state.status === 'rejected') rejectPreviouslySent(state);
-      if (snapshot.businessDate !== businessDate(now())) fail('PROCESS_DRAFT_EXPIRED');
+      if (snapshot.validUntil ? now().getTime()>=Date.parse(snapshot.validUntil)
+        ||now().getTime()<Date.parse(snapshot.draftStartedAt)
+        :snapshot.businessDate !== businessDate(now())) fail('PROCESS_DRAFT_EXPIRED');
       assertTargetStartAllowed(appType, formUuid, processCode);
       // Durable unknown marker precedes the network call. A crash, timeout,
       // malformed response or local receipt failure must never trigger a repost.

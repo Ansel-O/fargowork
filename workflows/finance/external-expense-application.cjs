@@ -5,8 +5,8 @@ const config=require('../../config/workflows/finance/external_expense_applicatio
 const sources=require('../../config/sources.json');
 const companyConfig=require('../../config/company.json');
 const Department=require('../../shared/department-details.cjs');
-const Decimal=require('../../shared/decimal-arithmetic.cjs');
 const {createRateResolver,convertAmount}=require('../../shared/exchange-rates.cjs');
+const {rounded:roundAmount,sumAmounts}=require('../../shared/finance-calculations.cjs');
 const Association=require('../../shared/process-association.cjs');
 const {buildRecommendationContext}=require('../../shared/account-recommendation.cjs');
 const {matchingRows,distinctValues}=require('../../shared/scoped-catalog.cjs');
@@ -35,8 +35,8 @@ const allowed=[...requirements.required,...requirements.choices,...requirements.
 const itemAllowed=[...requirements.items.required,...requirements.items.optional];
 const source=name=>sources[config.sources[name]];
 const query=(ctx,name,filters,columns)=>matchingRows(ctx,source(name).formUuid,filters,columns);
-const rounded=value=>Decimal.number(Decimal.round(Decimal.decimal(value),rules.precision));
-const sum=values=>Decimal.number(Decimal.round(values.reduce((total,value)=>Decimal.add(total,Decimal.decimal(value)),Decimal.decimal(0)),rules.precision));
+const rounded=value=>roundAmount(value,rules.precision);
+const sum=values=>sumAmounts(values,rules.precision);
 
 function textValue(value,field,fields) {
   const text=C.optionalText(value),limit=Number(fields.get(field).props.maxLength);
@@ -153,7 +153,7 @@ async function buildDetails(input,ctx,fields) {
       amount:C.absent(item.amount)?null:rounded(item.amount),remarks:textValue(item.remarks,F.remarks,fields)};
     if(!row.description) needs.push({field:prefix+'description',message:`请补充第 ${index+1} 行付款内容。`});
     if(row.amount===null) needs.push({field:prefix+'amount',message:`请补充第 ${index+1} 行本次付款金额。`});
-    row.hkdAmount=row.amount===null||rate===null?null:convertAmount(row.amount,rate,rules.precision);
+    row.rate=rate;row.hkdAmount=row.amount===null||rate===null?null:convertAmount(row.amount,rate,rules.precision);
     if(project) {
       Object.assign(row,{projectDepartment:null,projectDepartmentId:null,structure:null,line:null,subline:null});
       if(scope.ready) {
@@ -181,7 +181,7 @@ async function buildDetails(input,ctx,fields) {
 async function details(input,ctx) {
   validateInput(input);
   const result=await buildDetails(input,ctx,assertSchema(await ctx.schema()));
-  return {rows:result.rows.map(({hkdAmount,projectDepartmentId,...row})=>row),preview:result.preview,
+  return {rows:result.rows.map(({projectDepartmentId,...row})=>row),preview:result.preview,
     needsInput:result.needsInput,detailReviewContract:result.detailReviewContract,recommendationContexts:result.recommendationContexts,editorChoices:result.editorChoices};
 }
 async function relations(ctx,input,needs,editorChoices={}) {

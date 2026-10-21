@@ -37,12 +37,10 @@ function normalizedRegion(value) {
   return value?.normalize('NFKC').trim().toLocaleLowerCase('en-US') || '';
 }
 
-// Rows belong to one payee and one draft. The caller supplies verified dates,
-// standards and segment identities; this tool neither reads history nor chooses
-// business currencies. A calendar day belongs to the segment arriving later
-// (latest start date, then the later itinerary segment on the same day).
-// Currency-split rows share that segment's allocation. Explicit employee amounts
-// are retained independently of the default allocation.
+// The supplied order is the employee's itinerary order. Every previous row
+// reserves its inclusive dates, even when its employee amount is explicitly 0.
+// This supports separate journeys and currency splits without inventing dates.
+// Explicit employee amounts are preserved independently of the suggestion.
 function suggestAllowances(rows,{precision=2}={}) {
   check(Array.isArray(rows),'TRAVEL_ALLOWANCE_ROWS_INVALID');
   Decimal.round(Decimal.decimal(0),precision);
@@ -61,50 +59,30 @@ function suggestAllowances(rows,{precision=2}={}) {
     const nonzero=explicit && row.amount!=='' && row.amount!==null
       && Decimal.decimal(row.amount).coefficient!==0n;
     return {index,start,end,standard,region,
-      segmentKey:row.segmentKey??JSON.stringify([region,start,end]),preferred:row.preferred===true,
+      segmentKey:row.segmentKey??JSON.stringify([region,start,end]),
       days:(end-start)/DAY+1,eligibleDays:0,suggestedAmount:null,
       amount:explicit?row.amount:null,explicit,nonzero,overlapIndexes:[],sharedDays:[]};
   });
   const conflicts=[];
-  const segments=new Map();
-  for(const row of work) {
-    if(!segments.has(row.segmentKey)) segments.set(row.segmentKey,[]);
-    segments.get(row.segmentKey).push(row);
-  }
   let allocated=[];
-  const ordered=[...segments.values()].sort((a,b)=>b[0].start-a[0].start||b[0].index-a[0].index);
-  for(const segment of ordered) {
-    const first=segment[0],available=remaining(first.start,first.end,allocated);
-    const defaults=segment.filter(row=>!row.explicit).sort((a,b)=>Number(b.preferred)-Number(a.preferred)||a.index-b.index);
-    const owner=segment.find(row=>row.nonzero)??defaults[0]??first;
-    const sharedDays=allocated.flatMap(range=>{
-      const start=Math.max(first.start,range.start),end=Math.min(first.end,range.end);
+  for(const row of work) {
+    const available=remaining(row.start,row.end,allocated);
+    row.sharedDays=allocated.flatMap(range=>{
+      const start=Math.max(row.start,range.start),end=Math.min(row.end,range.end);
       return start<=end?[{start,end,index:range.index}]:[];
     });
-    for(const row of segment) row.sharedDays=sharedDays;
-    const explicitCoverage=merge(segment.filter(row=>row.nonzero));
-    for(let i=0;i<segment.length;i++) for(let j=i+1;j<segment.length;j++) {
-      const left=segment[i],right=segment[j],start=Math.max(left.start,right.start),end=Math.min(left.end,right.end);
+    for(const previous of work.slice(0,row.index)) {
+      const start=Math.max(previous.start,row.start),end=Math.min(previous.end,row.end);
       if(start>end) continue;
-      left.overlapIndexes.push(right.index);
-      right.overlapIndexes.push(left.index);
-      if(left.nonzero && right.nonzero) {
-        conflicts.push({code:'EXPLICIT_AMOUNT_OVERLAP',indexes:[left.index,right.index],start,end});
+      previous.overlapIndexes.push(row.index);row.overlapIndexes.push(previous.index);
+      if(previous.segmentKey===row.segmentKey&&previous.nonzero&&row.nonzero) {
+        conflicts.push({code:'EXPLICIT_AMOUNT_OVERLAP',indexes:[previous.index,row.index],start,end});
       }
     }
-    for(const row of segment.filter(row=>row.explicit)) {
-      row.eligibleDays=row.nonzero?count(available):0;
-      row.suggestedAmount=product(row.standard,row.eligibleDays,precision);
-    }
-    let claimed=explicitCoverage;
-    for(const row of defaults) {
-      const ranges=available.flatMap(range=>remaining(range.start,range.end,claimed));
-      row.eligibleDays=count(ranges);
-      row.suggestedAmount=product(row.standard,row.eligibleDays,precision);
-      row.amount=row.suggestedAmount;
-      claimed=merge([...claimed,...ranges]);
-    }
-    allocated.push(...available.map(range=>({...range,index:owner.index})));
+    row.eligibleDays=count(available);
+    row.suggestedAmount=product(row.standard,row.eligibleDays,precision);
+    if(!row.explicit)row.amount=row.suggestedAmount;
+    allocated.push(...available.map(range=>({...range,index:row.index})));
   }
   return {rows:work.map(({days,eligibleDays,suggestedAmount,amount,overlapIndexes,explicit,sharedDays})=>
     ({days,eligibleDays,suggestedAmount,amount,overlapIndexes,explicit,sharedDays})),conflicts};

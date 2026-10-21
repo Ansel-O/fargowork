@@ -45,13 +45,15 @@ function createRuntime(key, {
   const rosterPolicy = Roster.rosterPolicy(w.policy);
   Subject.delegationActors(w.policy);
   const subjectScopes = new WeakSet();
-  // One command may build the same details for review and preparation. Reuse
-  // identical reads only inside this runtime; the next command starts fresh.
+  // Reuse exact, authorized reads across commands while the owning draft is
+  // valid. The credential/token path and all writes remain outside this cache.
+  let readCache;
   const readPromises = new Map();
   async function readOnce(kind, identity, operation) {
     sameActor();
     const key = kind + ':' + digest(identity);
-    if (!readPromises.has(key)) readPromises.set(key, Promise.resolve().then(operation));
+    if (!readPromises.has(key)) readPromises.set(key, Promise.resolve().then(() =>
+      readCache ? readCache.get(kind,identity,operation) : operation()));
     try {
       const result = await readPromises.get(key);
       sameActor();
@@ -300,13 +302,14 @@ function createRuntime(key, {
   };
   let schemaPromise;
   async function schema() {
-    if (!schemaPromise) schemaPromise = client.get(SCHEMA, {
+    sameActor();
+    if (!schemaPromise) schemaPromise = readOnce('schema',{form:w.formUuid},()=>client.get(SCHEMA, {
       formUuid: w.formUuid,
       schemaVersion: 'V5'
     }).then(r => {
       check(r.success && r.content, 'SCHEMA_UNAVAILABLE');
       return parsed(r.content);
-    });
+    }));
     return schemaPromise;
   }
   async function invokeInfo(info, inputs, rosterSubject) {
@@ -329,10 +332,13 @@ function createRuntime(key, {
   }
   async function readRoster(userId, codes, selected = false, subjectScope) {
     const fields = Roster.permittedFields(codes, selected ? rosterPolicy.selected : rosterPolicy.self);
+    if(subjectScope) assertSubjectScope(subjectScope);
+    return readOnce('roster',{userId,fields,selected},async()=>{
     const v = await invokeInfo(roster, Roster.connectorQuery({agentId:rosterAgentId,
       subject:userId, fields, permitted:selected ? rosterPolicy.selected : rosterPolicy.self}),
     subjectScope || (selected ? userId : undefined));
     return Roster.projectRoster(v, {subject:userId, corpId:initial.corp_id, fields});
+    });
   }
   const self = codes => readRoster(initial.userid, codes);
   async function rosterForSelectedEmployee(userId) {
@@ -356,7 +362,7 @@ function createRuntime(key, {
       const fields = Roster.fieldList(configured.rosterFields, 'DEPARTMENT_ROLE_POLICY_INVALID');
       const role = {connector:configured.connector, departmentId:configured.departmentId,
         managerIndex:configured.managerIndex, fields};
-      departmentRoleResults.set(alias, (async () => {
+      departmentRoleResults.set(alias, readOnce('departmentRole',{alias,role},async () => {
         const details = await Department.queryDepartmentDetails(ctx, role);
         sameActor();
         const userId = Department.departmentManagerAt(details, role.managerIndex);
@@ -373,7 +379,7 @@ function createRuntime(key, {
         } finally {
           departmentRosterScopes.delete(scope);
         }
-      })());
+      }));
     }
     const result = await departmentRoleResults.get(alias);
     sameActor();
@@ -500,7 +506,7 @@ function createRuntime(key, {
     }
     check(false, 'RELATED_SOURCE_TOO_LARGE');
   }
-  const date = today();
+  let date = today();
   async function searchEmployees(keyword) {
     directoryPeople = new Set();
     directoryUsers = [];
@@ -514,10 +520,11 @@ function createRuntime(key, {
     sameActor();
     // This official subcommand only reads the native employee picker. It does
     // not read/change app permissions and never accepts a roster target user.
-    const result = await runOfficial(['app-permission', 'search-user', keyword.trim(), '--size', '50']);
-    sameActor();
-    check(result?.success === true && Array.isArray(result.users), 'EMPLOYEE_SOURCE_INVALID');
-    const users = result.users.map(user => {
+    const users = await readOnce('employeePicker',{keyword:keyword.trim()},async()=>{
+      const result=await runOfficial(['app-permission', 'search-user', keyword.trim(), '--size', '50']);
+      sameActor();
+      check(result?.success === true && Array.isArray(result.users), 'EMPLOYEE_SOURCE_INVALID');
+      return result.users.map(user => {
       check(user && typeof user === 'object' && typeof user.userId === 'string'
         && /^[A-Za-z0-9_.@-]{1,160}$/.test(user.userId)
         && (user.corpId === undefined || user.corpId === initial.corp_id)
@@ -528,6 +535,7 @@ function createRuntime(key, {
         departmentIds:user.departmentIds, departments:user.departments.map(dept => ({
           id:dept.id, name:dept.name, path:dept.path
         }))};
+      });
     });
     directoryPeople = new Set(users.map(user => user.userId));
     directoryUsers = structuredClone(users);
@@ -570,13 +578,13 @@ function createRuntime(key, {
       check(Object.hasOwn(w.policy.connectors || {}, alias) && alias !== 'roster', 'CONNECTOR_NOT_ALLOWED');
       const id = inputs?.Body?.dept_id;
       check(typeof id === 'number' || typeof id === 'string' && /^\d+$/.test(id), 'DEPARTMENT_ID_INVALID');
-      return invokeInfo(w.policy.connectors[alias], {
+      return readOnce('connector',{alias,inputs:{...inputs,Body:{...inputs.Body,dept_id:Number(id)}}},()=>invokeInfo(w.policy.connectors[alias], {
         ...inputs,
         Body: {
           ...inputs.Body,
           dept_id: Number(id)
         }
-      });
+      }));
     }
   };
   return {
@@ -584,6 +592,11 @@ function createRuntime(key, {
     client,
     tenant,
     actor: sameActor,
+    setReadCache(cache) {
+      check(readPromises.size===0&&!schemaPromise,'DRAFT_SOURCE_CACHE_LATE_BIND');
+      readCache=cache;date=cache.metadata().businessDate;
+      ctx.today=date;ctx.todayMs=Date.parse(date+'T00:00:00+08:00');
+    },
     getAccessToken: getToken
   };
 }

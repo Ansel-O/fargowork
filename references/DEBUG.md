@@ -6,6 +6,8 @@
 
 只有用户主动提供实例用于排查且官方能力可用时，才核验该实例；所属表单按官方回读的 `formUuid`／`modelUuid` 确认，不凭 ID 前缀或对话猜成报销单等其他记录。员工账号无法读取时，只说明“暂时未能核实”。普通办理不为此额外查询实例。
 
+升级后建议新开会话；继续当前会话时重新加载新版入口和本流程说明。HTML是否已生成与是否已呈现给用户分别核实，后者应有本次修订的文件呈现或可点击入口。
+
 | 情况 | 处理 |
 | --- | --- |
 | `NODE_22_REQUIRED`、`OPENYIDA_CLI_REQUIRED`、`SETUP_REQUIRED` | 按[入口 Skill](../SKILL.md)安装 Node.js 和官方 OpenYida，再从完整包根运行安装器。遵循公司 IT 规范，不提权或修改系统策略。 |
@@ -15,7 +17,11 @@
 | `OPENYIDA_ENVIRONMENT_UNSUPPORTED`、`COMPANY_MISMATCH`、`IDENTITY_CHANGED` | 停止当前操作，核对官方选定的公司和账号。本包接受官方根域名或本公司的已知租户域名，不允许任意配置目标地址。切换账号后不能沿用原账号草稿。 |
 | `OPENYIDA_COMMAND_FAILED`、`OPENYIDA_PROVIDER_UNAVAILABLE`、权限或格式错误 | 联系 IT，附阶段、版本和错误码。不打印完整响应、翻凭据文件、换身份试探或扩大权限。 |
 | `PROCESS_PREVIEW_REQUIRED`、确认摘要不符 | 读取并展示当前草稿预览，停止操作，等本人下一条明确确认。旧授权、旧草稿和脚本读过预览都不代表本人已同意。 |
-| `DRAFT_VERSION_CHANGED`、`DRAFT_REVISION_INCOMPLETE`、`PROCESS_DRAFT_EXPIRED`、`BUSINESS_FACTS_CHANGED_REPREPARE` | 对尚未提交的草稿重新准备并展示预览。升级前已经提交或结果未知的申请先查询原结果，不能另建申请重提。 |
+| `PROCESS_DRAFT_EXPIRED`、`DRAFT_REFRESH_REQUIRED` | 原草稿运行 `refresh <draftId>`，保留输入、材料和已知上传回执；成功刷新重新起算24小时，展示并确认实际差异。仅跨午夜不失效。 |
+| `DRAFT_SOURCE_REFRESH_REQUIRED`、`DRAFT_SOURCE_SNAPSHOT_CHANGED`、`DRAFT_SOURCE_SNAPSHOT_INVALID` | 提交所需来源未完整保存或本地快照异常，保留输入和材料，用 `refresh <draftId>` 恢复并核对差异；不在提交阶段自动联网重建整套资料。 |
+| `DRAFT_VERSION_CHANGED`、`DRAFT_REVISION_INCOMPLETE`、`BUSINESS_FACTS_CHANGED_REPREPARE` | 按返回的恢复入口继续同一草稿、展示预览；旧版草稿可用 `refresh` 迁移。已提交或结果未知先查询原结果，不能另建申请重提。 |
+| `WORKFLOW_CLIENT_UPDATE_REQUIRED` | 读取返回的实际运行版本、最低客户端版本、规则版本及阻断原因，不能凭聊天猜旧版或把规则patch升级说成不兼容。按需要更新完整包，最低版本不随最新版机械上调。 |
+| `check-update` 返回 `skipped` | 公开更新检查暂未成功，可继续办理；不声称已是最新版，不反复自动重试，不抵消已知的公司最低兼容要求。 |
 | `OPENYIDA_TARGET_UNVERIFIED` | 官方写前校验未通过，本次未发送业务提交。请 IT 核对固定目标；不得搜索其他表单代替。 |
 | `PAYMENT_COMPANY_NOT_FOUND`、`PAYMENT_SOURCE_MISSING` | 当前查询尚未取得可用的支付公司或财务资料，不代表记录未维护。由维护者核对读取权限、匹配条件和返回格式，确认实际原因后再分工；不要求员工新增记录或提供内部编码。保留材料、暂停提交；只读查询成功不代表草稿已保存。 |
 | 组织或财务资料阻断 | 按[检查与求助](CHECKS.md)联系 HR、Finance 或 IT。正常可空字段不向员工提示。 |

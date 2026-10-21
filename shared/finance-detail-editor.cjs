@@ -1,7 +1,7 @@
 'use strict';
 
-// Local presentation only. Workflows remain responsible for source lookups,
-// calculation, validation and the existing confirmation/submission contract.
+// Fixed local presentation and shared pure calculations. Workflows retain
+// company source lookups and the existing confirmation/submission contract.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const {check,digest}=require('../scripts/lib/common.cjs');
 const object=value=>value!==null&&typeof value==='object'&&Object.getPrototypeOf(value)===Object.prototype;
@@ -41,7 +41,7 @@ const definitions=Object.freeze({
     rows:[field('departure','出发地'),field('destination','目的地'),select('region','出差地区'),
       field('start_date','开始日期','date'),field('end_date','结束日期','date'),
       select('trip_instance_id','关联出差流程'),...costs,select('original_currency','原币种'),
-      number('allowance_amount','餐补金额'),field('remarks','备注','textarea'),...allocation,
+      number('allowance_amount','差旅津贴金额'),field('remarks','备注','textarea'),...allocation,
       select('account','项目会计科目',{project:true}),field('classification_reason','分类建议说明','textarea',{project:true})],maxRows:50},
   external_expense_application:{title:'对外付款',main:[select('payment_company','支付公司'),select('currency','付款币种'),...project],
     application:[...application,field('contract_company','合同公司'),field('bank_name','开户银行'),
@@ -163,6 +163,40 @@ function previewText(value) {
   if(object(value))return Object.entries(value).map(([key,item])=>`${key}：${previewText(item)}`).join('；');
   return String(value);
 }
+function calculationContext(workflow,input,preview,rows,prepared,contract) {
+  const config=require(`../config/workflows/finance/${workflow}.json`),rules=config.rules||{},F=config.fields||{};
+  const currency=preview.报销币种??preview.付款币种??preview.币种??input.reimbursement_currency??input.currency;
+  const rates=[],standards=[];
+  const add=(from,to,rate)=>{if(from&&to&&rate!==null&&rate!==undefined&&Number.isFinite(Number(rate))&&Number(rate)>0
+    &&!rates.some(entry=>entry.from===from&&entry.to===to&&entry.rate===rate))rates.push({from,to,rate});};
+  for(const row of rows){
+    if(['expense_reimbursement','trip_expense_reimbursement'].includes(workflow))add(row.originalCurrency,currency,row.rate);
+    if(workflow==='external_expense_application')add(currency,'HKD',row.rate);
+    add(currency,'HKD',row.hkdRate);
+    add(row.allowanceCurrency,'HKD',row.allowanceHkdRate);
+    if(row.region&&row.allowanceCurrency&&row.allowanceStandard!==null&&row.allowanceStandard!==undefined)
+      standards.push({region:row.region,currency:row.allowanceCurrency,standard:row.allowanceStandard});
+  }
+  if(workflow==='external_expense_request')add(currency,'HKD',preview.汇率);
+  const data=prepared?.formData,includeHkd=!!data&&workflow!=='medical_checkup_reimbursement'&&workflow!=='default_bank_change';
+  if(data){
+    if(workflow==='meal_transport')add(currency,'HKD',data[F.rate]);
+    for(const row of data[F.items]||[]){
+      add(currency,'HKD',row[F.hkdRate]??row[F.rate]);
+      if(workflow==='trip_expense_reimbursement'){
+        // The allowance conversion rate may be distinct from receipt currency.
+        // Do not infer it from a rounded amount; only explicitly known rates qualify.
+        if(data[F.allowanceCurrency]===currency)add(data[F.allowanceCurrency],'HKD',row[F.hkdRate]);
+      }
+    }
+  }
+  for(const row of prepared?.detailReviewRows||[]){add(currency,'HKD',row.hkdRate);add(row.allowanceCurrency,'HKD',row.allowanceHkdRate);}
+  return copy({workflow,precision:rules.precision??2,currency,company:preview.支付公司??input.payment_company,
+    claimant:input.claimant_user_id??contract?.context?.claimantUserId,rates,standards,includeHkd,maximumAmount:rules.maximumAmount??1500,
+    mealAmounts:rules.mealAmounts||{},otherCurrencyMealAmount:rules.otherCurrencyMealAmount,
+    allowanceCurrencyByReceipt:rules.allowanceCurrency?.byReimbursementCurrency||{},
+    otherAllowanceCurrency:rules.allowanceCurrency?.otherwise});
+}
 function createEditor({workflow,draftId,input={},review,prepared,materials=review?.materials||[],
   revision:providedRevision,rowIds,previousDocument,choices={},stage='details'}) {
   const definition=definitions[workflow];
@@ -200,18 +234,20 @@ function createEditor({workflow,draftId,input={},review,prepared,materials=revie
       fields:presentFields(rowFields,item,rows[index]||{},combined,index),
       readonly:readOnlyRow(rows[index]||{},contract,rowFields)})),
     summary:Object.entries(preview).filter(([key,value])=>!Array.isArray(value)&&value!==undefined
-      &&!visibleMain.some(field=>scalarPreviewKeys[field.key]===key)).map(([label,value])=>({label,value})),
+      &&!visibleMain.some(field=>scalarPreviewKeys[field.key]===key||typeof value!=='object'&&field.label===key
+        ||field.key==='is_project'&&key==='是否项目款项')).map(([label,value])=>({label,value})),
     // Use only the canonical business preview. Final uploads can differ from
     // source materials and may be object arrays (name/size), not just strings.
     // The main detail array is already rendered as editable rows.
-    notes:Object.entries(preview).filter(([key,value])=>Array.isArray(value)&&key!==rowsPreviewKey)
+    notes:Object.entries(preview).filter(([key,value])=>Array.isArray(value)&&key!==rowsPreviewKey&&key!=='材料范围')
       .flatMap(([label,value])=>value.map(item=>({label,text:previewText(item)}))),
     needsInput:copy([...(review?.needsInput||[]),...(prepared?.needsInput||[])]).map(({message})=>String(message||'')),
     materialRoles:copy(contract?.materialRoles||[]),materials:materials.map(material=>({
       id:material.id,name:material.name,status:material.status,note:material.note??'',
       rowIds:(material.itemIndexes||[]).map(index=>ids[index]).filter(Boolean),
       ...(material.role!==undefined?{role:material.role}:{})})),
-    baseInput:copy(input),baseMaterials:copy(materials),choices:combined};
+    baseInput:copy(input),baseMaterials:copy(materials),choices:combined,
+    calculationContext:calculationContext(workflow,input,preview,rows,prepared,contract)};
   return {document,html:renderHtml(document),rowIds:ids,baseRevision};
 }
 function renderHtml(document) {
@@ -222,7 +258,9 @@ function renderHtml(document) {
   // Keep local paths and unseen business inputs out of the HTML.
   const publicDocument=JSON.parse(encoded);
   delete publicDocument.baseInput;delete publicDocument.baseMaterials;
-  return template.replace('<!--FARGOWORK_EDITOR_DATA-->',`<script type="application/json" id="editor-data">${
+  const modules=['decimal-arithmetic.cjs','travel-allowance.cjs','finance-calculations.cjs'];
+  const bundle=`const FinanceCalculations=(()=>{const modules={${modules.map(name=>`${JSON.stringify('./'+name)}:(module,exports,require)=>{\n${fs.readFileSync(path.join(__dirname,name),'utf8')}\n}`).join(',')}};const cache={};function require(name){if(name==='../scripts/lib/common.cjs')return {check:(ok,code)=>{if(!ok)throw Object.assign(new Error(code),{code});}};if(!cache[name]){const module={exports:{}};cache[name]=module;modules[name](module,module.exports,require);}return cache[name].exports;}return require('./finance-calculations.cjs');})();`;
+  return template.replace('/*FARGOWORK_SHARED_CALCULATIONS*/',bundle).replace('<!--FARGOWORK_EDITOR_DATA-->',`<script type="application/json" id="editor-data">${
     JSON.stringify(publicDocument).replace(/</g,'\\u003c').replace(/>/g,'\\u003e').replace(/&/g,'\\u0026')
       .replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029')}</script>`);
 }

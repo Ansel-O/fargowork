@@ -5,7 +5,7 @@ const config=require('../../config/workflows/finance/medical_checkup_reimburseme
 const sources=require('../../config/sources.json');
 const companyConfig=require('../../config/company.json');
 const PaymentHistory=require('../../shared/payment-history.cjs');
-const Decimal=require('../../shared/decimal-arithmetic.cjs');
+const {medicalAmount}=require('../../shared/finance-calculations.cjs');
 const {personalPaymentDefaults}=require('../../shared/reimbursement-info.cjs');
 const {matchingRows,distinctValues}=require('../../shared/scoped-catalog.cjs');
 const {key,title,target,fields:F,roster:R,policy,rules}=config;
@@ -32,9 +32,7 @@ function optionalRoster(map,field,prefer='value') {
   return values[0]||'';
 }
 function amount(value) {
-  const raw=Decimal.decimal(value),cap=BigInt(rules.maximumAmount)*10n**BigInt(raw.scale);
-  const capped=raw.coefficient>cap;
-  return {requested:String(value).trim(),value:capped?rules.maximumAmount:Decimal.number(Decimal.round(raw,rules.precision)),capped};
+  return medicalAmount(value,rules.maximumAmount,rules.precision);
 }
 function assertSchema(schema) {
   const fields=C.assertFields(schema,F);
