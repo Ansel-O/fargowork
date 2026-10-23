@@ -5,8 +5,8 @@
 // only the existing editor's whitelisted edit envelope.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const {check}=require('../scripts/lib/common.cjs');
-const {sumAmounts,rounded,medicalAmount}=require('./finance-calculations.cjs');
-const supported=new Set(['expense_reimbursement','trip_expense_reimbursement','external_expense_application','external_expense_request','meal_transport','medical_checkup_reimbursement']);
+const {sumAmounts,rounded}=require('./finance-calculations.cjs');
+const supported=new Set(['expense_reimbursement','trip_expense_reimbursement','external_expense_application','external_expense_request','meal_transport']);
 const own=(value,key)=>Object.hasOwn(value,key);
 const idPattern=/^row-[a-f0-9-]{16,64}$/;
 const message='明细格式有变化，请保留原文件的表头和明细标记，或口述需要修改的内容。';
@@ -22,11 +22,10 @@ const mealColumns=[['start_time','开始时间'],['end_time','结束时间'],['r
   ['mealAmount','餐费补贴'],['transport_amount','交通费'],['remarks','备注']];
 const payment=workflow=>['external_expense_application','external_expense_request'].includes(workflow);
 const meal=workflow=>workflow==='meal_transport';
-const medical=workflow=>workflow==='medical_checkup_reimbursement';
 const tripOrder=['departure','destination','region','start_date','end_date','days','trip_instance_id',
   'allowanceCurrency','allowanceStandard','allowanceDays','allowance_amount','allocation',
   'original_currency','airfare','accommodation','local_transport','other_expenses','reimbursedAmount','remarks',
-  'project_department_name','business_structure','business_line','business_subline','account','classification_reason'];
+  'account','classification_reason'];
 const derivedLabels={days:'行程天数',allowanceCurrency:'差旅津贴币种',allowanceStandard:'每日差旅津贴标准',
   allowanceDays:'差旅津贴建议天数',reimbursedAmount:'报销金额',allocation:'津贴计天说明（供核对）'};
 const supports=workflow=>supported.has(workflow);
@@ -59,25 +58,14 @@ function fieldDisplay(field){
 }
 function visibleFields(document,application=false){
   return document.mainFields.filter(field=>{
-    const common=commonKeys.has(field.key)||medical(document.workflow)&&field.key==='amount';
+    const common=commonKeys.has(field.key);
     return (application?!common:common)
     &&(!helperKeys.has(field.key)||field.present)
     &&(!field.project||document.baseInput.is_project===true);
   });
 }
 function main(document){
-  const fields=visibleFields(document),rows=fields.map(field=>[field.label,
-    medical(document.workflow)&&field.key==='amount'?number(fieldDisplay(field)):fieldDisplay(field)]);
-  if(medical(document.workflow)){
-    const {rules}=require('../config/workflows/finance/medical_checkup_reimbursement.json');
-    const requested=fields.find(field=>field.key==='amount')?.value;
-    const calculated=requested===null||requested===undefined||requested===''?null:
-      medicalAmount(requested,document.calculationContext?.maximumAmount??rules.maximumAmount,rules.precision);
-    rows.splice(1,0,['报销币种',rules.currency]);
-    rows.push(['实际报销金额',calculated?number(calculated.value)+' '+rules.currency:'待补齐'],
-      ['金额调整说明',calculated?.capped?`原金额${calculated.requested}元，超过体检报销上限，已调整为${rules.maximumAmount}元。`
-        :calculated?'未超过'+rules.maximumAmount+'元上限':'待提供原申请金额']);
-  }
+  const fields=visibleFields(document),rows=fields.map(field=>[field.label,fieldDisplay(field)]);
   const claimant=document.summary.find(item=>item.label==='报销人');
   if(claimant&&!fields.some(field=>field.key==='claimant_user_id'))rows.unshift(['报销人',text(claimant.value)]);
   if(document.workflow==='trip_expense_reimbursement'&&document.baseInput.is_project===false){
@@ -140,13 +128,13 @@ function tripDetails(document){return document.rows.map((row,index)=>{
     if(key==='reimbursedAmount')value=value===null||value===undefined?'':`${number(value)} ${reimbursementCurrency(document)}`;
     return [[label,value??'']];
   });
-  if(document.baseInput.is_project===true)rows.push(['项目',document.baseInput.project_name??''],
-    ['项目费用类别',document.baseInput.project_expense_category??'']);
   return `<!-- fargowork-row:${row.id} -->\n\n## 明细 ${index+1}｜${escape(rowValue(row,'departure'))} → ${escape(rowValue(row,'destination'))}｜${escape(currency)}\n\n`+
     table(['字段','填写内容'],rows);
 }).join('\n\n');}
 function candidates(document){
-  const allowed=document.recommendationContexts.flatMap(context=>context.catalogPairs??context.allowedPairs??[]),groups=new Map();
+  const contexts=document.workflow==='external_expense_request'?document.recommendationContexts.filter(context=>
+    context.scope!=='supplier'&&context.accountInputKey!=='supplier_account'):document.recommendationContexts;
+  const allowed=contexts.flatMap(context=>context.catalogPairs??context.allowedPairs??[]),groups=new Map();
   const selected=document.rows.map(row=>({category:document.baseInput.is_project===true
     ?document.mainFields.find(field=>field.key==='project_expense_category')?.value??document.baseInput.project_expense_category
     :rowValue(row,'expense_category'),account:rowValue(row,'account')}));
@@ -161,7 +149,7 @@ function totals(document){
   const currency=reimbursementCurrency(document),allowanceUnit=document.summary.find(item=>item.label==='差旅津贴币种')?.value
     ??(document.rows[0]?allowanceCurrency(document,document.rows[0]):null);
   const rows=document.summary.filter(item=>!reserved.test(item.label)&&/金额|总额|合计/.test(item.label)
-    &&(!(payment(document.workflow)||meal(document.workflow))||!/港币|HKD/i.test(item.label))
+    &&(!(payment(document.workflow)||meal(document.workflow)||document.workflow==='trip_expense_reimbursement')||!/港币|HKD/i.test(item.label))
     &&(item.value===null||['string','number'].includes(typeof item.value))).map(item=>{
       const unit=/港币/.test(item.label)?'HKD':/差旅津贴/.test(item.label)?allowanceUnit:
         /报销|付款|餐补|餐费|交通费|本次申请合计/.test(item.label)?currency:null;
@@ -188,8 +176,7 @@ function application(document){
   const visibleLabels=new Set([...visibleFields(document),...fields].map(field=>field.label));
   for(const item of document.summary)if((!visibleLabels.has(item.label)||item.value!==null&&typeof item.value==='object')
     &&!reserved.test(item.label)&&!(/金额|总额|合计|津贴分配说明|餐补分配说明/.test(item.label)))
-    if(!(medical(document.workflow)&&['报销币种','收款资料'].includes(item.label)))
-      rows.push([visibleLabels.has(item.label)?item.label+'（已选详情）':item.label,text(item.value)]);
+    rows.push([visibleLabels.has(item.label)?item.label+'（已选详情）':item.label,text(item.value)]);
   const attachmentLabels=new Set(meal(document.workflow)?document.materialRoles.map(role=>role.label):[]);
   const notes=document.notes.filter(item=>!reserved.test(item.label)&&!/津贴分配说明|餐补分配说明/.test(item.label)
     &&!(meal(document.workflow)&&(attachmentLabels.has(item.label)||item.label==='附件来源')));
@@ -210,18 +197,17 @@ function materials(document){
 }
 function render(document){
   check(supports(document?.workflow),'DETAIL_MARKDOWN_WORKFLOW_UNSUPPORTED');
-  const template=fs.readFileSync(path.join(__dirname,'../assets',medical(document.workflow)?'finance-medical-details.md'
-    :meal(document.workflow)?'finance-meal-details.md':payment(document.workflow)?'finance-payment-details.md'
+  const template=fs.readFileSync(path.join(__dirname,'../assets',meal(document.workflow)?'finance-meal-details.md':payment(document.workflow)?'finance-payment-details.md'
     :document.workflow==='expense_reimbursement'?'finance-expense-details.md':'finance-trip-details.md'),'utf8');
   const binding='<!-- fargowork-md:'+JSON.stringify({schemaVersion:1,workflow:document.workflow,draftId:document.draftId,
     baseRevision:document.baseRevision}).replace(/</g,'\\u003c').replace(/>/g,'\\u003e')+' -->';
   const recommendations=candidates(document),values={stageTitle:document.stage==='application'?'完整申请':'明细',binding,
-    main:main(document),details:medical(document.workflow)?'':meal(document.workflow)?expenseDetails(document,mealColumns):payment(document.workflow)?expenseDetails(document,paymentColumns)
+    main:main(document),details:meal(document.workflow)?expenseDetails(document,mealColumns):payment(document.workflow)?expenseDetails(document,paymentColumns)
       :document.workflow==='expense_reimbursement'?expenseDetails(document):tripDetails(document),
     totals:totals(document),candidates:document.workflow==='trip_expense_reimbursement'&&recommendations
       ?'## 按类别分组的科目候选\n\n'+recommendations:recommendations,
-    application:application(document),materials:meal(document.workflow)||medical(document.workflow)?'':materials(document),confirmation:medical(document.workflow)
-      ?'请核对完整申请，明确确认后提交。':meal(document.workflow)
+    application:application(document),materials:meal(document.workflow)?'':materials(document),confirmation:document.demo
+      ?'修改后保存并告诉 Agent；完整申请在对话核对，明确确认后提交。':meal(document.workflow)
       ?document.stage==='application'?'请核对完整申请，明确确认后提交。':''
       :document.stage==='application'
       ?'这是完整申请核对阶段。请核对主表、明细、收款资料及附件；明确确认提交后才会提交。'
@@ -366,7 +352,7 @@ function parsePlain(document,markdown){
   const materialRows=materialTables.flatMap(table=>table.rows.map(row=>({...row,headers:table.headers})));
   const materialById=new Map(document.materials.map(material=>[material.id,material]));
   const materials=[];
-  if(medical(document.workflow)||meal(document.workflow)&&materialTables.length===0){
+  if(meal(document.workflow)&&materialTables.length===0){
     // The concise employee view omits the source ledger. Keep the existing
     // role/status/stable row bindings verbatim; applyEdit still rejects a
     // deletion whose material scope has not been explicitly resolved.

@@ -19,9 +19,10 @@ const bankFields={bank_account:'bankAccount',bank_name:'bankName',bank_city:'ban
 const bankLabels={bank_account:'收款账号',bank_name:'开户银行',bank_city:'开户城市',bank_branch:'开户支行',account_name:'账户名称'};
 const costs={airfare:'airfare',accommodation:'accommodation',local_transport:'localTransport',other_expenses:'otherExpenses'};
 const costLabels={airfare:'飞机、车船票款',accommodation:'住宿费',local_transport:'市内交通费',other_expenses:'其他费用'};
+const projectBusinessKeys=['project_business_structure','project_business_line','project_business_subline'];
 const requirements={required:['items','is_project'],optional:['claimant_query','claimant_user_id','department_id','department_name',
   'payment_company','reimbursement_currency','same_bearing_company','bearing_company','business_structure','business_line','business_subline',
-  ...Object.keys(bankFields),'description','project_name','project_expense_category',...PaymentHistory.INPUT_FIELDS],
+  ...projectBusinessKeys,...Object.keys(bankFields),'description','project_name','project_expense_category',...PaymentHistory.INPUT_FIELDS],
   items:{required:['departure','destination','region','start_date','original_currency'],
     optional:['end_date','trip_instance_id',...Object.keys(costs),'allowance_amount','remarks','account','classification_reason',
       'project_department_name','business_structure','business_line','business_subline'],minimumRows:1,maximumRows:50},
@@ -31,9 +32,10 @@ const requirements={required:['items','is_project'],optional:['claimant_query','
     '先确定报销人、合法支付公司与收款币种，并明确是否项目，再计算明细；未明确是否项目时补问，不能默认为非项目。',
     '差旅津贴按自然日只自动建议一次，日期含首尾、同日一天；按实际行程顺序，前序行已覆盖日期不再自动计算，重叠日归前段。员工可修改、填0或清空，后续不覆盖。',
     '每行关联本报销人已完成且同意的正式出差单；只有报销人为jefferson.sun时可不填，主动关联仍核验。',
-    '先用 review 默认生成MD明细，每条独立一块，日期、关联出差、四项费用、津贴建议天数/金额/分配说明及项目备注放在一起；不展示汇率，不再生成本流程HTML。',
-    '口述修改回写同草稿，或保存原MD后告知改好了并用 read-edit 回读；保留材料归属、行身份及员工津贴修改含0/清空，用已有公司汇率代码重算，不采纳文件手改汇率或派生结果，不要求导出上传。',
-    '先确认MD行程明细，再补主表/附件，完整申请仍为MD；24小时内普通编辑不全量重查。完整预览后另等新的提交确认，保存回读不等于确认。']};
+    '项目业务总架构、业务线和子业务线整单只选一次，使用 project_business_structure/project_business_line/project_business_subline；按各行项目部门共同合法范围选择，唯一直接采用，多候选集中确认。',
+    '先用 review 默认生成HTML明细，无法打开时用同草稿MD兜底；每条独立一块，只核对行程、关联、费用及差旅津贴，不展示汇率或项目业务三层。',
+    '口述修改回写同草稿，或页面保存后告知改好了并用 read-edit 回读；保留材料归属、行身份及员工津贴修改含0/清空，用已有公司汇率代码重算，不采纳手改汇率或派生结果，不要求导出上传。',
+    '先确认行程明细，再补主表/附件；24小时内普通编辑不全量重查。完整申请在对话中核对，再等新的提交确认，保存回读不等于确认。']};
 const allowed=[...requirements.required,...requirements.optional];
 const itemAllowed=[...requirements.items.required,...requirements.items.optional];
 const source=name=>sources[config.sources[name]];
@@ -126,6 +128,53 @@ async function lines(ctx,fields,needs,input,departmentId,keys,prefix='',editorCh
     sourceField:[s.structureField,s.lineField,s.sublineField][index],label:['业务总架构','业务线','子业务线'][index],
     required:C.required(fields,F[field])}))});
 }
+async function projectBusiness(input,ctx,fields,needs,rows,editorChoices) {
+  const result={structure:null,line:null,subline:null};
+  if(rows.some(row=>!row.projectDepartmentId)) return result;
+  const s=source('businessLines'),columns=[s.structureField,s.lineField,s.sublineField],
+    nativeFields=[F.projectStructure,F.projectLine,F.projectSubline],names=['structure','line','subline'],
+    labels=['项目业务总架构','项目业务线','项目子业务线'],legacyKeys=['business_structure','business_line','business_subline'];
+  let combinations;
+  for(const departmentId of new Set(rows.map(row=>row.projectDepartmentId))) {
+    const catalog=await query(ctx,'businessLines',{[s.departmentField]:departmentId},columns);
+    C.check(catalog.length,'PAYMENT_SOURCE_MISSING','暂时未能核对项目部门的业务层级，请核查维护记录、权限及匹配条件。');
+    const tuples=new Map();
+    for(const entry of catalog) {
+      const tuple=columns.map(column=>{
+        const values=distinctValues([entry],column);
+        C.check(values.length<=1,'PAYMENT_SOURCE_INVALID','项目部门的一条业务层级记录存在多个值，请 Finance 核查。');
+        return values[0]??'';
+      });
+      if(tuple.some((value,index)=>!value&&C.required(fields,nativeFields[index])))continue;
+      tuples.set(JSON.stringify(tuple.map(C.normalized)),tuple);
+    }
+    combinations=combinations===undefined?[...tuples.values()]
+      :combinations.filter(tuple=>tuples.has(JSON.stringify(tuple.map(C.normalized))));
+  }
+  C.check(combinations?.length,'TRIP_PROJECT_BUSINESS_CONFLICT',
+    '所选项目部门没有共同可用的项目业务总架构、业务线与子业务线，请调整项目部门或联系 Finance 核查维护关系。');
+  const allCombinations=combinations.map(tuple=>Object.fromEntries(projectBusinessKeys.map((key,index)=>[key,tuple[index]])));
+  for(const [index,key] of projectBusinessKeys.entries()) {
+    const choices=[...new Map(combinations.map(tuple=>[C.normalized(tuple[index]),tuple[index]])).values()];
+    editorChoices[key]=choices;
+    const legacy=[...new Map(input.items.filter(item=>Object.hasOwn(item,legacyKeys[index]))
+      .map(item=>[C.normalized(item[legacyKeys[index]]),item[legacyKeys[index]]])).values()];
+    const explicit=Object.hasOwn(input,key),conflict=!explicit&&legacy.length>1;
+    if(conflict) {
+      needs.push({field:key,message:'原草稿各行的'+labels[index]+'不一致，请选择本次整单统一采用的值。',
+        choices,selectionGroup:'project_business',hierarchyChoices:allCombinations});
+      continue;
+    }
+    const before=needs.length,value=Finance.choice(needs,key,labels[index],explicit?input[key]:legacy[0],choices,C.required(fields,nativeFields[index]));
+    if(needs.length>before) {
+      Object.assign(needs.at(-1),{selectionGroup:'project_business',hierarchyChoices:allCombinations});
+      continue;
+    }
+    result[names[index]]=value;
+    combinations=combinations.filter(tuple=>C.normalized(tuple[index])===C.normalized(value));
+  }
+  return result;
+}
 async function projectScope(input,ctx,needs) {
   if(!input.is_project) return {ready:true,pairs:[],projectRows:[],category:rules.fixedCategory};
   const ps=source('projects'),pd=source('projectDepartments'),pairs=await Finance.accountPairs(ctx,source('accounts'));
@@ -165,7 +214,7 @@ async function buildDetails(input,ctx,fields) {
     payment_company:payment.companyChoices,reimbursement_currency:payment.currencyChoices,
     is_project:[{value:true,label:'项目'},{value:false,label:'非项目'}],
     same_bearing_company:[{value:true,label:'是'},{value:false,label:'否'}]};
-  C.check(project!==false||['project_name','project_expense_category'].every(k=>C.absent(input[k])),'TRIP_REIMBURSEMENT_INPUT_CONFLICT');
+  C.check(project!==false||['project_name','project_expense_category',...projectBusinessKeys].every(k=>C.absent(input[k])),'TRIP_REIMBURSEMENT_INPUT_CONFLICT');
   if(project===undefined) needs.push({field:'is_project',message:'本次报销是否属于项目？如是，请选择所属项目。',
     choices:editorChoices.is_project});
   if(!input.items?.length) needs.push({field:'items',message:'请提供本次行程及费用材料。'});
@@ -234,9 +283,8 @@ async function buildDetails(input,ctx,fields) {
       if(row.projectDepartment) {
         const ids=distinctValues(scope.projectRows.filter(r=>C.exact(r[pd.nameField],row.projectDepartment)),pd.departmentIdField);
         C.check(ids.length===1&&/^\d+$/.test(ids[0]),'PAYMENT_PROJECT_DEPARTMENT_AMBIGUOUS');row.projectDepartmentId=ids[0];
-        const values=await lines(scoped,fields,needs,item,ids[0],['projectStructure','projectLine','projectSubline'],prefix,editorChoices);
-        row.structure=values[F.projectStructure]??null;row.line=values[F.projectLine]??null;row.subline=values[F.projectSubline]??null;
-      } else Object.assign(row,{structure:null,line:null,subline:null});
+      }
+      Object.assign(row,{structure:null,line:null,subline:null});
     } else if(!project) C.check(['project_department_name','business_structure','business_line','business_subline','account']
       .every(name=>C.absent(item[name])),'TRIP_REIMBURSEMENT_INPUT_CONFLICT');
     // Preserve complete real itinerary dates. The allowance planner allocates
@@ -247,6 +295,8 @@ async function buildDetails(input,ctx,fields) {
       ...(Object.hasOwn(item,'allowance_amount')?{amount:item.allowance_amount}:{})});
     rows.push(row);
   }
+  const projectBusinessValues=project&&scope.ready?await projectBusiness(input,scoped,fields,needs,rows,editorChoices):null;
+  if(projectBusinessValues)for(const row of rows)Object.assign(row,projectBusinessValues);
   const known=allowanceInputs.map((entry,index)=>({entry,index})).filter(({index})=>ranges[index]);
   const plan=suggestAllowances(known.map(({entry})=>entry),{precision:rules.precision});
   for(const [position,{index}] of known.entries()) {
@@ -277,7 +327,7 @@ async function buildDetails(input,ctx,fields) {
     差旅津贴总额:rows.some((row,index)=>row.allowanceAmount===null&&!Object.hasOwn(input.items[index],'allowance_amount'))
       ?null:sum(rows.map(row=>row.allowanceAmount??0))};
   return {rows,needsInput:needs,preview,detailReviewContract:reviewContract,recommendationContexts,editorChoices,
-    scoped,subject,company,currency,allowanceCurrency,scope,rate,ranges};
+    scoped,subject,company,currency,allowanceCurrency,scope,rate,ranges,projectBusinessValues};
 }
 async function details(input,ctx) {
   validateInput(input);
@@ -418,7 +468,9 @@ async function prepare(input,ctx) {
       业务总架构:formData[F.structure],业务线:formData[F.line],子业务线:formData[F.subline],
       收款资料:Object.fromEntries(Object.entries(bankFields).map(([inputKey,fieldKey])=>[bankLabels[inputKey],formData[F[fieldKey]]])),
       ...(reference.preview?{收款历史参考:reference.preview}:{}),...(reference.notice?{收款资料提示:reference.notice}:{}),
-      是否项目:project?'是':'否',...(project?{项目:scope.projectName,项目费用类别:scope.category}:{}),说明:formData[F.description]}};
+      是否项目:project?'是':'否',...(project?{项目:scope.projectName,项目费用类别:scope.category,
+        项目业务总架构:result.projectBusinessValues.structure,项目业务线:result.projectBusinessValues.line,
+        项目子业务线:result.projectBusinessValues.subline}:{}),说明:formData[F.description]}};
 }
 module.exports={key,title,formUuid:target.formUuid,policy,requirements,detailReview:true,details,prepare};
 

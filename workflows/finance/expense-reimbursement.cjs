@@ -21,11 +21,12 @@ const requirements={required:['items'],
     'project_department_name','business_structure','business_line','business_subline'],minimumRows:1,maximumRows:50},
   attachments:{required:true,input:'attachments: [绝对文件路径]',maxFiles:20,maxFileSizeMiB:100},
   notes:['仅为本人报销；支付公司按本人映射确定，收款资料首次带入后可修改或清空。',
-    '先确定支付公司、收款币种及项目归属，再用 review 保存明细；默认生成MD七列明细和按类别分组的少量合法科目候选，类别科目保留完整原文，不展示汇率。确认明细后 confirm-details，再用同一草稿补主表。',
-    '允许口述修改或直接修改原MD并保存；告知改好了后用 read-edit 回读，同一草稿用已有公司汇率代码重算并回写金额与合计，不采纳文件内手改汇率或派生计算结果，不要求导出上传。',
+    '先确定支付公司、收款币种及项目归属，再用 review 保存明细；默认生成专用紧凑七列HTML，MD为同草稿兜底。类别科目保留完整原文，原币种和报销金额只读，不展示银行、部门、业务层级或汇率。确认明细后 confirm-details，再补主表。',
+    '各行按实际用途给一组建议和一句理由，可附1至2个合理备选，不凑数；可展开当前类别全部合法科目，保留员工明确选择。项目名和共同类别顶部一次，既有项目字段和选择规则保持。',
+    '允许口述修改或HTML保存原MD；告知改好了后用 read-edit 回读，同一草稿用已有公司汇率代码重算并回写金额与合计，不采纳手改汇率或派生计算结果，不要求导出上传。',
     '每行可使用不同原币种，按公司维护汇率先折报销币种、再折港币；不能自行填写汇率或计算结果。',
     '多个任职部门或业务线需选择；费用类别与科目结合本行用途从合法配对中推荐。',
-    '同一草稿支持主表局部更新；省略 items 保留明细，传入 items 则替换整表。材料范围及行身份保留，24小时内不因普通编辑全量重查。完整申请仍为MD，最终预览后等待新的本人确认，保存回读不等于确认。']};
+    '同一草稿支持主表局部更新；省略 items 保留明细，传入 items 则替换整表。材料范围及行身份保留，24小时内不因普通编辑全量重查。主表修改用 prepare，明细修改回 review；最终完整申请在对话中核对，等待新的本人提交确认，不另生成整单HTML。']};
 const allowed=[...requirements.required,...requirements.optional];
 const itemAllowed=[...requirements.items.required,...requirements.items.optional];
 const source=name=>sources[config.sources[name]];

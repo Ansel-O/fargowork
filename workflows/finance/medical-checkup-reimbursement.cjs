@@ -15,10 +15,10 @@ const labels={bank_account:'收款账号',bank_name:'开户银行',bank_city:'�
 const requirements={required:['amount','attachments'],optional:['payment_company',...Object.keys(bankFields),...PaymentHistory.INPUT_FIELDS],
   attachments:{required:true,maximumCount:config.attachments.maximumCount,maximumMiB:config.attachments.maximumMiB},
   notes:['仅为当前登录员工办理人民币体检报销；先说明CNY固定，超过1500元由代码自动封顶，并保留原申请金额及调整结果。',
-    '默认MD单笔申请，展示支付公司、可改原申请金额、CNY和实际报销金额；不造费用子表、科目或汇率。支付公司沿原合同公司默认及有银行账号的目录，保留原可空规则，不套员工支付公司映射。',
-    '口述修改用同草稿prepare；保存原MD后告知改好了用read-edit先回读、代码重算并回写，不采纳手改实际封顶结果或币种，不要求导出修改文件。24小时内复用来源，新缺项才补取，用户可主动刷新。',
+    '直接prepare后在对话核对完整申请，不生成HTML或MD页面，不增加费用子表、科目、汇率或首轮明细确认。支付公司沿原合同公司默认及有银行账号的目录，保留原可空规则，不套员工支付公司映射。',
+    '口述修改用同草稿prepare，由代码重算原金额及实际报销结果，不调用editor、read-edit或apply-edit，不采纳手改封顶结果或币种。24小时内复用来源，新缺项才补取，用户可主动刷新。',
     '正式员工及每年一次由原表提交校验，不额外查询年度报销或增加资格判断。',
-    '收款五项默认本人花名册，明确换卡才按原规则检索或自行提供，账号保持完整字符串；完整MD展示真实主表、收款五项和附件名，只等一次新的完整申请确认，保存回读不授权提交。']};
+    '收款五项默认本人花名册，明确换卡才按原规则检索或自行提供，账号保持完整字符串；preview后在对话展示公司币种、原金额与封顶结果、收款五项和附件名，等待一次新的完整申请确认再提交。']};
 
 function text(value,field,fields) {
   C.check(value===undefined||value===null||typeof value==='string','MEDICAL_INPUT_INVALID');

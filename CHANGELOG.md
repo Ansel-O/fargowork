@@ -2,14 +2,14 @@
 
 ## 3.4.0 — HTML 本机保存 / Save HTML edits locally · 2026-10-23
 
-- 财务明细默认HTML，页面保存直接更新同一份本机草稿；无需选择文件、下载或导出交回。付款Demo同步适配，银行卡仍直接对话。
-- 口述、HTML与MD兜底共用业务输入、公司来源和代码计算；保存后回读，保留各流程原确认步骤。旧页面不能覆盖新修订。
-- 本机保存程序随包提供，使用已有Node.js自动启动与复用；页面不可用时使用同草稿MD。无需公司服务端或新增npm依赖。
-- 保留3.3.0的流程细节、分钟时间、体检封顶和旧卡提示；业务规则与最低客户端门槛不变。
-- Finance details open in HTML and save to the same local draft without a file picker, download or export. The payment Demo follows the same path; bank changes stay in chat.
-- Chat, HTML and Markdown fallback share business inputs, company data and calculation code. Saved edits are read back before existing confirmation steps; stale pages cannot overwrite newer revisions.
-- The bundled local helper starts and reuses the installed Node.js runtime. Use the same draft in Markdown when the page is unavailable; no company server or extra npm dependency is required.
-- Retains 3.3.0 workflow improvements, minute-level times, medical caps and old-card hints. Rule versions and minimum client requirements are unchanged.
+- 费用／出差报销、正式付款、餐费交通和付款Demo使用各自的紧凑HTML明细；保存原MD后回读、代码重算，支持口述修改和MD兜底，无需选文件或导出交回。费用与付款保留逐行科目建议、合理备选和全部合法候选。
+- 完整申请统一在对话确认，不再渲染整张表单。体检报销和银行卡变更直接对话；体检仍限人民币、封顶1500元。各流程确认次数保持，付款Demo不增加单独明细确认。
+- 餐费交通优先从打卡附件读取结束时间，开始默认18:00，用户明确说明或纠正的时间优先；缺少结束时间时询问，保留分钟精度及打卡／报销两类附件。
+- 本机保存程序随包提供，使用已有Node.js自动启动，无需公司服务端或新增npm依赖。同一草稿复用公司资料，旧页面不能覆盖新修订；最低客户端门槛不提高。
+- Expense and travel claims, external payments, meal and transport allowances, and the payment Demo each use compact HTML details. Saved Markdown is read back and recalculated by code; chat edits and Markdown fallback remain available without a file picker or export. Expense and payment rows retain recommendations, suitable alternatives and all valid account choices.
+- Complete applications are confirmed in chat instead of a full-form page. Medical checkups and bank changes stay entirely in chat; medical claims remain CNY-only and capped at 1,500. Existing confirmation counts remain, with no separate detail confirmation added to the payment Demo.
+- Meal and transport end times come from attendance attachments. Start times default to 18:00; user-supplied or corrected times take priority. Missing end times prompt a question, with minute precision and separate attendance and expense attachments preserved.
+- The bundled local helper starts the installed Node.js runtime automatically, with no company server or extra npm dependency. Drafts reuse company data, stale pages cannot overwrite newer revisions, and minimum client requirements are not raised.
 
 ## 3.3.0 — MD 明细版 / Markdown editing edition · 2026-10-23
 

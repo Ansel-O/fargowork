@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>对外付款明细 · Demo</title>
+<style>
+:root{color-scheme:light;--paper:#fff;--wash:#f3f6f8;--navy:#18334a;--ink:#243647;--muted:#617583;--line:#dce5ec;--accent:#16788a}
+*{box-sizing:border-box}body{margin:0;background:var(--wash);color:var(--ink);font:13px/1.5 "Microsoft YaHei UI","PingFang SC",system-ui,sans-serif;font-variant-numeric:tabular-nums}
+main{max-width:1320px;margin:auto;padding:22px 24px 104px}h1,p{margin:0}h1{font-size:23px;line-height:1.35;color:var(--navy)}.page-heading{display:flex;align-items:baseline;gap:12px;justify-content:space-between}.brand{font-size:12px;color:var(--muted);font-weight:400}.context{display:flex;gap:5px 24px;flex-wrap:wrap;margin-top:9px}.context span{display:inline-flex;gap:8px}.context em{font-style:normal;color:var(--muted)}
+.instruction{margin-top:14px;padding:8px 11px;border-left:3px solid var(--accent);background:#eaf3f5}.toolbar{display:flex;align-items:baseline;justify-content:space-between;padding:16px 0 10px}.count{color:var(--muted)}.total{display:flex;align-items:baseline;gap:12px}.total span{font-size:12px;color:var(--muted)}.total strong{font-size:21px;color:var(--accent);font-weight:650}.attention{margin-bottom:10px;padding:8px 11px;background:#fff5e9;border-left:3px solid #d2a16b;color:#8a4c25}
+.table-frame{overflow:auto;border:1px solid var(--line);border-radius:5px;background:var(--paper)}table{width:100%;table-layout:fixed;border-collapse:collapse;min-width:1030px}th{text-align:left;font-weight:500;font-size:12px;color:var(--muted);background:#eef3f6;padding:10px 9px;border-bottom:1px solid var(--line)}td{padding:12px 8px;vertical-align:top;border-bottom:1px solid var(--line)}tr:last-child td{border-bottom:0}tbody tr:hover{background:#fafcfd}th.number-cell,td.number-cell{text-align:right}.row-number{color:var(--muted);padding-top:18px;text-align:center;font-size:12px}.currency{display:block;padding:6px 0;text-align:center;font-size:12px}.calculated{display:block;color:var(--accent);font-weight:650;white-space:nowrap;padding:6px 1px;text-align:right}
+button,input,textarea,select{font:inherit;color:inherit}input,textarea{width:100%;min-width:0;border:1px solid #cad7df;border-radius:4px;background:var(--paper);padding:6px 8px;line-height:1.5}input{height:34px;text-align:right}textarea{display:block;resize:vertical;min-height:58px;overflow:hidden}textarea.remarks{min-height:58px}input:hover,textarea:hover,.select-wrap:hover{border-color:#95aeba}button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.select-wrap{position:relative;display:grid;width:100%;border:1px solid #cad7df;border-radius:4px;background:var(--paper);min-height:34px}.select-wrap select,.selected{grid-area:1/1;width:100%;font:inherit;line-height:1.5;padding:6px 24px 6px 8px}.select-wrap select{position:relative;z-index:1;opacity:0;cursor:pointer;min-width:0}.selected{pointer-events:none;overflow-wrap:anywhere;white-space:normal}.select-wrap::after{content:'⌄';position:absolute;right:8px;top:4px;color:var(--muted);pointer-events:none}.select-wrap:focus-within{outline:2px solid var(--accent);outline-offset:2px}.suggestion{margin-top:4px;font-size:11px;color:var(--accent);line-height:1.4}.footer{position:fixed;bottom:0;left:0;right:0;background:#ffffffed;border-top:1px solid var(--line);backdrop-filter:blur(8px);padding:11px 24px}.footer-inner{max-width:1272px;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:16px}.footer p{font-size:12px;color:var(--muted)}.footer-actions{display:flex;align-items:center;gap:12px;flex-shrink:0}.shortcut{font-size:11px;color:var(--muted)}.save{cursor:pointer;background:var(--accent);color:#fff;border:1px solid var(--accent);border-radius:4px;font-weight:650;padding:8px 22px}.save:hover{background:#116374}.save:disabled{opacity:.5;cursor:default}[hidden]{display:none!important}
+@media(max-width:650px){main{padding:16px 12px 110px}h1{font-size:20px}.context{font-size:12px;gap:4px 16px}.footer{padding:10px 12px}.footer p{font-size:11px}.shortcut{display:none}.save{padding:8px 16px}.instruction{font-size:12px}}
+.account-tools{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:5px}.account-tools button{padding:0;border:0;background:none;color:var(--accent);font-size:11px;cursor:pointer;text-decoration:underline;text-underline-offset:2px}.selection-note{font-size:11px;color:var(--muted)}.demo-mark{display:inline-block;margin-left:10px;padding:3px 8px;border:1px solid #d9b46d;border-radius:4px;background:#fff5dc;color:#805b1e;font-size:12px;vertical-align:middle;white-space:nowrap}
+</style>
+</head>
+<body>
+<main>
+<header><div class="page-heading"><h1>对外付款明细<span class="demo-mark">Demo · 测试流程</span></h1><span class="brand">FargoWork</span></div><div id="context" class="context"></div><p class="instruction">请核对本次付款金额，可直接修改内容、金额和科目。总额自动重算，保存后告诉 Agent「改好了」。</p></header>
+<div class="toolbar"><span id="count" class="count"></span><div class="total"><span>本次付款合计</span><strong id="total"></strong></div></div>
+<p id="attention" class="attention" role="status" hidden></p>
+<div class="table-frame"><table aria-label="Demo 对外付款明细"><colgroup><col style="width:4%"><col id="category-column" style="width:13%"><col style="width:29%"><col style="width:21%"><col style="width:13%"><col style="width:20%"></colgroup><thead><tr><th>序号</th><th id="category-heading">费用类别</th><th>会计科目</th><th>付款内容</th><th class="number-cell">本次付款金额</th><th>备注</th></tr></thead><tbody id="rows"></tbody></table></div>
+</main>
+<footer class="footer"><div class="footer-inner"><p id="status" role="status" aria-live="polite">需要增删明细或更换币种，可直接告诉 Agent。</p><div class="footer-actions"><span class="shortcut">Ctrl / ⌘ + S</span><button class="save" id="save" type="button">保存修改</button></div></div></footer>
+<!--FARGOWORK_EDITOR_DATA-->
+<script>
+'use strict';
+/*FARGOWORK_SHARED_CALCULATIONS*/
+const documentData=JSON.parse(document.getElementById('editor-data').textContent);
+const clone=value=>JSON.parse(JSON.stringify(value)),own=(object,key)=>Object.prototype.hasOwnProperty.call(object,key),$=id=>document.getElementById(id);
+const state={main:clone(documentData.mainValues),rows:clone(documentData.rows),materials:clone(documentData.materials)};
+const accountModes=new Map();
+let saveVersion=documentData.localSave?.version,unsaved=false,saving=false,editSequence=0;
+function el(tag,text,className){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;}
+function mainValue(key){return own(state.main,key)?state.main[key]:documentData.mainFields.find(field=>field.key===key)?.value;}
+function rowValue(row,key){return own(row.values,key)?row.values[key]:row.fields.find(field=>field.key===key)?.value;}
+function effective(row){return {...Object.fromEntries(row.fields.filter(field=>field.value!==undefined&&field.value!==null).map(field=>[field.key,field.value])),...row.values};}
+function receipt(){return mainValue('currency')??documentData.calculationContext.currency??'';}
+function project(){return mainValue('is_project')===true;}
+function categoryFor(row){return project()?mainValue('project_expense_category'):rowValue(row,'expense_category');}
+function format(value){return value===undefined||value===null||value===''||!Number.isFinite(Number(value))?'待补齐':Number(value).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function dirty(){unsaved=true;editSequence++;recalculate();$('status').textContent='有修改尚未保存。';}
+function legalCandidates(row,key){const pairs=documentData.catalogPairs||[];
+  if(key==='expense_category')return [...new Set(pairs.map(pair=>pair.category))].map(value=>({value,label:value}));
+  const category=categoryFor(row);return pairs.filter(pair=>pair.category===category).map(pair=>({value:pair.account,label:pair.account}));}
+function recommendationFor(row){
+  const source=documentData.rowRecommendations||[];
+  const data=source.find(item=>item.rowId===row.id&&item.category===categoryFor(row)&&item.description===String(rowValue(row,'description')??'').trim());
+  const legal=new Set(legalCandidates(row,'account').map(choice=>choice.value));
+  if(!data||!legal.has(data.primary))return null;
+  return {...data,alternatives:(data.alternatives||[]).filter(item=>item.account!==data.primary&&legal.has(item.account)).slice(0,2)};
+}
+function candidates(row,key){
+  const legal=legalCandidates(row,key);if(key!=='account')return legal;
+  const suggestion=recommendationFor(row),current=rowValue(row,'account'),recommended=suggestion?[suggestion.primary,...suggestion.alternatives.map(item=>item.account)]:[];
+  const choices=accountModes.get(row.id)?legal:legal.filter(choice=>recommended.includes(choice.value)||choice.value===current);
+  if(!accountModes.get(row.id))choices.sort((a,b)=>{const rank=value=>recommended.includes(value)?recommended.indexOf(value):recommended.length;return rank(a.value)-rank(b.value);});
+  const result=choices.map(choice=>({...choice,label:choice.label+(choice.value===suggestion?.primary?'（推荐）':suggestion?.alternatives.some(item=>item.account===choice.value)?'（备选'+(suggestion.alternatives.find(item=>item.account===choice.value).reason?'：'+suggestion.alternatives.find(item=>item.account===choice.value).reason:'')+'）':choice.value===current?'（当前选择）':'')}));
+  if(current&&!result.some(choice=>choice.value===current))result.unshift({value:current,label:current+'（当前值，候选待核对）'});
+  return result;
+}
+function choice(row,index,key,label){const choices=candidates(row,key),current=rowValue(row,key),wrap=el('span',undefined,'select-wrap'),select=el('select'),selected=el('span',undefined,'selected');
+  select.dataset.key=key;select.setAttribute('aria-label','第'+(index+1)+'行'+label);
+  if(!choices.some(option=>option.value===current)){const option=el('option','请选择'+label);option.value='';select.append(option);}
+  choices.forEach((choice,optionIndex)=>{const option=el('option',choice.label);option.value=String(optionIndex);select.append(option);});
+  const selectedIndex=choices.findIndex(choice=>choice.value===current);select.value=selectedIndex<0?'':String(selectedIndex);
+  selected.textContent=selectedIndex<0?'请选择'+label:choices[selectedIndex].label;select.title=selected.textContent;
+  select.addEventListener('change',()=>{const value=select.value===''?'':choices[Number(select.value)].value;
+    row.values[key]=value;
+    if(key==='expense_category'&&!legalCandidates(row,'account').some(choice=>choice.value===rowValue(row,'account')))row.values.account='';
+    dirty();renderRows();});wrap.append(select,selected);return wrap;}
+function edit(row,index,key,label){const node=el(key==='amount'?'input':'textarea');node.dataset.key=key;node.setAttribute('aria-label','第'+(index+1)+'行'+label);node.autocomplete='off';
+  if(key==='amount'){node.type='number';node.step='any';node.min='0';node.inputMode='decimal';}else{node.rows=2;if(key==='remarks')node.className='remarks';}
+  node.value=rowValue(row,key)??'';node.addEventListener('input',()=>{row.values[key]=node.value;dirty();
+    if(key==='description'){const tr=Array.from($('rows').children).find(item=>item.dataset.rowId===row.id);if(tr)renderAccount(tr.children[2],row,index);}
+  });return node;}
+function renderContext(){const entries=[['付款公司',mainValue('payment_company')],['付款币种',receipt()]];
+  if(project()){
+    entries.push(['项目',mainValue('project_name')],['项目费用类别',mainValue('project_expense_category')]);
+    $('category-column').hidden=true;$('category-heading').hidden=true;
+  }
+  for(const [label,value]of entries){if(!value)continue;const span=el('span');span.append(el('em',label),document.createTextNode(String(value)));$('context').append(span);}}
+function renderRows(){$('rows').replaceChildren();$('count').textContent=state.rows.length+' 条明细';
+  state.rows.forEach((row,index)=>{const tr=el('tr');tr.dataset.rowId=row.id;tr.append(el('td',String(index+1),'row-number'));
+    const category=el('td');if(project())category.hidden=true;else category.append(choice(row,index,'expense_category','费用类别'));tr.append(category);
+    const account=el('td');renderAccount(account,row,index);tr.append(account);
+    const content=el('td');content.append(edit(row,index,'description','付款内容'));tr.append(content);
+    const amount=el('td',undefined,'number-cell');amount.append(edit(row,index,'amount','本次付款金额'));tr.append(amount);
+    const remarks=el('td');remarks.append(edit(row,index,'remarks','备注'));tr.append(remarks);$('rows').append(tr);});recalculate();}
+function renderAccount(cell,row,index){
+  cell.replaceChildren(choice(row,index,'account','会计科目'));
+  const suggestion=recommendationFor(row),current=rowValue(row,'account');
+  if(suggestion&&suggestion.reason){const same=current===suggestion.primary;
+    cell.append(el('p',same?'推荐理由：'+suggestion.reason:'推荐 '+suggestion.primary+'：'+suggestion.reason,'suggestion'));}
+  const tools=el('div',undefined,'account-tools'),toggle=el('button',accountModes.get(row.id)?'返回推荐':'查看全部合法科目');toggle.type='button';
+  toggle.setAttribute('aria-label','第'+(index+1)+'行'+toggle.textContent);toggle.setAttribute('aria-expanded',String(!!accountModes.get(row.id)));
+  toggle.addEventListener('click',()=>{accountModes.set(row.id,!accountModes.get(row.id));renderAccount(cell,row,index);});tools.append(toggle);
+  if(!suggestion)tools.append(el('span','当前类别暂无适用建议','selection-note'));
+  cell.append(tools);
+}
+function recalculate(){let calculation;const scope=effective({fields:documentData.mainFields,values:state.main}),context=documentData.calculationContext;
+  try{calculation=FinanceCalculations.calculateEditor(context,scope,state.rows.map(effective));}
+  catch(error){calculation={rows:[],summary:{},missing:['请检查金额是否填写完整。']};}
+  $('total').textContent=receipt()+' '+format(calculation.summary.原币合计);
+  const sameScope=String(scope.payment_company??context.company)===String(context.company)&&String(scope.currency??context.currency)===String(context.currency);
+  const notices=[...(documentData.needsInput||[]),...(calculation.missing||[]).filter(message=>!(documentData.stage==='details'&&sameScope
+    &&message.startsWith('该币种或业务范围尚无已取得的汇率')))];
+  state.rows.forEach((row,index)=>{if(!categoryFor(row)||!rowValue(row,'account'))notices.push('请选择第'+(index+1)+'行的类别与科目。');});
+  $('attention').hidden=!notices.length;$('attention').textContent=[...new Set(notices)].join(' ');}
+async function saveEdit(){if(saving)return;if(!documentData.localSave){$('status').textContent='当前为预览，请告诉 Agent 打开可保存的明细。';return;}
+  const incomplete=state.rows.find(row=>!categoryFor(row)||!rowValue(row,'account'));if(incomplete){$('status').textContent='请先选好类别与会计科目，再保存。';return;}
+  const payload={schemaVersion:1,workflow:documentData.workflow,draftId:documentData.draftId,baseRevision:documentData.baseRevision,main:state.main,
+    rows:state.rows.map(row=>({id:row.id,values:row.values})),materials:state.materials.map(({id,status,rowIds,note,role})=>({id,status,rowIds,note,...(role!==undefined?{role}:{})}))};
+  const sequence=editSequence;saving=true;$('save').disabled=true;$('status').textContent='正在保存…';
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+  try{const endpoint=new URL(documentData.localSave.saveEndpoint,location.href);if(endpoint.origin!==location.origin||!['127.0.0.1','localhost','[::1]'].includes(endpoint.hostname))throw new Error('SAVE_ORIGIN_INVALID');
+    const response=await fetch(endpoint.href,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({edit:payload,version:saveVersion}),signal:controller.signal});const result=await response.json();
+    if(response.status===409){$('status').textContent='草稿已在别处更新，本页未覆盖。请保留当前修改，告诉 Agent 合并。';return;}
+    if(!response.ok||!result.ok||result.saved!==true||typeof result.version!=='string')throw new Error(result.message||'SAVE_FAILED');
+    saveVersion=result.version;unsaved=sequence!==editSequence;$('status').textContent=unsaved?'已保存刚才的修改；仍有新修改未保存。':'已保存。请告诉 Agent「改好了」。';
+  }catch(error){$('status').textContent='尚未确认保存成功，修改仍保留。请告诉 Agent 检查草稿。';}
+  finally{clearTimeout(timer);saving=false;$('save').disabled=false;}}
+$('save').addEventListener('click',saveEdit);document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();saveEdit();}});
+window.addEventListener('beforeunload',event=>{if(unsaved||saving){event.preventDefault();event.returnValue='';}});renderContext();renderRows();
+</script>
+</body>
+</html>

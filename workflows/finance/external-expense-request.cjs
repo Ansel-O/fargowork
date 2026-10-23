@@ -12,7 +12,7 @@ const requirements={
   project:['project_name','project_department_id','project_expense_category'],
   items:{required:['description','amount'],optional:['expense_category','account','remarks']},
   attachments:{required:true,input:'attachments: [绝对文件路径]',maxFiles:9,maxFileSizeMiB:20,extensions:['.pdf','.png','.jpg','.docx','.xlsx']},
-  note:'先从当前维护数据确定支付公司和付款币种，唯一组合直接采用，多个由员工选择；再明确项目和付款明细。主部门可作为预览建议，不自动替换员工明确提供的选择。',
+  note:'仅供明确的Demo测试，先从当前维护数据确定支付公司和付款币种，唯一组合直接采用，多个由员工选择；再明确项目和付款明细。默认紧凑五列HTML明细，逐行给首选理由、最多两个合理备选及全部合法科目入口，保留人工选择。Node保存原MD后read-edit回读重算，口述修改用同草稿prepare；供应商主表分类与明细目录独立，不混字段或正式目标。最终preview在对话核对完整申请，等待一次新确认后提交，不增加confirm-details。主部门可作为预览建议，不自动替换员工明确提供的选择。',
 };
 const allowed=new Set([...requirements.required,...requirements.choices,...requirements.optional,...requirements.project]);
 function validate(input){

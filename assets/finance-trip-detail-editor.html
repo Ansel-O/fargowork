@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>出差费用报销明细</title>
+<style>
+
+:root{color-scheme:light;--paper:#fff;--wash:#f3f6f8;--navy:#18334a;--ink:#243647;--muted:#617583;--line:#dce5ec;--accent:#16788a}
+*{box-sizing:border-box}body{margin:0;background:var(--wash);color:var(--ink);font:14px/1.5 "Microsoft YaHei UI","PingFang SC",system-ui,sans-serif;font-variant-numeric:tabular-nums}
+main{max-width:1180px;margin:auto;padding:22px 24px 100px}h1,h2,p{margin:0}h1{font-size:23px;line-height:1.35;color:var(--navy)}
+.page-heading{display:flex;gap:16px;align-items:baseline;justify-content:space-between}.brand{font-size:13px;color:var(--muted)}
+.context{display:flex;gap:5px 24px;flex-wrap:wrap;margin-top:9px;font-size:13px}.context span{display:inline-flex;gap:8px}.context em{font-style:normal;color:var(--muted)}
+.instruction{margin-top:14px;padding:8px 11px;border-left:3px solid var(--accent);background:#eaf3f5;font-size:13px}
+.totals{display:flex;gap:28px;align-items:baseline;padding:14px 0}.total{display:flex;gap:9px;align-items:baseline}.total span{font-size:12px;color:var(--muted)}.total strong{font-size:19px;font-weight:650;color:var(--navy)}.total.final{margin-left:auto}.total.final strong{color:var(--accent)}
+.section-heading{display:flex;align-items:center;justify-content:space-between;margin:2px 0 8px}.section-heading h2{font-size:14px}.count{font-weight:400;color:var(--muted);margin-left:9px;font-size:12px}
+button,input,select{font:inherit;color:inherit}button{cursor:pointer;border:1px solid var(--line);border-radius:4px;background:var(--paper);padding:6px 14px}button:disabled{opacity:.4;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.trip{border:1px solid var(--line);border-radius:5px;background:var(--paper);margin-bottom:12px;padding:13px 16px}.trip-head{display:flex;align-items:baseline;gap:9px 15px;flex-wrap:wrap}.trip-index{font-size:12px;color:var(--muted)}.trip-route{font-size:15px;font-weight:650;color:var(--navy)}.trip-dates{font-size:13px;color:var(--muted)}.trip-duration{font-size:12px;color:var(--muted)}
+.trip-meta{display:flex;align-items:center;gap:6px 24px;flex-wrap:wrap;margin-top:7px;font-size:12px}.meta-label{color:var(--muted);margin-right:8px}.association{display:inline-flex;align-items:baseline;min-width:0}.association-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px}.region-static{display:inline-flex;align-items:center;min-width:0}.region-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:370px}.region-control{display:inline-flex;align-items:center;gap:8px}.region-control label{color:var(--muted)}.region-control select{border:1px solid #cad7df;border-radius:4px;padding:3px 26px 3px 8px;height:29px;max-width:260px;background:var(--paper);font-size:12px}
+.amounts{display:grid;grid-template-columns:repeat(5,minmax(0,1fr)) minmax(138px,1.1fr);gap:12px;margin-top:12px;align-items:start}.field{min-width:0}.field label,.metric-label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px;white-space:nowrap}.field input{width:100%;min-width:0;height:36px;border:1px solid #cad7df;border-radius:4px;background:var(--paper);padding:5px 9px;text-align:right;line-height:24px}.field input:hover{border-color:#95aeba}.field input:focus{border-color:var(--accent)}.allowance-field input{border-color:#aac9d0;background:#f5fafb;font-weight:650}.metric{text-align:right;min-width:0}.metric strong{display:block;height:36px;line-height:36px;color:var(--accent);font-weight:650;font-size:17px;white-space:nowrap}.metric-unit{font-size:11px;font-weight:400;margin-right:5px}
+.row-note{display:flex;gap:4px 18px;justify-content:space-between;flex-wrap:wrap;margin-top:9px;font-size:12px;color:var(--muted)}.allowance-mode{color:var(--accent)}.row-remarks{margin-top:8px;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.account-line{display:flex;align-items:baseline;gap:5px 10px;flex-wrap:wrap;margin-top:9px;font-size:12px}.account-line label{color:var(--muted);flex-shrink:0}.account-value{color:var(--ink);overflow-wrap:anywhere}.account-editor{position:relative;display:inline-grid;max-width:100%;min-width:220px;border:1px solid #cad7df;border-radius:4px;background:var(--paper)}.account-editor select,.account-selected{grid-area:1/1;width:100%;font:inherit;line-height:1.5;padding:4px 30px 4px 8px}.account-editor select{position:relative;z-index:1;opacity:0;cursor:pointer}.account-selected{pointer-events:none;overflow-wrap:anywhere;white-space:normal}.account-editor::after{content:'⌄';position:absolute;right:9px;top:3px;color:var(--muted);pointer-events:none}.account-editor:focus-within{outline:2px solid var(--accent);outline-offset:2px}.account-recommendation{color:var(--accent);font-size:11px}.account-reason{color:var(--muted);font-size:12px}
+.attention{font-size:12px;color:#8a4c25;background:#fff5e9;padding:8px 12px;margin-bottom:12px;border-left:3px solid #d2a16b}.empty{padding:24px;text-align:center;background:var(--paper);border:1px solid var(--line);color:var(--muted)}
+.footer{position:fixed;bottom:0;left:0;right:0;background:#ffffffed;border-top:1px solid var(--line);backdrop-filter:blur(8px);padding:11px 24px}.footer-inner{max-width:1132px;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:16px}.footer p{font-size:12px;color:var(--muted)}.footer-actions{display:flex;align-items:center;gap:12px;flex-shrink:0}.shortcut{font-size:11px;color:var(--muted)}.save{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:650;padding:8px 22px}.save:hover{background:#116374;border-color:#116374}[hidden]{display:none!important}
+@media(max-width:920px){.amounts{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 14px}.totals{gap:10px 20px;flex-wrap:wrap}.total strong{font-size:17px}.total.final{margin-left:0}}
+@media(max-width:600px){main{padding:16px 12px 108px}h1{font-size:20px}.context{font-size:12px;gap:4px 16px}.context span:nth-child(2){flex-basis:100%}.trip{padding:11px 12px}.trip-head{gap:4px 9px}.trip-dates{flex-basis:100%}.trip-meta{gap:6px 16px}.association-value{max-width:230px}.region-value{max-width:260px}.region-control select{max-width:220px}.amounts{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}.total strong{font-size:16px}.row-note{font-size:11px}.footer{padding:10px 12px}.footer p{font-size:11px}.shortcut{display:none}.save{padding:8px 16px}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="page-heading"><h1>出差费用报销明细</h1><span class="brand">FargoWork</span></div>
+    <div id="context" class="context"></div>
+    <p id="instruction" class="instruction">只需修改明细，总额自动重算。保存后告诉 Agent「改好了」。</p>
+  </header>
+  <div id="totals" class="totals" aria-live="polite"></div>
+  <p id="attention" class="attention" role="status" hidden></p>
+  <div class="section-heading"><h2>行程与费用<span id="row-count" class="count"></span></h2></div>
+  <section id="rows" aria-label="出差费用明细"></section>
+</main>
+<footer class="footer"><div class="footer-inner"><p id="status" role="status" aria-live="polite">行程、关联或明细条数有变化，可直接告诉 Agent。</p><div class="footer-actions"><span class="shortcut">Ctrl / ⌘ + S</span><button class="save" id="save" type="button">保存修改</button></div></div></footer>
+<!--FARGOWORK_EDITOR_DATA-->
+<script>
+'use strict';
+/*FARGOWORK_SHARED_CALCULATIONS*/
+const documentData=JSON.parse(document.getElementById('editor-data').textContent);
+const clone=value=>JSON.parse(JSON.stringify(value));
+const state={main:clone(documentData.mainValues),rows:clone(documentData.rows),materials:clone(documentData.materials)};
+const $=id=>document.getElementById(id),own=(object,key)=>Object.prototype.hasOwnProperty.call(object,key);
+let saveVersion=documentData.localSave?.version,unsaved=false,saving=false,editSequence=0;
+function el(tag,text,className){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;}
+function rowId(){return 'row-'+(globalThis.crypto?.randomUUID?crypto.randomUUID():Array.from({length:32},()=>Math.floor(Math.random()*16).toString(16)).join(''));}
+function effectiveValues(fields,values){const result={};for(const field of fields)if(field.value!==null&&field.value!==undefined&&!['allowance_amount','end_date','end_time'].includes(field.key))result[field.key]=field.value;return {...result,...values};}
+function mainValue(key){return own(state.main,key)?state.main[key]:documentData.mainFields.find(field=>field.key===key)?.value;}
+function mainLabel(key){const field=documentData.mainFields.find(field=>field.key===key),value=mainValue(key);return field?.choices?.find(option=>option.value===value)?.label??value??'';}
+function rowValue(row,key){return own(row.values,key)?row.values[key]:row.fields.find(field=>field.key===key)?.value;}
+function currency(){return mainValue('reimbursement_currency')??documentData.calculationContext.currency??'';}
+function number(value){return value===null||value===undefined||value===''||!Number.isFinite(Number(value))?'待补齐':Number(value).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function amount(value,unit){return number(value)==='待补齐'?'待补齐':(unit?unit+' ':'')+number(value);}
+function button(text,fn,className){const node=el('button',text,className);node.type='button';node.addEventListener('click',fn);return node;}
+function dirty(){unsaved=true;editSequence++;recalculate();$('status').textContent='有修改尚未保存。';}
+function control(row,key,label){
+  let field=row.fields.find(candidate=>candidate.key===key);if(!field)return null;
+  if(key==='account'&&documentData.catalogPairs?.length){const category=mainValue('project_expense_category');
+    const legal=documentData.catalogPairs.filter(pair=>pair.category===category).map(pair=>pair.account);
+    field={...field,choices:[...new Set(legal)].map(value=>({value,label:value}))};}
+  const wrapper=el('div',undefined,'field'),id='field-'+rowId();
+  const name=el('label',label??field.label);name.htmlFor=id;wrapper.append(name);
+  const current=own(row.values,key)?row.values[key]:field.value;let input;
+  if(field.type==='select'){
+    input=el('select');const empty=el('option','请选择');empty.value='';input.append(empty);
+    const choices=field.choices||[];choices.forEach((option,index)=>{const node=el('option',option.label);node.value=String(index);input.append(node);});
+    const selected=choices.findIndex(option=>option.value===current);input.value=selected<0?'':String(selected);
+    if(selected<0&&current!==null&&current!==undefined&&current!==''){
+      const retained=el('option',String(current));retained.value='current';input.append(retained);input.value='current';
+    }
+    input.title=choices.find(option=>option.value===current)?.label??'';
+    input.addEventListener('change',()=>{if(input.value==='current')return;row.values[key]=input.value===''?'':choices[Number(input.value)].value;input.title=input.options[input.selectedIndex]?.text??'';dirty();});
+  }else{
+    input=el(field.type==='textarea'?'textarea':'input');
+    if(field.type!=='textarea')input.type=field.type==='number'?'number':field.type==='date'?'date':'text';
+    if(field.type==='number'){input.step='any';input.min='0';input.inputMode='decimal';}
+    input.value=current===null||current===undefined?'':String(current);
+    input.addEventListener('input',()=>{row.values[key]=input.value;dirty();});
+  }
+  input.id=id;input.autocomplete='off';input.dataset.key=key;wrapper.append(input);return wrapper;
+}
+function appendFields(target,row,entries){for(const entry of entries){const [key,label]=Array.isArray(entry)?entry:[entry];const node=control(row,key,label);if(node)target.append(node);}}
+function renderContext(){
+  const claimant=mainLabel('claimant_user_id')||documentData.summary.find(item=>item.label==='报销人')?.value||'';
+  const entries=[['报销人',claimant],['支付公司',mainLabel('payment_company')],['收款币种',currency()]];
+  if(mainValue('is_project')===true){
+    entries.push(['项目',mainLabel('project_name')],['项目费用类别',mainLabel('project_expense_category')]);
+    $('instruction').textContent='金额可直接修改，科目可按候选调整。总额自动重算，保存后告诉 Agent「改好了」。';
+  }
+  for(const [label,value]of entries){if(!value)continue;const item=el('span');item.append(el('em',label),document.createTextNode(String(value)));$('context').append(item);}
+}
+function fieldLabel(row,key){const field=row.fields.find(value=>value.key===key),value=rowValue(row,key);return field?.choices?.find(choice=>choice.value===value)?.label??value??'';}
+function regionElement(row){
+  const field=row.fields.find(value=>value.key==='region'),current=rowValue(row,'region');
+  const known=(field?.choices||[]).filter(choice=>/^中国内地/.test(choice.label||choice.value));
+  const choices=[...new Map(known.map(choice=>[choice.value,choice])).values()];
+  if(/^中国内地/.test(String(current))&&choices.length>1){
+    const wrap=el('div',undefined,'region-control'),id='region-'+row.id,label=el('label','出差地区'),select=el('select');label.htmlFor=id;select.id=id;select.dataset.key='region';
+    choices.forEach(choice=>{const option=el('option',choice.label);option.value=choice.value;select.append(option);});select.value=current;
+    select.addEventListener('change',()=>{row.values.region=select.value;dirty();});wrap.append(label,select);return wrap;
+  }
+  const wrap=el('span',undefined,'region-static'),label=el('span','出差地区','meta-label'),value=el('span',fieldLabel(row,'region'),'region-value');value.title=value.textContent;wrap.append(label,value);return wrap;
+}
+function projectAccountElement(row){
+  const field=row.fields.find(candidate=>candidate.key==='account'),current=rowValue(row,'account');
+  const category=mainValue('project_expense_category'),pairs=documentData.catalogPairs||[];
+  const permitted=new Set(pairs.filter(pair=>pair.category===category).map(pair=>pair.account));
+  const known=(field?.choices||[]).filter(choice=>!pairs.length||permitted.has(choice.value));
+  const choices=[...new Map(known.map(choice=>[choice.value,choice])).values()];
+  const line=el('div',undefined,'account-line'),label=el('label','项目会计科目');line.append(label);
+  const initial=current??'',recommendation=(documentData.recommendations||[]).find(pair=>pair.category===category&&pair.account===initial);
+  const legalInitial=choices.some(choice=>choice.value===initial)||permitted.has(initial);
+  const recommended=el('span',undefined,'account-recommendation'),explanation=el('span',undefined,'account-reason');
+  function refreshExplanation(value){
+    const unchanged=value===initial;
+    recommended.textContent=recommendation&&legalInitial?(unchanged?'推荐':'已调整科目'):'';
+    explanation.textContent=unchanged&&legalInitial?String(rowValue(row,'classification_reason')??'').trim():'';
+    recommended.hidden=!recommended.textContent;explanation.hidden=!explanation.textContent;
+  }
+  if(choices.length>1){
+    const wrap=el('span',undefined,'account-editor'),select=el('select'),selected=el('span',undefined,'account-selected');
+    select.id='account-'+row.id;select.dataset.key='account';label.htmlFor=select.id;
+    const hasCurrent=choices.some(choice=>choice.value===current);
+    if(!hasCurrent){const option=el('option',current?String(current)+'（当前值，候选待核对）':'请选择科目');option.value='';option.disabled=true;select.append(option);}
+    choices.forEach((choice,index)=>{const option=el('option',choice.label??String(choice.value));option.value=String(index);select.append(option);});
+    const index=choices.findIndex(choice=>choice.value===current);select.value=index<0?'':String(index);
+    const show=value=>{const text=choices.find(choice=>choice.value===value)?.label??value??'请选择科目';selected.textContent=String(text);select.title=String(text);};
+    show(current);select.addEventListener('change',()=>{if(select.value==='')return;const value=choices[Number(select.value)].value;
+      if(value!==rowValue(row,'account')&&row.fields.some(field=>field.key==='classification_reason'))row.values.classification_reason='';
+      row.values.account=value;show(value);refreshExplanation(value);dirty();});
+    wrap.append(select,selected);line.append(wrap);
+  }else{
+    const text=choices.find(choice=>choice.value===current)?.label??current??'待补充';line.append(el('span',String(text),'account-value'));
+  }
+  refreshExplanation(current);line.append(recommended,explanation);return line;
+}
+function renderRows(){
+  $('rows').replaceChildren();$('row-count').textContent=state.rows.length+' 条明细';
+  state.rows.forEach((row,index)=>{
+    const article=el('article',undefined,'trip');article.dataset.rowId=row.id;
+    const heading=el('div',undefined,'trip-head');heading.append(el('span','明细 '+(index+1),'trip-index'),el('span',(rowValue(row,'departure')||'未填写')+' → '+(rowValue(row,'destination')||'未填写'),'trip-route'));
+    const dates=el('span',(rowValue(row,'start_date')||'未填写')+' — '+(rowValue(row,'end_date')||rowValue(row,'start_date')||'未填写'),'trip-dates');heading.append(dates);
+    const duration=el('span',undefined,'trip-duration');duration.dataset.duration='true';heading.append(duration);article.append(heading);
+    const meta=el('div',undefined,'trip-meta');meta.append(regionElement(row));
+    const association=el('span',undefined,'association'),reference=el('span',fieldLabel(row,'trip_instance_id')||'待关联','association-value');reference.title=reference.textContent;
+    association.append(el('span','关联出差','meta-label'),reference);meta.append(association);
+    const unit=el('span');unit.append(el('span','费用币种','meta-label'),document.createTextNode(String(rowValue(row,'original_currency')||'')));meta.append(unit);article.append(meta);
+    if(mainValue('is_project')===true)article.append(projectAccountElement(row));
+    const amounts=el('div',undefined,'amounts');appendFields(amounts,row,['airfare','accommodation','local_transport','other_expenses']);
+    const allowance=control(row,'allowance_amount','差旅津贴');if(allowance){allowance.classList.add('allowance-field');amounts.append(allowance);}
+    const metric=el('div',undefined,'metric');metric.dataset.metric='rowTotal';metric.append(el('span','本行合计','metric-label'),el('strong'));amounts.append(metric);article.append(amounts);
+    const note=el('div',undefined,'row-note'),suggestion=el('span'),mode=el('span',undefined,'allowance-mode');suggestion.dataset.allowanceCopy='true';mode.dataset.allowanceMode='true';note.append(suggestion,mode);article.append(note);
+    const remarks=String(rowValue(row,'remarks')??'').trim();if(remarks)article.append(el('p','备注：'+remarks,'row-remarks'));
+    $('rows').append(article);
+  });
+  if(!state.rows.length)$('rows').append(el('p','尚无明细，请告诉 Agent 本次行程与费用。','empty'));
+  recalculate();
+}
+function recalculate(){
+  let calculation;
+  try{calculation=FinanceCalculations.calculateEditor(documentData.calculationContext,effectiveValues(documentData.mainFields,state.main),state.rows.map(row=>effectiveValues(row.fields,row.values)));}
+  catch(error){calculation={rows:state.rows.map(()=>({})),summary:{},missing:['请检查金额和日期是否填写完整。']};}
+  const receipt=currency(),allowanceCurrency=documentData.calculationContext.allowanceCurrencyByReceipt?.[receipt]??documentData.calculationContext.otherAllowanceCurrency??'';
+  const totalEntries=[['报销费用',calculation.summary.报销总额,receipt],['差旅津贴',calculation.summary.差旅津贴总额,allowanceCurrency]];
+  if(receipt===allowanceCurrency)totalEntries.push(['本次合计',calculation.summary.本次申请合计,receipt]);
+  $('totals').replaceChildren();for(const [index,[label,value,unit]]of totalEntries.entries()){
+    const group=el('div',undefined,'total'+(label==='本次合计'?' final':''));group.append(el('span',label),el('strong',amount(value,unit)));$('totals').append(group);
+  }
+  const notices=[...(documentData.needsInput||[]),...calculation.missing];
+  if(state.materials.some(material=>material.status==='unresolved'))notices.push('部分材料对应的明细已变化，保存后请告诉 Agent 核对材料归属。');
+  $('attention').hidden=!notices.length;$('attention').textContent=[...new Set(notices)].join(' ');
+  state.rows.forEach((row,index)=>{
+    const article=Array.from($('rows').children).find(node=>node.dataset.rowId===row.id);if(!article)return;
+    const values=calculation.rows[index]||{},unit=values.allowanceCurrency??allowanceCurrency;
+    article.querySelector('[data-duration]').textContent=values.days===null||values.days===undefined?'':values.days+' 天';
+    const allowanceInput=article.querySelector('[data-key="allowance_amount"]');
+    if(allowanceInput){allowanceInput.previousElementSibling.textContent='差旅津贴（'+unit+'）';if(!own(row.values,'allowance_amount'))allowanceInput.value=values.allowanceAmount===null||values.allowanceAmount===undefined?'':String(values.allowanceAmount);}
+    const copy=article.querySelector('[data-allowance-copy]'),mode=article.querySelector('[data-allowance-mode]');
+    const days=values.allowanceDays===null||values.allowanceDays===undefined?'待核对':values.allowanceDays+' 天';
+    copy.textContent='津贴建议：'+days+' × '+amount(values.allowanceStandard,unit)+'/天（重叠日不重复计）';
+    mode.textContent=own(row.values,'allowance_amount')?(row.values.allowance_amount===''||row.values.allowance_amount===null?'已清空津贴金额':'保留已填津贴金额'):'';
+    const combined=article.querySelector('[data-metric="rowTotal"]');
+    combined.querySelector('.metric-label').textContent=unit===receipt?'本行合计':'本行费用';
+    let rowTotal=null;
+    const explicit=own(row.values,'allowance_amount'),allowance=values.allowanceAmount;
+    if(values.reimbursedAmount!==null&&values.reimbursedAmount!==undefined&&(allowance!==null&&allowance!==undefined||explicit))
+      rowTotal=FinanceCalculations.sumAmounts([values.reimbursedAmount,allowance??0],documentData.calculationContext.precision??2);
+    const total=combined.querySelector('strong');total.replaceChildren(el('span',receipt,'metric-unit'),document.createTextNode(number(unit===receipt?rowTotal:values.reimbursedAmount)));
+    combined.title=unit===receipt?'费用与差旅津贴合计':'费用与差旅津贴币种不同，分别核对';
+  });
+}
+async function saveEdit(){
+  if(saving)return;
+  if(!documentData.localSave){$('status').textContent='此页面尚未连接保存。请告诉 Agent 打开可保存的明细。';return;}
+  const invalid=state.materials.find(material=>material.status==='excluded'&&(!material.note.trim()||material.rowIds.length)||material.status==='included'&&documentData.hasRows&&!material.rowIds.length);
+  if(invalid){$('status').textContent='请告诉 Agent 核对“'+invalid.name+'”的材料归属，再保存。';return;}
+  const payload={schemaVersion:1,workflow:documentData.workflow,draftId:documentData.draftId,baseRevision:documentData.baseRevision,
+    main:state.main,rows:state.rows.map(row=>({id:row.id,values:row.values})),materials:state.materials.map(({id,status,rowIds,note,role})=>({id,status,rowIds,note,...(role!==undefined?{role}:{})}))};
+  const sequence=editSequence;saving=true;$('save').disabled=true;$('status').textContent='正在保存…';
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+  try{
+    const endpoint=new URL(documentData.localSave.saveEndpoint,location.href);
+    if(endpoint.origin!==location.origin||!['127.0.0.1','localhost','[::1]'].includes(endpoint.hostname))throw new Error('SAVE_ORIGIN_INVALID');
+    const response=await fetch(endpoint.href,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({edit:payload,version:saveVersion}),signal:controller.signal});
+    const result=await response.json();
+    if(response.status===409){$('status').textContent='草稿已在别处更新，本页未覆盖。请保留当前修改，告诉 Agent 合并。';return;}
+    if(!response.ok||!result.ok||result.saved!==true||typeof result.version!=='string')throw new Error(result.message||'SAVE_FAILED');
+    saveVersion=result.version;unsaved=sequence!==editSequence;
+    $('status').textContent=unsaved?'已保存刚才的修改；仍有新修改未保存。':'已保存。请告诉 Agent「改好了」。';
+  }catch(error){$('status').textContent='尚未确认保存成功，修改仍保留。请告诉 Agent 检查草稿。';}
+  finally{clearTimeout(timer);saving=false;$('save').disabled=false;}
+}
+$('save').addEventListener('click',saveEdit);
+document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();saveEdit();}});
+window.addEventListener('beforeunload',event=>{if(unsaved||saving){event.preventDefault();event.returnValue='';}});
+renderContext();renderRows();
+if(!documentData.localSave)$('status').textContent='当前为预览，尚未连接保存。';
+</script>
+</body>
+</html>

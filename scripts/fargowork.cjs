@@ -190,7 +190,10 @@ function inputData(options, detailReview = false, markdown = false) {
     delete input.recommendations;
     check(recommendations===undefined||Array.isArray(recommendations)&&recommendations.every(value=>
       value&&typeof value==='object'&&!Array.isArray(value)&&typeof value.category==='string'
-      &&typeof value.account==='string'&&Object.keys(value).every(key=>['category','account'].includes(key))),
+      &&typeof value.account==='string'&&Object.keys(value).every(key=>['category','account','rowNumber','description','reason'].includes(key))
+      &&(value.rowNumber===undefined&&value.description===undefined&&value.reason===undefined
+        ||Number.isInteger(value.rowNumber)&&value.rowNumber>=1&&typeof value.description==='string'
+          &&(value.reason===undefined||typeof value.reason==='string'&&value.reason.length<=300))),
     'DETAIL_EDITOR_RECOMMENDATIONS_INVALID');
   }
   const files = input.attachments ?? [];
@@ -369,12 +372,16 @@ function saveEditorRows(dir,info,expected) {
   if(expected?.editorMaterials)write(path.join(dir,'editor-materials.json'),
     {filesDigest:digest(info.files||[]),materials:expected.editorMaterials});
 }
+function usesConversationFinal(key) {
+  return ['trip_expense_reimbursement','expense_reimbursement','external_expense_application',
+    'meal_transport','external_expense_request','medical_checkup_reimbursement'].includes(key);
+}
 function generateDetailEditor(dir,id,info,output,expected) {
   check(Editor.supports(info.workflow),'DETAIL_EDITOR_WORKFLOW_UNSUPPORTED');
   assertEditorFileUnchanged(dir,info,expected,true);
   const current=editorContext(dir,id,info),rowFile=path.join(dir,'editor-rows.json');
   const oldRows=fs.existsSync(rowFile)?read(rowFile):null;
-  const stage=workflow(info.workflow).detailReview
+  const stage=usesConversationFinal(info.workflow)?'details':workflow(info.workflow).detailReview
     &&current.review?.confirmedSha256!==current.review?.reviewSha256?'details':'application';
   const markdown=Markdown.supports(info.workflow),format=markdown?'md':'html';
   output=output||editorFileState(dir,info)?.path||path.join(dir,'finance-details.'+format);
@@ -435,7 +442,17 @@ function withDetailEditor(result,dir,id,info,expected) {
     result={...result,draftValidity:{startedAt:saved.startedAt,expiresAt:saved.expiresAt},
       refreshAction:{command:'refresh',draftId:id}};
   }
-  return Editor.supports(info.workflow)?{...result,detailEditor:generateDetailEditor(dir,id,info,undefined,expected)}:result;
+  if(!Editor.supports(info.workflow))return usesConversationFinal(info.workflow)?{...result,presentation:'conversation'}:result;
+  const editor=generateDetailEditor(dir,id,info,undefined,expected);
+  if(usesConversationFinal(info.workflow)) {
+    const review=editorContext(dir,id,info).review;
+    // Keep the same detail file in sync with the draft, but handle main-form
+    // questions and the complete application in the conversation. Do not start
+    // another HTML page merely because details have already been confirmed.
+    if(review?.status==='ready'&&review.confirmedSha256===review.reviewSha256)
+      return {...result,presentation:'conversation'};
+  }
+  return {...result,detailEditor:editor};
 }
 function draftRuntime({runtime,auth,dir,key,actor,previous,deps}) {
   const live=runtime(key,{auth});
@@ -1115,7 +1132,9 @@ async function runCommand(args, deps = {}) {
     }
     if (command === 'preview') {
       if(state.status==='prepared') snapshot.assertValid();
-      const detailEditor=state.status==='prepared'&&Editor.supports(info.workflow)
+      const conversation=usesConversationFinal(info.workflow);
+      if(state.status==='prepared'&&conversation)assertEditorFileUnchanged(dir,info);
+      const detailEditor=state.status==='prepared'&&Editor.supports(info.workflow)&&!conversation
         ?generateDetailEditor(dir,arg,info):null;
       if (state.status === 'prepared') {
         // Records that this exact visible preview was requested, not human consent.
@@ -1129,10 +1148,12 @@ async function runCommand(args, deps = {}) {
         ...(snapshot?{draftValidity:snapshot.metadata(),refreshAction:{command:'refresh',draftId:arg}}:{}),
         processInstanceId: state.processInstanceId,
         requiresConfirmation: state.status === 'prepared',
+        ...(conversation?{presentation:'conversation'}:{}),
         ...(detailEditor?{detailEditor}:{}),
         nextAction: state.status === 'prepared' ? 'wait_for_user_reply' : 'result',
         ...(state.status === 'prepared' ? {
-          message: '向员工展示这份业务预览并结束本轮操作，等待员工下一条明确确认。此前提出申请或说提交，不代替此处确认。'
+          message: conversation?'在对话中展示这份完整申请，包含实际收款资料、归属、金额及附件；不要另开完整申请HTML。等待员工针对本次完整申请的新提交确认。此前的编辑、保存或明细确认不代替提交确认。'
+            :'向员工展示这份业务预览并结束本轮操作，等待员工下一条明确确认。此前提出申请或说提交，不代替此处确认。'
         } : {})
       };
     }

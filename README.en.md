@@ -10,7 +10,11 @@
 
 Requires Windows, Node.js 22+, npm and the official OpenYida CLI (supported versions: `2026.10.16`, `2026.10.19`). To install manually, run `node scripts/setup.cjs` from the complete release package, follow the sign-in prompts, and have your AI client load the returned `skillEntry`. See the [installation instructions](SKILL.md#首次安装) and [troubleshooting guide](references/DEBUG.md) (in Chinese).
 
-**New in 3.4.0:** Edit financial details in HTML and save directly, without exporting a file back to the agent. Chat edits use the same draft, with Markdown as a fallback. Bank account changes stay in chat; old-card memory stores only consented nicknames, last four digits and purpose.
+**New in 3.4.0:**
+
+- Expense and travel claims, external payments, meal and transport allowances, and the payment Demo each have HTML details. Save for readback and recalculation; chat edits and Markdown fallback remain available, with no export needed.
+- All complete applications are confirmed in chat. Medical checkups and bank account changes stay entirely in chat, with one final confirmation.
+- Meal and transport end times come from attendance records. Start times default to 18:00; times explicitly supplied or corrected by the user take priority.
 
 ## 1. What it does
 
@@ -36,7 +40,7 @@ Financial applications follow this sequence:
 
 **Establish company, currency and any project allocation → Organize materials and calculate details → Edit and confirm details → Complete the main form → Confirm the full application → Submit.**
 
-Expense and travel claims, external payments, meal and transport allowances, and medical checkups open their own HTML details. Edit and click Save, then tell the agent you are done: it reads the saved draft and recalculates. Chat edits work too. The bundled local helper handles saving without a file picker or export. When the page is unavailable, edit the same draft in Markdown. Bank account changes are reviewed directly in chat. Medical checkups retain CNY and the CNY 1,500 cap; meal and transport claims retain minute-level times and separate attachment groups. Existing confirmation steps remain unchanged.
+Expense and travel claims, external payments, and meal and transport allowances open their own HTML details. The payment Demo uses the same saving method. Edit and click Save, then tell the agent you are done: it reads the saved draft and recalculates. Chat edits work too. No file picker or export is needed; Markdown remains available if the page cannot open. Final applications are confirmed in chat. Medical checkups and bank account changes use chat directly, with one final confirmation. Medical claims remain CNY only, capped at CNY 1,500. Meal and transport claims take end times from attendance attachments; start times default to 18:00 unless the user specifies otherwise. Minute precision and separate attachment groups remain unchanged.
 
 The agent suggests expense categories and accounting codes, with suitable alternatives. You can accept them or change a specific row; fixed codes follow the existing rules. Currencies, exchange rates and other reference data come from company-maintained sources, not replacement values in chat or online market rates. Forms without a detail table, such as medical checkup reimbursement, go straight to confirming the full application.
 

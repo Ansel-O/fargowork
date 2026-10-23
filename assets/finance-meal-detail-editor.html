@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>餐费交通补贴明细</title>
+<style>
+:root{color-scheme:light;--paper:#fff;--wash:#f3f6f8;--navy:#18334a;--ink:#243647;--muted:#617583;--line:#dce5ec;--accent:#16788a}
+*{box-sizing:border-box}body{margin:0;background:var(--wash);color:var(--ink);font:13px/1.5 "Microsoft YaHei UI","PingFang SC",system-ui,sans-serif;font-variant-numeric:tabular-nums}main{max-width:1320px;margin:auto;padding:22px 24px 100px}h1,p{margin:0}h1{font-size:23px;line-height:1.35;color:var(--navy)}.page-heading{display:flex;align-items:baseline;gap:12px;justify-content:space-between}.brand{font-size:12px;color:var(--muted);font-weight:400}.context{display:flex;gap:5px 24px;flex-wrap:wrap;margin-top:9px}.context span{display:inline-flex;gap:8px}.context em{font-style:normal;color:var(--muted)}.instruction{margin-top:14px;padding:8px 11px;border-left:3px solid var(--accent);background:#eaf3f5}
+.toolbar{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:16px 0 10px}.count{color:var(--muted)}.totals{display:flex;align-items:baseline;gap:20px}.total{display:flex;align-items:baseline;gap:8px}.total span{font-size:12px;color:var(--muted)}.total strong{font-size:18px;color:var(--accent);font-weight:650}.attention{margin-bottom:10px;padding:8px 11px;background:#fff5e9;border-left:3px solid #d2a16b;color:#8a4c25}.table-frame{overflow:auto;border:1px solid var(--line);border-radius:5px;background:var(--paper)}table{width:100%;table-layout:fixed;border-collapse:collapse;min-width:1040px}th{text-align:left;font-weight:500;font-size:12px;color:var(--muted);background:#eef3f6;padding:10px 9px;border-bottom:1px solid var(--line)}td{padding:12px 8px;vertical-align:top;border-bottom:1px solid var(--line)}tr:last-child td{border-bottom:0}tbody tr:hover{background:#fafcfd}.number-cell{text-align:right}.row-number{color:var(--muted);padding-top:18px;text-align:center;font-size:12px}.calculated{display:block;color:var(--accent);font-weight:650;white-space:nowrap;padding:7px 1px;text-align:right}
+button,input,textarea{font:inherit;color:inherit}input,textarea{width:100%;min-width:0;border:1px solid #cad7df;border-radius:4px;background:var(--paper);padding:6px 8px;line-height:1.5}input{height:35px}input[type=number]{text-align:right}input[type=datetime-local]{font-size:12px;padding:6px 5px}textarea{display:block;resize:vertical;min-height:58px;overflow:hidden}input:hover,textarea:hover{border-color:#95aeba}button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.footer{position:fixed;bottom:0;left:0;right:0;background:#ffffffed;border-top:1px solid var(--line);backdrop-filter:blur(8px);padding:11px 24px}.footer-inner{max-width:1272px;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:16px}.footer p{font-size:12px;color:var(--muted)}.footer-actions{display:flex;align-items:center;gap:12px;flex-shrink:0}.shortcut{font-size:11px;color:var(--muted)}.save{cursor:pointer;background:var(--accent);color:#fff;border:1px solid var(--accent);border-radius:4px;font-weight:650;padding:8px 22px}.save:hover{background:#116374}.save:disabled{opacity:.5;cursor:default}[hidden]{display:none!important}
+@media(max-width:650px){main{padding:16px 12px 110px}h1{font-size:20px}.context{font-size:12px;gap:4px 16px}.totals{gap:12px}.total strong{font-size:16px}.footer{padding:10px 12px}.footer p{font-size:11px}.shortcut{display:none}.save{padding:8px 16px}.instruction{font-size:12px}}
+</style></head><body>
+<main><header><div class="page-heading"><h1>餐费交通补贴明细</h1><span class="brand">FargoWork</span></div><div id="context" class="context"></div><p class="instruction">时间可精确到分钟，交通费可直接修改。餐补和总额自动计算，保存后告诉 Agent「改好了」。</p></header>
+<div class="toolbar"><span id="count" class="count"></span><div class="totals"><div class="total"><span>餐补</span><strong id="meal-total"></strong></div><div class="total"><span>交通费</span><strong id="transport-total"></strong></div><div class="total"><span>本次合计</span><strong id="total"></strong></div></div></div>
+<p id="attention" class="attention" role="status" hidden></p>
+<div class="table-frame"><table aria-label="餐费交通补贴明细"><colgroup><col style="width:4%"><col style="width:18%"><col style="width:18%"><col style="width:22%"><col style="width:8%"><col style="width:11%"><col style="width:19%"></colgroup><thead><tr><th>序号</th><th>开始时间</th><th>结束时间</th><th>加班事由</th><th class="number-cell">餐费补贴</th><th class="number-cell">交通费</th><th>备注</th></tr></thead><tbody id="rows"></tbody></table></div></main>
+<footer class="footer"><div class="footer-inner"><p id="status" role="status" aria-live="polite">需要增删明细或补充材料，可直接告诉 Agent。</p><div class="footer-actions"><span class="shortcut">Ctrl / ⌘ + S</span><button class="save" id="save" type="button">保存修改</button></div></div></footer>
+<!--FARGOWORK_EDITOR_DATA-->
+<script>
+'use strict';
+/*FARGOWORK_SHARED_CALCULATIONS*/
+const documentData=JSON.parse(document.getElementById('editor-data').textContent);
+const clone=value=>JSON.parse(JSON.stringify(value)),own=(object,key)=>Object.prototype.hasOwnProperty.call(object,key),$=id=>document.getElementById(id);
+const state={main:clone(documentData.mainValues),rows:clone(documentData.rows),materials:clone(documentData.materials)};
+let saveVersion=documentData.localSave?.version,unsaved=false,saving=false,editSequence=0;
+function el(tag,text,className){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;}
+function mainValue(key){return own(state.main,key)?state.main[key]:documentData.mainFields.find(field=>field.key===key)?.value;}
+function rowValue(row,key){return own(row.values,key)?row.values[key]:row.fields.find(field=>field.key===key)?.value;}
+function effective(row){return {...Object.fromEntries(row.fields.filter(field=>field.value!==undefined&&field.value!==null).map(field=>[field.key,field.value])),...row.values};}
+function currency(){return mainValue('reimbursement_currency')??documentData.calculationContext.currency??'';}
+function format(value){return value===undefined||value===null||value===''||!Number.isFinite(Number(value))?'待补齐':Number(value).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function dirty(){unsaved=true;editSequence++;recalculate();$('status').textContent='有修改尚未保存。';}
+function edit(row,index,key,label){const numeric=key==='transport_amount',time=key==='start_time'||key==='end_time',node=el(numeric||time?'input':'textarea');
+  node.dataset.key=key;node.setAttribute('aria-label','第'+(index+1)+'行'+label);node.autocomplete='off';
+  if(numeric){node.type='number';node.step='any';node.min='0';node.inputMode='decimal';}else if(time){node.type='datetime-local';node.step='60';}else node.rows=2;
+  const value=rowValue(row,key);node.value=value===undefined||value===null?'':time?String(value).replace(' ','T').slice(0,16):String(value);
+  node.addEventListener('input',()=>{row.values[key]=node.value;dirty();});return node;}
+function renderContext(){for(const [label,value]of [['支付公司',mainValue('payment_company')],['收款币种',currency()]]){if(!value)continue;const span=el('span');span.append(el('em',label),document.createTextNode(String(value)));$('context').append(span);}}
+function renderRows(){$('rows').replaceChildren();$('count').textContent=state.rows.length+' 条加班明细';
+  state.rows.forEach((row,index)=>{const tr=el('tr');tr.dataset.rowId=row.id;tr.append(el('td',String(index+1),'row-number'));
+    for(const [key,label]of [['start_time','开始时间'],['end_time','结束时间'],['reason','加班事由']]){const cell=el('td');cell.append(edit(row,index,key,label));tr.append(cell);}
+    const meal=el('td',undefined,'number-cell');meal.append(el('strong',undefined,'calculated'));tr.append(meal);
+    const transport=el('td',undefined,'number-cell');transport.append(edit(row,index,'transport_amount','交通费'));tr.append(transport);
+    const remarks=el('td');remarks.append(edit(row,index,'remarks','备注'));tr.append(remarks);$('rows').append(tr);});recalculate();}
+function recalculate(){let calculation;try{calculation=FinanceCalculations.calculateEditor(documentData.calculationContext,effective({fields:documentData.mainFields,values:state.main}),state.rows.map(effective));}
+  catch(error){calculation={rows:[],summary:{},missing:['请检查交通费是否填写完整。']};}
+  const meal=calculation.summary.餐补总额,transport=calculation.summary.交通费总额;
+  $('meal-total').textContent=currency()+' '+format(meal);$('transport-total').textContent=currency()+' '+format(transport);
+  $('total').textContent=currency()+' '+format(meal===null||meal===undefined||transport===null||transport===undefined?null:FinanceCalculations.sumAmounts([meal,transport],documentData.calculationContext.precision??2));
+  state.rows.forEach((row,index)=>{$('rows').children[index]?.querySelector('.calculated')?.replaceChildren(document.createTextNode(format(calculation.rows[index]?.mealAmount)));});
+  const notices=[...(documentData.needsInput||[]),...(calculation.missing||[])];$('attention').hidden=!notices.length;$('attention').textContent=[...new Set(notices)].join(' ');}
+async function saveEdit(){if(saving)return;if(!documentData.localSave){$('status').textContent='当前为预览，请告诉 Agent 打开可保存的明细。';return;}
+  const payload={schemaVersion:1,workflow:documentData.workflow,draftId:documentData.draftId,baseRevision:documentData.baseRevision,main:state.main,
+    rows:state.rows.map(row=>({id:row.id,values:row.values})),materials:state.materials.map(({id,status,rowIds,note,role})=>({id,status,rowIds,note,...(role!==undefined?{role}:{})}))};
+  const sequence=editSequence;saving=true;$('save').disabled=true;$('status').textContent='正在保存…';const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+  try{const endpoint=new URL(documentData.localSave.saveEndpoint,location.href);if(endpoint.origin!==location.origin||!['127.0.0.1','localhost','[::1]'].includes(endpoint.hostname))throw new Error('SAVE_ORIGIN_INVALID');
+    const response=await fetch(endpoint.href,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({edit:payload,version:saveVersion}),signal:controller.signal}),result=await response.json();
+    if(response.status===409){$('status').textContent='草稿已在别处更新，本页未覆盖。请保留当前修改，告诉 Agent 合并。';return;}
+    if(!response.ok||!result.ok||result.saved!==true||typeof result.version!=='string')throw new Error(result.message||'SAVE_FAILED');
+    saveVersion=result.version;unsaved=sequence!==editSequence;$('status').textContent=unsaved?'已保存刚才的修改；仍有新修改未保存。':'已保存。请告诉 Agent「改好了」。';
+  }catch(error){$('status').textContent='尚未确认保存成功，修改仍保留。请告诉 Agent 检查草稿。';}
+  finally{clearTimeout(timer);saving=false;$('save').disabled=false;}}
+$('save').addEventListener('click',saveEdit);document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();saveEdit();}});
+window.addEventListener('beforeunload',event=>{if(unsaved||saving){event.preventDefault();event.returnValue='';}});renderContext();renderRows();
+</script></body></html>
