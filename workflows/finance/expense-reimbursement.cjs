@@ -21,10 +21,11 @@ const requirements={required:['items'],
     'project_department_name','business_structure','business_line','business_subline'],minimumRows:1,maximumRows:50},
   attachments:{required:true,input:'attachments: [绝对文件路径]',maxFiles:20,maxFileSizeMiB:100},
   notes:['仅为本人报销；支付公司按本人映射确定，收款资料首次带入后可修改或清空。',
-    '先用 review 保存和整理明细：Agent 根据内容详情建议类别科目，工具匹配汇率；展示八列供员工修改，收到确认后 confirm-details，再用同一草稿补主表和准备最终申请。',
+    '先确定支付公司、收款币种及项目归属，再用 review 保存明细；默认生成MD七列明细和按类别分组的少量合法科目候选，类别科目保留完整原文，不展示汇率。确认明细后 confirm-details，再用同一草稿补主表。',
+    '允许口述修改或直接修改原MD并保存；告知改好了后用 read-edit 回读，同一草稿用已有公司汇率代码重算并回写金额与合计，不采纳文件内手改汇率或派生计算结果，不要求导出上传。',
     '每行可使用不同原币种，按公司维护汇率先折报销币种、再折港币；不能自行填写汇率或计算结果。',
     '多个任职部门或业务线需选择；费用类别与科目结合本行用途从合法配对中推荐。',
-    '同一草稿支持主表局部更新；省略 items 保留明细，传入 items 则替换整表。修改后重新预览，最终预览后等待新的本人确认。']};
+    '同一草稿支持主表局部更新；省略 items 保留明细，传入 items 则替换整表。材料范围及行身份保留，24小时内不因普通编辑全量重查。完整申请仍为MD，最终预览后等待新的本人确认，保存回读不等于确认。']};
 const allowed=[...requirements.required,...requirements.optional];
 const itemAllowed=[...requirements.items.required,...requirements.items.optional];
 const source=name=>sources[config.sources[name]];

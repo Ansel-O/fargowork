@@ -28,8 +28,9 @@ const requirements={
     '项目部门按每条付款明细选择。合同公司、开户银行和收款账号由员工提供。',
     '本人有多个任职部门时必须选择；费用类别和科目结合本次用途在合法候选中给建议。',
     '可按收款方或单号查本人历史付款，再由员工选择；仅带入收款方、开户行和字符串账号，仍需最终核对。',
-    '先review保存并展示本次付款明细，员工确认后confirm-details，再在同一草稿补主表和附件；完整预览后等待新的提交确认。',
-    '本单各行使用统一付款币种，amount只填本次付款额；合同总额、历史已付和本次付款不可重复相加。']
+    '先review默认生成五列MD付款明细及按类别分组的少量合法科目候选，保留完整目录原文；员工确认后confirm-details，再在同一草稿补外部收款、主表和附件，完整申请MD后等待新的提交确认。',
+    '允许口述修改或保存原MD后告知改好了并用read-edit回读；保留材料归属和行身份，用已有公司汇率代码重算回写，不采纳手改汇率/后台港币计算/合计，不要求导出上传。',
+    '本单各行使用统一付款币种，amount只填本次付款额；合同总额、历史已付和本次付款不可重复相加。MD不展示汇率及后台港币金额，项目仍保留原逐行分配字段。']
 };
 const allowed=[...requirements.required,...requirements.choices,...requirements.optional,...requirements.project];
 const itemAllowed=[...requirements.items.required,...requirements.items.optional];

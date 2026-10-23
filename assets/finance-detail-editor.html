@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
 <title>FargoWork · 申请明细</title>
 <style>
 :root{color-scheme:light;--ink:#213047;--muted:#64748b;--line:#dce5ee;--blue:#2463b5;--wash:#f2f6fa;--paper:#fff}
@@ -36,16 +36,16 @@ button:hover{background:#eef4fb}button:disabled{cursor:default;opacity:.45}.prim
   <div class="eyebrow">FARGOWORK / 申请明细</div>
   <h1 id="title">申请明细</h1>
   <p class="muted">可以直接修改下方内容，也可以回到对话告诉 Agent 要改什么。两种方式更新同一份申请。</p>
-  <div class="notice">金额和日期修改后会立即计算。完成后请<strong>导出修改文件并交回 Agent</strong>，更新同一份草稿，再确认申请。此页面不会保存到宜搭，也不会提交申请。</div>
+  <div class="notice"><strong>只需修改明细，总额会自动重算。</strong>改好后点击“保存修改”或按 Ctrl+S，再告诉 Agent“改好了”。保存只更新本机草稿，确认后才会提交申请。</div>
   <section id="needs" class="notice" hidden></section>
   <section class="card"><div class="head"><h2 id="main-heading">公司、币种与项目</h2></div><div id="main-fields" class="grid"></div></section>
   <section id="summary-section" class="card"><div class="head"><h2>当前核算结果</h2><span class="hint">代码即时计算 · 使用本草稿已取得的公司资料</span></div><div id="summary" class="summary"></div><p id="calculation-notice" class="hint" role="status"></p></section>
   <section id="notes" class="notice" hidden></section>
   <section id="rows-section"><div class="head"><h2>申请明细</h2><button id="add-row" type="button">＋ 添加明细</button></div><div id="rows"></div></section>
   <section id="materials-section" class="card"><div class="head"><h2>材料与对应明细</h2><span class="hint">补充新材料请交给 Agent</span></div><div id="materials"></div></section>
-  <p class="hint">汇率、固定科目及计算结果由公司数据和原流程规则确定。若候选不完整，请告诉 Agent 刷新；不要自行填写目录项。此文件包含本次申请信息，请妥善保存。</p>
+  <p class="hint">计算使用本草稿已取得的公司资料。候选不完整时请告诉 Agent；也可以直接口述需要修改的内容。</p>
 </main>
-<div class="footer"><div><p id="status" role="status" aria-live="polite">当前为草稿预览；尚未应用修改。</p><button class="primary" id="export" type="button">导出修改文件</button></div></div>
+<div class="footer"><div><p id="status" role="status" aria-live="polite">请核对明细；有修改时保存，再告诉 Agent“改好了”。</p><button class="primary" id="save" type="button">保存修改</button></div></div>
 <!--FARGOWORK_EDITOR_DATA-->
 <script>
 'use strict';
@@ -53,10 +53,11 @@ button:hover{background:#eef4fb}button:disabled{cursor:default;opacity:.45}.prim
 const documentData=JSON.parse(document.getElementById('editor-data').textContent);
 const clone=value=>JSON.parse(JSON.stringify(value));
 const state={main:clone(documentData.mainValues),rows:clone(documentData.rows),materials:clone(documentData.materials)};
+let saveVersion=documentData.localSave?.version,unsaved=false,saving=false,editSequence=0;
 const $=id=>document.getElementById(id);
 function el(tag,text,className){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;}
 function pretty(value){return value===null||value===undefined||value===''?'未填写':typeof value==='object'?JSON.stringify(value,null,2):String(value);}
-function dirty(){ recalculate();$('status').textContent='金额预览已更新。导出并交回 Agent 后，才能保存到草稿；尚未确认或提交。'; }
+function dirty(){unsaved=true;editSequence++;recalculate();$('status').textContent='有修改尚未保存。保存后告诉 Agent“改好了”，再核对一次。';}
 function rowId(){return 'row-'+(globalThis.crypto?.randomUUID?crypto.randomUUID():Array.from({length:32},()=>Math.floor(Math.random()*16).toString(16)).join(''));}
 function projectVisibility(){document.querySelectorAll('[data-project]').forEach(node=>{node.hidden=state.main.is_project!==true;});}
 function control(field,values,options){
@@ -79,7 +80,8 @@ function control(field,values,options){
       if(input.value===''){if(field.type==='boolean'){delete values[field.key];}else values[field.key]='';}
       else values[field.key]=choices[Number(input.value)].value;
       dirty();projectVisibility();
-      if(field.key==='is_project')$('status').textContent='项目归属已修改。请导出交回 Agent，重新核对项目、部门及科目；费用金额保留。';
+      if(field.key==='expense_category'||field.key==='project_expense_category')renderRows();
+      if(field.key==='is_project')$('status').textContent='项目归属已修改。保存后告诉 Agent，继续核对项目、部门及科目；费用金额保留。';
     });
     if(field.choicesMissing&&field.type==='select')wrapper.append(el('span','更多候选请让 Agent 刷新。','hint'));
     if(!hasValue&&field.display!==undefined)wrapper.append(el('span','当前值：'+pretty(field.display),'hint'));
@@ -127,12 +129,26 @@ function renderRows(){
     duplicate.disabled=state.rows.length>=documentData.maxRows;
     actions.append(up,down,duplicate,button('删除',()=>{state.rows.splice(index,1);renderRows();materialRowsChanged();},'danger'));
     head.append(actions);card.append(head);
-    const grid=el('div',undefined,'grid');row.fields.forEach(field=>grid.append(control(field,row.values)));card.append(grid);
+    const grid=el('div',undefined,'grid');row.fields.forEach(original=>{
+      let field=original;
+      if(documentData.catalogPairs?.length&&['expense_category','account'].includes(field.key)){
+        const category=state.main.is_project===true?state.main.project_expense_category:
+          row.values.expense_category??row.fields.find(item=>item.key==='expense_category')?.value;
+        const candidates=field.key==='expense_category'?documentData.catalogPairs.map(pair=>pair.category):
+          documentData.catalogPairs.filter(pair=>pair.category===category).map(pair=>pair.account);
+        const choices=[...new Set(candidates)].map(value=>({value,label:value}));
+        const current=row.values[field.key]??field.value;
+        if(current!==null&&current!==undefined&&current!==''&&!choices.some(choice=>choice.value===current))
+          choices.unshift({value:current,label:String(current)+'（请核对类别）'});
+        field={...field,choices};
+      }
+      grid.append(control(field,row.values));
+    });card.append(grid);
     const derived=el('div',undefined,'readonly grid');derived.dataset.derived='true';card.append(derived);
     $('rows').append(card);
   });
   if(!state.rows.length)$('rows').append(el('p','尚无明细，可以添加一条。','empty'));
-  projectVisibility();
+  projectVisibility();recalculate();
 }
 const calculationLabels={days:'行程天数',rate:'公司汇率',reimbursedAmount:'报销金额',hkdRate:'折港币汇率',hkdAmount:'港币金额',
   allowanceCurrency:'差旅津贴币种',allowanceStandard:'每日差旅津贴标准',allowanceDays:'差旅津贴建议天数',
@@ -144,17 +160,27 @@ function recalculate(){
     effectiveValues(documentData.mainFields,state.main),state.rows.map(row=>effectiveValues(row.fields,row.values)));}
   catch(error){calculation={rows:state.rows.map(()=>Object.fromEntries(Object.keys(calculationLabels).map(key=>[key,null]))),summary:{},missing:['金额或日期尚未填写完整，请修正后继续。']};
     for(const item of documentData.summary)if(/金额|总额|合计|汇率/.test(item.label))calculation.summary[item.label]=null;}
-  const cells=new Map(documentData.summary.map(item=>[item.label,item.value]));
-  for(const [label,value]of Object.entries(calculation.summary))cells.set(label,value);
+  const paymentDetails=documentData.workflow==='external_expense_application'&&documentData.stage==='details';
+  const hiddenComputed=key=>/汇率|^rate$|^hkdRate$|allowanceExplicit/i.test(key)||paymentDetails&&/港币|hkd/i.test(key);
+  const cells=new Map(documentData.summary.filter(item=>!hiddenComputed(item.label)).map(item=>[item.label,item.value]));
+  for(const [label,value]of Object.entries(calculation.summary))if(!hiddenComputed(label))cells.set(label,value);
   $('summary').replaceChildren();$('summary-section').hidden=!cells.size&&!calculation.missing.length;
   for(const [label,value]of cells){const cell=el('div',undefined,'cell');cell.append(el('span',label,'hint'),el('strong',pretty(value)));$('summary').append(cell);}
-  $('calculation-notice').textContent=calculation.missing.join(' ');
+  const scope=effectiveValues(documentData.mainFields,state.main),context=documentData.calculationContext;
+  const samePaymentScope=String(scope.payment_company??context.company)===String(context.company)
+    &&String(scope.currency??context.currency)===String(context.currency);
+  // Formal payment's detail contract is the five business columns. Its
+  // backstage HKD conversion belongs to preparation, not a new detail query.
+  $('calculation-notice').textContent=calculation.missing.filter(message=>!(paymentDetails&&samePaymentScope
+    &&message.startsWith('该币种或业务范围尚无已取得的汇率'))).join(' ');
   state.rows.forEach((row,index)=>{
     const card=Array.from($('rows').children).find(node=>node.dataset.rowId===row.id);if(!card)return;
-    const values=calculation.rows[index]||{},fields=new Map(row.readonly.map(field=>[field.key,{...field,value:Object.hasOwn(values,field.key)?values[field.key]:field.value}]));
-    for(const [key,value]of Object.entries(values))if(calculationLabels[key]&&!fields.has(key)&&!(key==='amount_hkd'&&fields.has('hkdAmount'))&&!(key==='hkdAmount'&&fields.has('amount_hkd')))
+    const values=calculation.rows[index]||{},fields=new Map(row.readonly.filter(field=>!hiddenComputed(field.key)&&!hiddenComputed(field.label))
+      .map(field=>[field.key,{...field,value:Object.hasOwn(values,field.key)?values[field.key]:field.value}]));
+    if(fields.has('hkdAmount'))fields.delete('amount_hkd');
+    for(const [key,value]of Object.entries(values))if(!hiddenComputed(key)&&calculationLabels[key]&&!fields.has(key)&&!(key==='amount_hkd'&&fields.has('hkdAmount'))&&!(key==='hkdAmount'&&fields.has('amount_hkd')))
       fields.set(key,{key,label:calculationLabels[key],value});
-    const target=card.querySelector('[data-derived]');target.replaceChildren();target.hidden=!fields.size;
+    const target=card.querySelector('[data-derived]');if(!target)return;target.replaceChildren();target.hidden=!fields.size;
     for(const field of fields.values()){const block=el('div',undefined,'field');block.dataset.computed=field.key;block.append(el('label',calculationLabels[field.key]||field.label),el('div',pretty(field.value),'value'));target.append(block);}
     if(!Object.prototype.hasOwnProperty.call(row.values,'allowance_amount')){
       const input=card.querySelector('[data-key="allowance_amount"]');if(input)input.value=values.allowanceAmount===null||values.allowanceAmount===undefined?'':String(values.allowanceAmount);
@@ -165,7 +191,9 @@ function recalculate(){
   });
 }
 function renderMaterials(){
-  $('materials-section').hidden=!state.materials.length;$('materials').replaceChildren();
+  $('materials-section').hidden=!state.materials.length||['meal_transport','medical_checkup_reimbursement'].includes(documentData.workflow);
+  $('materials').replaceChildren();
+  if($('materials-section').hidden)return;
   for(const material of state.materials){
     const block=el('div',undefined,'material');block.append(el('div',material.name,'material-name'));
     const grid=el('div',undefined,'grid');
@@ -181,25 +209,44 @@ function renderMaterials(){
     $('materials').append(block);
   }
 }
-function exportEdit(){
+async function saveEdit(){
+  if(saving)return;
+  if(!documentData.localSave){$('status').textContent='此页面没有连接本机保存程序。请让 Agent 打开可保存的页面，或改用 MD／口述修改。';return;}
   const invalid=state.materials.find(material=>material.status==='excluded'&&(!material.note.trim()||material.rowIds.length)
     ||material.status==='included'&&documentData.hasRows&&!material.rowIds.length);
   if(invalid){$('status').textContent='请核对“'+invalid.name+'”的对应明细；不纳入时取消行归属并填写原因。';return;}
   const payload={schemaVersion:1,workflow:documentData.workflow,draftId:documentData.draftId,baseRevision:documentData.baseRevision,
     main:state.main,rows:state.rows.map(row=>({id:row.id,values:row.values})),
     materials:state.materials.map(({id,status,rowIds,note,role})=>({id,status,rowIds,note,...(role!==undefined?{role}:{})}))};
-  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'});
-  const link=el('a');const url=URL.createObjectURL(blob);link.href=url;link.download='FargoWork-'+documentData.workflow+'-修改.json';
-  document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
-  $('status').textContent='修改文件已导出，请交回 Agent。草稿尚未更新，也未确认或提交申请。';
+  const sequence=editSequence;saving=true;$('save').disabled=true;$('status').textContent='正在保存到原草稿…';
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+  try{
+    const endpoint=new URL(documentData.localSave.saveEndpoint,location.href);
+    if(endpoint.origin!==location.origin||!['127.0.0.1','localhost','[::1]'].includes(endpoint.hostname))throw new Error('SAVE_ORIGIN_INVALID');
+    const response=await fetch(endpoint.href,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({edit:payload,version:saveVersion}),signal:controller.signal});
+    const result=await response.json();
+    if(response.status===409){$('status').textContent='草稿已在别处更新，本页未覆盖它。请保留本页修改，告诉 Agent 合并后重新打开。';return;}
+    if(!response.ok||!result.ok||result.saved!==true||typeof result.version!=='string')
+      throw new Error(result.message||'SAVE_FAILED');
+    saveVersion=result.version;unsaved=sequence!==editSequence;
+    $('status').textContent=unsaved?'已保存刚才的修改；还有新修改未保存。':'已保存到原草稿。请告诉 Agent“改好了”，回读核对后继续。';
+  }catch(error){
+    $('status').textContent='尚未确认保存成功，页面中的修改仍保留。请告诉 Agent 检查原草稿，或改用 MD／口述修改。';
+  }finally{clearTimeout(timer);saving=false;$('save').disabled=false;}
 }
 $('title').textContent=documentData.title;if(documentData.demo)$('title').append(el('span','仅供测试','badge'));
 if(documentData.needsInput.length){$('needs').hidden=false;$('needs').append(el('strong','待补充'));
   documentData.needsInput.forEach(message=>$('needs').append(el('p',message)));}
 $('summary-section').hidden=!documentData.summary.length;
 for(const item of documentData.summary){const cell=el('div',undefined,'cell');cell.append(el('span',item.label,'hint'),el('strong',pretty(item.value)));$('summary').append(cell);}
-if(documentData.notes.length){$('notes').hidden=false;for(const item of documentData.notes)$('notes').append(el('p',item.label+'：'+item.text));}
-$('add-row').addEventListener('click',()=>addRow());$('export').addEventListener('click',exportEdit);
+const visibleNotes=documentData.notes.filter(item=>!/津贴分配说明|餐补分配说明/.test(item.label));
+if(visibleNotes.length){$('notes').hidden=false;for(const item of visibleNotes)$('notes').append(el('p',item.label+'：'+item.text));}
+$('add-row').addEventListener('click',()=>addRow());$('save').addEventListener('click',saveEdit);
+document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){
+  event.preventDefault();saveEdit();}});
+window.addEventListener('beforeunload',event=>{if(unsaved||saving){event.preventDefault();event.returnValue='';}});
+if(!documentData.localSave)$('status').textContent='此页面仅供预览。请让 Agent 打开可保存的页面，或使用 MD／口述修改。';
 renderMain();renderRows();renderMaterials();projectVisibility();recalculate();
 </script>
 </body>

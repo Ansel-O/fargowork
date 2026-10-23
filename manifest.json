@@ -1,6 +1,6 @@
 {
   "name": "fargowork-openyida-skills",
-  "version": "3.2.0",
+  "version": "3.4.0",
   "files": [
     {
       "path": ".gitignore",
@@ -14,23 +14,48 @@
     },
     {
       "path": "README.en.md",
-      "bytes": 6631,
-      "sha256": "cd42e81409fc00aa25fddca94183b0dd9878c3466c2567f9c8d744bcf8943d0c"
+      "bytes": 7292,
+      "sha256": "b80ac4d12e179e51a2624986d30dd0e493e586f221e772257b05852087c3fb41"
     },
     {
       "path": "README.md",
-      "bytes": 5129,
-      "sha256": "3faf567491f5d30e0a13cfcad22e93b56bd062a229332d38ac04b57b2a806f38"
+      "bytes": 5517,
+      "sha256": "4326383b3d14f6b8f1040d8ebbed5d5a1df0c69a2eeb58421a671d6037990cc8"
     },
     {
       "path": "SKILL.md",
-      "bytes": 18259,
-      "sha256": "e9db2a2a873357c22c5433908b7ba1574e438898f27c078972b2353b35eac315"
+      "bytes": 18605,
+      "sha256": "c56911589586149c2b68d0196155f745e0ee8797e7badb1d13c0edc9fea69b77"
     },
     {
       "path": "assets/finance-detail-editor.html",
-      "bytes": 19120,
-      "sha256": "08895cc7c05d2921e3bcd86700a245d133674d87a8bdb79682a8b8fc9274aaf0"
+      "bytes": 23087,
+      "sha256": "ea85e251a33748196f6c67b6f7f0a1aa3e59707770fc24487251f9f77ee3ac54"
+    },
+    {
+      "path": "assets/finance-expense-details.md",
+      "bytes": 556,
+      "sha256": "7796d3195b487e27ffd5ad8165a74b434c570ed419139f101b5c03944bdb5b3e"
+    },
+    {
+      "path": "assets/finance-meal-details.md",
+      "bytes": 239,
+      "sha256": "e8182512938356a038a3a24af7e8ea535dadd155dfb532ff988b8d0877aa1724"
+    },
+    {
+      "path": "assets/finance-medical-details.md",
+      "bytes": 198,
+      "sha256": "07ab601a8aa84a47f90c8d447d7316ad6e24d4b2cac31de16cef56df5a366a16"
+    },
+    {
+      "path": "assets/finance-payment-details.md",
+      "bytes": 687,
+      "sha256": "3fc6cd9caf77e587e1fd32d76ccb203b78c5f738902caff16a51f8907188ec4c"
+    },
+    {
+      "path": "assets/finance-trip-details.md",
+      "bytes": 492,
+      "sha256": "36dc1818642e5ad62ef4fb030e486322cd0dedd63cf76e53025dfe9e7bb07105"
     },
     {
       "path": "config/company.json",
@@ -114,8 +139,8 @@
     },
     {
       "path": "config/workflows/finance/meal_transport.json",
-      "bytes": 10622,
-      "sha256": "16b94a4322e7b9f6d0be9c7dbaf024528688849736e99053776e8a23cff5f8a5"
+      "bytes": 10656,
+      "sha256": "de75b5bad909bc2325be854d116c87c4eb3f05e44eaebb1a124be7af9d3084a7"
     },
     {
       "path": "config/workflows/finance/medical_checkup_reimbursement.json",
@@ -214,13 +239,13 @@
     },
     {
       "path": "package-lock.json",
-      "bytes": 311,
-      "sha256": "32978b6c9bdb7753f44de3c8a555ef64c911b877703b261bd901d723a4110793"
+      "bytes": 295,
+      "sha256": "6043cc8e0a48da49834fd63fec1b01585257a65aca28979f684d8d15a3787f2d"
     },
     {
       "path": "package.json",
-      "bytes": 251,
-      "sha256": "6eb8a073e3926241c1a16ea6b3f61b601e27a7bceba4e4739cf91c2e57590e51"
+      "bytes": 241,
+      "sha256": "71a59762c51c0868f7ffcdd1bb4f010f79c946ccd7ed1fc8f4c02d890228d6e1"
     },
     {
       "path": "references/ADAPTING.md",
@@ -244,23 +269,23 @@
     },
     {
       "path": "references/DEBUG.md",
-      "bytes": 5554,
-      "sha256": "52ca27ba19ae0b58ea2740355545a12867ea70648e0c566a56373214c2810f83"
+      "bytes": 6119,
+      "sha256": "28bc81395290eacd5ac6a359b09e8a8115721a6be27980ad6e07bf3f6a9d94d5"
     },
     {
       "path": "references/FINANCE-DETAIL-EDITOR.md",
-      "bytes": 7723,
-      "sha256": "dfe69b0076488bd99906c58ccec3e884a257f33c1966cd108b96eb2ca59d5cc8"
+      "bytes": 7868,
+      "sha256": "c3f748abc1864704cddfb74e75d1e1f71c1a200bd9f3a3ab2d40648fd91030d6"
     },
     {
       "path": "references/FINANCE-DETAILS.md",
-      "bytes": 20959,
-      "sha256": "4f9437053abdc2a13ee7404b1a2342ddae53f540a195302b0bfad95c459493a8"
+      "bytes": 25991,
+      "sha256": "575a75b4f25c572f0e41f66fd09f472e75bb5dc64cb3518bc8286180db76947d"
     },
     {
       "path": "references/PERSONAL.md",
-      "bytes": 7204,
-      "sha256": "716cf488980fe06c08f8086a83dcf12e1264ccd688a0096f6a2d820cd19ab6f0"
+      "bytes": 9549,
+      "sha256": "d8102027fffeb087b44537535187132d81ef14abf37b50acdf76a7c8b9e8ebc6"
     },
     {
       "path": "references/WORKFLOW-DIRECTORY.md",
@@ -269,8 +294,13 @@
     },
     {
       "path": "scripts/fargowork.cjs",
-      "bytes": 59808,
-      "sha256": "2995f9eb3f5b669d6c0860c411881b135e8ac02ac3476c461485cc55495466ac"
+      "bytes": 71059,
+      "sha256": "cacb366540482f84c509a203cf198d491e52216ce27cb645abd65c01a6ebcf0e"
+    },
+    {
+      "path": "scripts/finance-editor-server.cjs",
+      "bytes": 431,
+      "sha256": "88efb48138a93e158fdbe77d96fb605e2a1708b00ec98fd48992937ed56a6e7b"
     },
     {
       "path": "scripts/lib/attachment-verification-cache.cjs",
@@ -304,8 +334,8 @@
     },
     {
       "path": "scripts/lib/personal.cjs",
-      "bytes": 8941,
-      "sha256": "0afeac079448a022983b069f74165a2a15d97c67339716d03ee086c633a6d1fa"
+      "bytes": 9888,
+      "sha256": "b2e667d54e51a8b5a748261c2eaabc886c007af2af5c7733b83b1a71eca8d94b"
     },
     {
       "path": "scripts/lib/policy.cjs",
@@ -324,8 +354,8 @@
     },
     {
       "path": "scripts/lib/support.cjs",
-      "bytes": 10100,
-      "sha256": "43c7b9f791478a14b0ea2e07e11706be2282426b74284aa71eb029c5f58ef294"
+      "bytes": 11122,
+      "sha256": "c35c533a3b6ba6abfc1984b17b5602094002f3514af757a0c2d9293878a022d5"
     },
     {
       "path": "scripts/lib/update-notice.cjs",
@@ -344,13 +374,13 @@
     },
     {
       "path": "scripts/setup.cjs",
-      "bytes": 7239,
-      "sha256": "1777135666a9e040396d68f073867bd952c4fbe411679b3bb9420dd22a4198b2"
+      "bytes": 7518,
+      "sha256": "a57e0929021d23ce8c492f5397596654bb50971b2297f242369b0c0abcda47dd"
     },
     {
       "path": "shared/account-recommendation.cjs",
-      "bytes": 5327,
-      "sha256": "a1c236c50a1bc32e1a1bb397815e24bd1bfa025d4d7f14dc08cc6fb95a908d40"
+      "bytes": 5741,
+      "sha256": "5c175002d9c8be025b133361232b618299c843df87c3ce86403537a53fd6eec0"
     },
     {
       "path": "shared/decimal-arithmetic.cjs",
@@ -399,8 +429,8 @@
     },
     {
       "path": "shared/finance-detail-editor.cjs",
-      "bytes": 27586,
-      "sha256": "ca210925f4bc2809925f9dcfcb04dfef010cb0f935ff6e61db85c7a0ff260088"
+      "bytes": 38213,
+      "sha256": "c39cb7bb4c823d27193e39aa3074f97738a531ce5de51f7cba8710005c5909a2"
     },
     {
       "path": "shared/finance-details.cjs",
@@ -408,9 +438,19 @@
       "sha256": "36ce5a164bb291a41d28023921cab33982a922918770aeddb989a67ca8fbdcd0"
     },
     {
+      "path": "shared/finance-local-editor.cjs",
+      "bytes": 15000,
+      "sha256": "d65c98f14dda87cd4ec7002323ab9eb8c3ecd802e5b7c75df97a17d65bda7c0c"
+    },
+    {
       "path": "shared/finance-local-update.cjs",
       "bytes": 2126,
       "sha256": "5362e6448a2ece698c03a7792a9e751c445eece948778f79c3f341e9ed5f95e9"
+    },
+    {
+      "path": "shared/finance-markdown.cjs",
+      "bytes": 31916,
+      "sha256": "9a2937c9017f29ac3b0137a433ae62fbd93f804c2fd1defdd60bd9b733f51bdf"
     },
     {
       "path": "shared/initial-values.cjs",
@@ -504,38 +544,38 @@
     },
     {
       "path": "skills/finance/default-bank-change/SKILL.md",
-      "bytes": 5750,
-      "sha256": "7ae802eedd6a57bfc3897351532ca3b2113dd711bb6eb7955056d21fafcd016c"
+      "bytes": 7206,
+      "sha256": "7d710302cd8723329ab756e9e34e881038a2baf3174e8aa27552fbf1cf64970c"
     },
     {
       "path": "skills/finance/expense-reimbursement/SKILL.md",
-      "bytes": 12695,
-      "sha256": "0a13db8da2598b84b0383aacd4f677408537b4f76340aa9bbe094c3f17fefcb5"
+      "bytes": 13548,
+      "sha256": "a487daf32caa7c8b03c1473da1f919e8a3113441854927891b7ba8aa4cfeb785"
     },
     {
       "path": "skills/finance/external-expense-application/SKILL.md",
-      "bytes": 15881,
-      "sha256": "008e988ec547e9bb3537f7a8c999a5cb9f9ebcd59cba2f9ef655a341a7b1ef60"
+      "bytes": 17022,
+      "sha256": "87d7f04930db22964f2274a7811318999b60f8334fa40eef9f7d4490bff7696d"
     },
     {
       "path": "skills/finance/external-expense-request/SKILL.md",
-      "bytes": 7798,
-      "sha256": "161181816674addf890569a224380935f7be8824d8f149f6866aaac9b73ec91b"
+      "bytes": 7975,
+      "sha256": "167b7e37dd6f695c81ea25dfa6d19f159cbf3c1e87719047dd005b9368dc56f2"
     },
     {
       "path": "skills/finance/meal-transport/SKILL.md",
-      "bytes": 9495,
-      "sha256": "38cd97020df59af2c8f38c96439f9b5970045575393c94ff4664186943973f83"
+      "bytes": 11503,
+      "sha256": "af9a70414b6135ffbe9d1f58a43593e69d35ede8434389ecc458e1b841b31160"
     },
     {
       "path": "skills/finance/medical-checkup-reimbursement/SKILL.md",
-      "bytes": 7776,
-      "sha256": "b7390853099de4ca31fc47df7c27554b68c13e7d5465d0a9cabb65481d6e81df"
+      "bytes": 8486,
+      "sha256": "de5ba40b3d84d6e6cea33bf2f93c36ac7996ffe2f08b3171f3878ddf2f156332"
     },
     {
       "path": "skills/finance/trip-expense-reimbursement/SKILL.md",
-      "bytes": 12165,
-      "sha256": "b182d4e973a1cfde1bcf7ffaa9f0fbb1aafa0b8a488ac704565298e2e37d5b85"
+      "bytes": 12717,
+      "sha256": "043ae81ef09db63092182f94015ab77041a2612348e58e0b3ac834900aad0371"
     },
     {
       "path": "skills/hr/employee-certificate/SKILL.md",
@@ -674,18 +714,18 @@
     },
     {
       "path": "workflows/finance/default-bank-change.cjs",
-      "bytes": 6118,
-      "sha256": "517c1cd3cad6e01ce5f82a92c09df31a9aee63ce8db0a5884df252a950ee2823"
+      "bytes": 6553,
+      "sha256": "f61114ef180ff843bafe5974c40f49e63fad3888439c096c2ba77aa7201c74df"
     },
     {
       "path": "workflows/finance/expense-reimbursement.cjs",
-      "bytes": 25372,
-      "sha256": "d7326d9797c5631cfd0d8f4f02f23a4f4545a3741ee74f9366e21008f90b2bfb"
+      "bytes": 25780,
+      "sha256": "39d440d47db3588243c9ccefaf4e460254c48bf6e8250fe48c9fc0948235c549"
     },
     {
       "path": "workflows/finance/external-expense-application.cjs",
-      "bytes": 30543,
-      "sha256": "c6c7745a5e7bf4d081715b2e72bbcfc5a9735837d544ee7c3159d4ca5497e23b"
+      "bytes": 30942,
+      "sha256": "77c8032c1ebbf3bdc1430574d01ed26f3c499ffd80bae1af3da323267d71b2ad"
     },
     {
       "path": "workflows/finance/external-expense-request.cjs",
@@ -694,18 +734,18 @@
     },
     {
       "path": "workflows/finance/meal-transport.cjs",
-      "bytes": 16774,
-      "sha256": "7c44cbd9b5c200b6c051128d586def1c4bdaf184552212c4c2ed845f950e958f"
+      "bytes": 18385,
+      "sha256": "eec5c2fb2720f3804656cfe2fda28e6ce8494d8cda77fba7fc33c7b3970209db"
     },
     {
       "path": "workflows/finance/medical-checkup-reimbursement.cjs",
-      "bytes": 10119,
-      "sha256": "c83de3ccdb5cc2effc90218dcffed993f5f445144737146c304f23d3193dd71b"
+      "bytes": 10824,
+      "sha256": "faccfcd19d7e59b3ddc655975229f99fc325258f69be3c18cbabb1d89370d0bc"
     },
     {
       "path": "workflows/finance/trip-expense-reimbursement.cjs",
-      "bytes": 34904,
-      "sha256": "13e3f997964e88edb014be166a276e7fa53c03eaea59b93767e5cace17e1c896"
+      "bytes": 35454,
+      "sha256": "97afb9612bdbddd5d8ff255fd9c85a8e29a6c831ce6d7f05c9774e017776c7ad"
     },
     {
       "path": "workflows/hr-common.cjs",

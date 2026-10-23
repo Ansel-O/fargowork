@@ -31,7 +31,9 @@ const requirements={required:['items','is_project'],optional:['claimant_query','
     '先确定报销人、合法支付公司与收款币种，并明确是否项目，再计算明细；未明确是否项目时补问，不能默认为非项目。',
     '差旅津贴按自然日只自动建议一次，日期含首尾、同日一天；按实际行程顺序，前序行已覆盖日期不再自动计算，重叠日归前段。员工可修改、填0或清空，后续不覆盖。',
     '每行关联本报销人已完成且同意的正式出差单；只有报销人为jefferson.sun时可不填，主动关联仍核验。',
-    '先整理材料及可修改行程明细并确认，再补主表/附件；完整申请预览后另等新的提交确认。']};
+    '先用 review 默认生成MD明细，每条独立一块，日期、关联出差、四项费用、津贴建议天数/金额/分配说明及项目备注放在一起；不展示汇率，不再生成本流程HTML。',
+    '口述修改回写同草稿，或保存原MD后告知改好了并用 read-edit 回读；保留材料归属、行身份及员工津贴修改含0/清空，用已有公司汇率代码重算，不采纳文件手改汇率或派生结果，不要求导出上传。',
+    '先确认MD行程明细，再补主表/附件，完整申请仍为MD；24小时内普通编辑不全量重查。完整预览后另等新的提交确认，保存回读不等于确认。']};
 const allowed=[...requirements.required,...requirements.optional];
 const itemAllowed=[...requirements.items.required,...requirements.items.optional];
 const source=name=>sources[config.sources[name]];

@@ -8,7 +8,7 @@ const crypto = require('node:crypto');
 const {check, dataRoot, write} = require('./common.cjs');
 const {corpId: COMPANY} = require('../../config/company.json');
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const MAX_BYTES = 16 * 1024;
 const PREFERENCE_FIELDS = Object.freeze(Object.fromEntries(Object.entries({
   language: ['zh-CN', 'zh-TW', 'en'],
@@ -19,7 +19,7 @@ const PREFERENCE_FIELDS = Object.freeze(Object.fromEntries(Object.entries({
   trip_purpose_hint: ['internal_collaboration', 'customer_visit'],
   expense_context_hint: ['normal', 'project']
 }).map(([key, values]) => [key, Object.freeze(values)])));
-const PERSONAL_KEYS = Object.freeze(Object.keys(PREFERENCE_FIELDS));
+const PERSONAL_KEYS = Object.freeze([...Object.keys(PREFERENCE_FIELDS), 'card_hints']);
 const USAGE = Object.freeze({
   advisoryOnly: true,
   verifyCurrentFacts: true,
@@ -43,12 +43,33 @@ function object(value) {
 function shape(value, keys, code = 'PERSONAL_INPUT_INVALID') {
   check(object(value) && Object.keys(value).every(key => keys.includes(key)), code);
 }
-function values(value, {allowEmpty = true, code = 'PERSONAL_VALUE_INVALID'} = {}) {
-  shape(value, PERSONAL_KEYS, 'PERSONAL_FIELD_NOT_ALLOWED');
+function hintText(value, maximum, code) {
+  check(typeof value === 'string' && value.trim().length > 0 && value.length <= maximum
+    && !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(value)
+    && (value.normalize('NFKC').match(/\p{Nd}/gu) || []).length <= 4, code);
+  return value.trim();
+}
+function cardHints(value, code) {
+  check(Array.isArray(value) && value.length <= 10, code);
+  return value.map(hint => {
+    shape(hint, ['nickname', 'last4', 'purpose'], code);
+    check(typeof hint.last4 === 'string' && /^[0-9]{4}$/.test(hint.last4), code);
+    return {nickname: hintText(hint.nickname, 30, code), last4: hint.last4,
+      purpose: hintText(hint.purpose, 60, code)};
+  });
+}
+function values(value, {allowEmpty = true, legacy = false, code = 'PERSONAL_VALUE_INVALID'} = {}) {
+  shape(value, legacy ? Object.keys(PREFERENCE_FIELDS) : PERSONAL_KEYS, 'PERSONAL_FIELD_NOT_ALLOWED');
   check(allowEmpty || Object.keys(value).length > 0, code);
-  for (const [key, item] of Object.entries(value))
-    check(typeof item === 'string' && PREFERENCE_FIELDS[key].includes(item), code);
-  return {...value};
+  const result = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (key === 'card_hints') result[key] = cardHints(item, code);
+    else {
+      check(typeof item === 'string' && PREFERENCE_FIELDS[key].includes(item), code);
+      result[key] = item;
+    }
+  }
+  return result;
 }
 function hash(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
@@ -117,12 +138,12 @@ function createPersonalStore(options = {}) {
     try { record = JSON.parse(content.replace(/^\uFEFF/, '')); }
     catch { check(false, 'PERSONAL_DATA_INVALID'); }
     shape(record, ['schemaVersion', 'ownerKey', 'values', 'updatedAt'], 'PERSONAL_DATA_INVALID');
-    check(record.schemaVersion === SCHEMA_VERSION, 'PERSONAL_SCHEMA_UNSUPPORTED');
+    check(record.schemaVersion === 1 || record.schemaVersion === SCHEMA_VERSION, 'PERSONAL_SCHEMA_UNSUPPORTED');
     check(record.ownerKey === identity.key, 'PERSONAL_OWNER_MISMATCH');
     check(typeof record.updatedAt === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(record.updatedAt)
       && Number.isFinite(Date.parse(record.updatedAt)), 'PERSONAL_DATA_INVALID');
     let stored;
-    try { stored = values(record.values); } catch { check(false, 'PERSONAL_DATA_INVALID'); }
+    try { stored = values(record.values, {legacy: record.schemaVersion === 1}); } catch { check(false, 'PERSONAL_DATA_INVALID'); }
     return {exists: true, values: stored};
   }
   function unavailable(operation, error) {
@@ -184,7 +205,7 @@ function createPersonalStore(options = {}) {
     check(Array.isArray(request.keys) && request.keys.length > 0
       && request.keys.length <= PERSONAL_KEYS.length
       && new Set(request.keys).size === request.keys.length
-      && request.keys.every(key => typeof key === 'string' && Object.hasOwn(PREFERENCE_FIELDS, key)),
+      && request.keys.every(key => typeof key === 'string' && PERSONAL_KEYS.includes(key)),
     'PERSONAL_KEYS_INVALID');
     const keys = [...request.keys];
     return mutate('delete', prior => {

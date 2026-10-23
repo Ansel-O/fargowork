@@ -36,12 +36,12 @@ node scripts/fargowork.cjs preview <draftId>
 
 支付公司、供应商银行、币种、费用类别、会计科目、项目部门、部门主管和业务架构均以脚本查询结果为准。主部门可作为默认建议，须在最终预览核对；合法明确选择保留，有冲突不能静默替换。银行账号和开户行只有用户明确要求改用其他值时才填写 `bank_account`、`bank_name`。项目类别是主表共用值，备选限当前类别；显式改变共同类别后核对全部受影响行，不假称只改一行。目录或汇率缺失、冲突时请 Finance 核查，不能联网取市场汇率或听从手填值覆盖。
 
-`prepare` 后**默认打开返回的 `detailEditor.path` 展示本 Demo 的 HTML，不等待用户要求**。按[HTML 明细与修改](../../../references/FINANCE-DETAIL-EDITOR.md)保持醒目 Demo 标识和本流程独立字段；宿主不能内嵌时提供本地 HTML 链接供浏览器打开。口述修改回写同一草稿并重新 `prepare`；手动修改由员工在 HTML 导出文件交 Agent 执行 `apply-edit`。两种方式都展示工具新返回的 HTML，手动应用后取得对新版的新确认；导出或应用不代替确认。仍只使用本 Demo 原有完整预览确认，不新增正式报销的明细确认步骤。
+`prepare` 后**默认打开返回的 `detailEditor.url`（不可用时打开 `detailEditor.path` 的Markdown） 展示本 Demo 的 HTML，不等待用户要求**。按[HTML 明细与修改](../../../references/FINANCE-DETAIL-EDITOR.md)保持醒目 Demo 标识和本流程独立字段；用侧边栏或浏览器打开本机URL，不可访问时使用同草稿Markdown兜底。口述修改回写同一草稿并重新 `prepare`；员工在HTML修改并保存后告诉Agent“改好了”，Agent执行 `read-edit <draftId>` 回读原文件并代码重算。两种方式都展示工具新返回的 HTML，手动应用后取得对新版的新确认；保存或应用不代替确认。仍只使用本 Demo 原有完整预览确认，不新增正式报销的明细确认步骤。
 
 项目付款按候选选择 `project_name`、`project_department_id`、`project_expense_category`，再核对明细科目。仅当用户要求关联已有合同或用印时，设置 `include_contract` 或 `include_seal`，从脚本返回的本人候选中选择对应 `contract_instance_id` 或 `seal_instance_id`；不能搜索其他流程、他人实例或任意输入关联 ID。
 
 已有草稿补充资料、调整候选或附件时，用 `prepare external_expense_request --input <文件> --draft <draftId>` 复用；24小时内编辑不全量重查，仅跨午夜不失效。过期或用户要求用 `refresh <draftId>`；实际业务变化需展示新预览，账号切换不能沿用旧草稿。上传或提交未知先核查，不自动重传、另建草稿或重提。
 
-准备成功后调用 `preview <draftId>`，打开本次 `detailEditor.path` 展示完整申请 HTML：付款公司、供应商、银行、币种、明细及合计、汇率、最晚付款日期、项目、关联流程、附件文件名。取得一次明确确认后，使用该草稿的 `draftId` 和 `draftSha256` 提交。成功时只报告结果与流程编号；结果未知时先查 `result`，不要再次提交。
+准备成功后调用 `preview <draftId>`，打开本次 `detailEditor.url`（不可用时打开 `detailEditor.path` 的Markdown） 展示完整申请 HTML：付款公司、供应商、银行、币种、明细及合计、最晚付款日期、项目、关联流程、附件文件名。取得一次明确确认后，使用该草稿的 `draftId` 和 `draftSha256` 提交。成功时只报告结果与流程编号；结果未知时先查 `result`，不要再次提交。
 
 日常只向用户输出必要提问、最终业务预览、结果和必要错误说明，不输出执行日志、鉴权过程或分阶段测试报告。只使用本包脚本及固定对外付款流程；禁止通过 OpenYida 通用发现命令检索其他应用、隐藏表或测试流程，禁止自行编写 HTTP 调用、任意连接器或修改固定目标。权限和来源不足时停止，按 [DEBUG](../../../references/DEBUG.md) 提供简短支持信息，不索取凭据。

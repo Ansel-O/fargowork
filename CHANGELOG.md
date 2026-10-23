@@ -1,5 +1,31 @@
 # 更新记录
 
+## 3.4.0 — HTML 本机保存 / Save HTML edits locally · 2026-10-23
+
+- 财务明细默认HTML，页面保存直接更新同一份本机草稿；无需选择文件、下载或导出交回。付款Demo同步适配，银行卡仍直接对话。
+- 口述、HTML与MD兜底共用业务输入、公司来源和代码计算；保存后回读，保留各流程原确认步骤。旧页面不能覆盖新修订。
+- 本机保存程序随包提供，使用已有Node.js自动启动与复用；页面不可用时使用同草稿MD。无需公司服务端或新增npm依赖。
+- 保留3.3.0的流程细节、分钟时间、体检封顶和旧卡提示；业务规则与最低客户端门槛不变。
+- Finance details open in HTML and save to the same local draft without a file picker, download or export. The payment Demo follows the same path; bank changes stay in chat.
+- Chat, HTML and Markdown fallback share business inputs, company data and calculation code. Saved edits are read back before existing confirmation steps; stale pages cannot overwrite newer revisions.
+- The bundled local helper starts and reuses the installed Node.js runtime. Use the same draft in Markdown when the page is unavailable; no company server or extra npm dependency is required.
+- Retains 3.3.0 workflow improvements, minute-level times, medical caps and old-card hints. Rule versions and minimum client requirements are unchanged.
+
+## 3.3.0 — MD 明细版 / Markdown editing edition · 2026-10-23
+
+- 费用报销、出差报销、正式对外付款、餐费交通补贴、体检报销默认提供独立 MD 模板；支持口述修改、保存原文件后回读和代码重算。
+- 明细隐藏汇率，计算继续使用已取得的公司维护资料；费用与付款提供按类别分组的合法科目候选，出差按行成块保留行程、费用和差旅津贴。
+- 餐费交通保留分钟级时间、18:30 默认开始时间及两类附件；体检固定人民币、自动封顶1500元，保留原确认规则。
+- 银行卡变更简化为对话核对；经用户同意，只保存仍会使用的旧卡昵称、尾号和用途，不保存完整收款资料。
+- Five formal finance workflows provide individual Markdown templates, supporting chat edits, original-file readback and shared-code recalculation.
+- Company-maintained rates remain internal. Expense and payment drafts include grouped account candidates; travel details keep each itinerary row, costs and allowance together.
+- Meal and transport retain minute-level times, the 18:30 default start and separate attachment roles. Medical claims remain CNY-only and capped at 1,500, with existing confirmation rules.
+- Bank changes use conversation review. With consent, only nicknames, last four digits and purposes of old cards still in use are remembered.
+
+独立 `md-editing` 分支版本，安装固定 `v3.3.0`；付款 Demo 保留原 HTML，业务规则版本和最低客户端门槛不变。
+
+Independent `md-editing` edition: pin installation to `v3.3.0`. The payment Demo retains its HTML review. Rule versions and minimum client requirements are unchanged.
+
 ## 3.2.0 — 草稿复用与即时计算 / Draft reuse and live calculations · 2026-10-21
 
 - 所有可办理流程从首版可核对草稿起，连续 24 小时复用已取得的公司资料；修改不顺延有效期，新增缺项按需补取，用户可主动刷新。
