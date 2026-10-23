@@ -1,5 +1,20 @@
 # 更新记录
 
+## 3.3.0 — MD 明细版 / Markdown editing edition · 2026-10-23
+
+- 费用报销、出差报销、正式对外付款、餐费交通补贴、体检报销默认提供独立 MD 模板；支持口述修改、保存原文件后回读和代码重算。
+- 明细隐藏汇率，计算继续使用已取得的公司维护资料；费用与付款提供按类别分组的合法科目候选，出差按行成块保留行程、费用和差旅津贴。
+- 餐费交通保留分钟级时间、18:30 默认开始时间及两类附件；体检固定人民币、自动封顶1500元，保留原确认规则。
+- 银行卡变更简化为对话核对；经用户同意，只保存仍会使用的旧卡昵称、尾号和用途，不保存完整收款资料。
+- Five formal finance workflows provide individual Markdown templates, supporting chat edits, original-file readback and shared-code recalculation.
+- Company-maintained rates remain internal. Expense and payment drafts include grouped account candidates; travel details keep each itinerary row, costs and allowance together.
+- Meal and transport retain minute-level times, the 18:30 default start and separate attachment roles. Medical claims remain CNY-only and capped at 1,500, with existing confirmation rules.
+- Bank changes use conversation review. With consent, only nicknames, last four digits and purposes of old cards still in use are remembered.
+
+独立 `md-editing` 分支版本，安装固定 `v3.3.0`；付款 Demo 保留原 HTML，业务规则版本和最低客户端门槛不变。
+
+Independent `md-editing` edition: pin installation to `v3.3.0`. The payment Demo retains its HTML review. Rule versions and minimum client requirements are unchanged.
+
 ## 3.2.0 — 草稿复用与即时计算 / Draft reuse and live calculations · 2026-10-21
 
 - 所有可办理流程从首版可核对草稿起，连续 24 小时复用已取得的公司资料；修改不顺延有效期，新增缺项按需补取，用户可主动刷新。

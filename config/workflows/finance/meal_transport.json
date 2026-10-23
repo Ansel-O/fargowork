@@ -147,6 +147,7 @@
   },
   "rules": {
     "offsetMinutes": 480,
+    "defaultStartTime": "18:30",
     "managerIndex": 0,
     "mealAmounts": {
       "HKD": 100,

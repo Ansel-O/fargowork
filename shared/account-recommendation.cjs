@@ -36,6 +36,10 @@ function buildRecommendationContext(options) {
     allowedPairs = allowedPairs.filter(pair => pair.category === fixedCategory);
     check(allowedPairs.length > 0, 'RECOMMENDATION_FIXED_CATEGORY_INVALID');
   }
+  // Keep the already-resolved scope for joint category/account edits. The
+  // row's current category still narrows its ordinary recommendation list.
+  // A fixed project category bounds both lists before either is exposed.
+  const catalogPairs = allowedPairs.map(pair => ({...pair}));
   const conflicts = [];
   if (explicitCategory !== undefined) {
     const matching = allowedPairs.filter(pair => pair.category === explicitCategory);
@@ -46,7 +50,7 @@ function buildRecommendationContext(options) {
     conflicts.push('account');
   }
 
-  const context = {scope, description, categoryInputKey, accountInputKey, allowedPairs};
+  const context = {scope, description, categoryInputKey, accountInputKey, allowedPairs, catalogPairs};
   if (explicitCategory !== undefined) context.explicitCategory = explicitCategory;
   if (explicitAccount !== undefined) context.explicitAccount = explicitAccount;
   if (fixedCategory !== undefined) context.fixedCategory = fixedCategory;
@@ -63,7 +67,7 @@ function buildRecommendationContext(options) {
     '仅从 allowedPairs 的完整类别与科目配对中给出建议，不跨配对拼接、不编造目录项；候选顺序不代表推荐顺序。',
     '已有明确输入出现冲突时，询问相关业务事实或请员工澄清，不能用建议静默覆盖明确输入。',
     '用途足够明确时，Agent 必须从合法配对中主动建议一组类别与科目，按 categoryInputKey / accountInputKey 回填当前明细草稿，并附简短依据；保留员工已有合法明确选择。不能仅返回目录、让员工自行查目录，或把分类推迟到最终预览。',
-    '草稿每行实际值只能有一组类别与科目。currentSelection 是当前合法选择；alternativePairs 仅是其范围内尚未排序的合法候选，不代表都适合本次用途。结合用途有合理备选时，在表外按行号单独提示另一组科目及简短理由，询问是否替换；供应商主表分类单独标明，不混入费用明细。无合理备选不凑数量、不重复推销员工已明确选择。',
+    '草稿每行实际值只能有一组类别与科目。currentSelection 是当前合法选择；alternativePairs 仅是其范围内尚未排序的合法候选，不代表都适合本次用途。按本流程固定模板展示：费用报销及正式对外付款MD将少量合理科目备选按类别分组去重，保留完整原文供复制替换，不另加逐行长篇说明；其他模板按原结构提示适用备选。供应商主表分类单独标明，不混入费用明细。无合理备选不凑数量、不重复推销员工已明确选择。',
     '员工接受推荐，或对已展示草稿明确指定替换某行且其余保持时，校验并简短回显后继续，不重问未改行。此选择只覆盖员工看到并指定的明细变更，不授权最终提交；来源、金额、材料或其他行发生额外变化时仍需核对实际变化，最终完整申请另等新的提交确认。',
     '项目类别是主表共用值，备选仅限当前固定项目类别。员工显式改共同类别时重新核对全部受影响行，不能声称只改了一行；固定科目不开放选择。备选、评分或说明不能作为额外科目值混入业务输入或提交数据。',
     '只有用途等关键业务事实不足或明确输入冲突时允许不推荐，此时说明具体缺项并集中补问；已知用途不能跳过建议，待补行也应保留在当前明细草稿中。',

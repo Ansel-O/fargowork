@@ -19,9 +19,12 @@ const requirements={required:['items','attendance_attachments'],
     'business_line','business_subline',...Object.keys(bankFields),'description','expense_attachments',...PaymentHistory.INPUT_FIELDS],
   item:{required:['reason'],optional:['start_time','end_time','transport_amount','remarks'],minimumRows:1,maximumRows:50},
   attachments:{fields:config.attachments.fields.map(f=>({...f,required:f.inputField==='attendance_attachments',maximumCount:20,maximumMiB:100}))},
-  notes:['起止时间到分钟；结束时间默认等于开始时间，未提供开始时间时请提供结束时间。',
-    '先整理本次材料及可修改加班明细并确认，再补主表及两个附件栏；首轮确认不授权提交。',
-    '个人收款资料首次带入后可以修改。支付公司只能从本人映射中选择。','餐补及港币金额自动计算，最终预览后等待新的员工确认。']};
+  notes:['原表开始和结束是含日期/小时/分钟的原生时间组件；业务输入用完整YYYY-MM-DD HH:mm，不截成仅日期或小时。跨零点保留真实次日日期，例如10月21日18:30至10月22日00:25。',
+    '未明确开始时间时默认加班当天18:30，可改实际分钟，保留员工明确修改或清空。日期不清先询问，不能拿申请日期代替加班日期；仅有凌晨结束时间时确认跨日的加班日期。结束时间仍默认等于开始时间。',
+    '先确定本人支付公司及收款币种：唯一合法组合自动采用，多项询问；再review默认生成MD明细、口述或保存回读后本地重算并确认，不新增项目或科目选择。确认后补主表及两个附件栏，完整申请仍为MD，首轮确认不授权提交。',
+    '口述修改回写同一草稿，或保存原MD后告知改好了并用read-edit回读；交通费为员工输入，餐费补贴由原公式计算，不采纳手改公式结果、汇率或合计，用已有公司来源代码重算回写，不要求导出上传。',
+    '打卡证明attendance_attachments必填，expense_attachments可选；材料role与materialUploads转换来源独立保留，不混附件栏或用途。',
+    '个人收款资料首次带入后可以修改。支付公司只能从本人映射中选择。餐费补贴及后台港币金额自动计算；汇率、固定科目和港币计算隐藏，完整MD预览后等待新的员工确认，24小时内不因普通编辑全量重查。']};
 const inputFields=['items','department_id','payment_company','reimbursement_currency','same_bearing_company','bearing_company',
   'business_structure','business_line','business_subline',...Object.keys(bankFields),
   'description','attendance_attachments','expense_attachments',...PaymentHistory.INPUT_FIELDS];
@@ -97,10 +100,18 @@ async function buildDetails(input,ctx,fields) {
       mealAmount:mealAmount(currency,rules.mealAmounts,rules.otherCurrencyMealAmount),
       transportAmount:C.absent(item.transport_amount)?'':amount(item.transport_amount),
       remarks:textInput(item.remarks,F.remark,fields)};
-    if(!C.absent(item.start_time)) {
-      native[F.startTime]=localMinute(item.start_time,rules.offsetMinutes);row.startTime=item.start_time.replace('T',' ');
+    let start=item.start_time;
+    if(!Object.hasOwn(item,'start_time')&&!C.absent(item.end_time)) {
+      const end=localMinute(item.end_time,rules.offsetMinutes);
+      const candidate=item.end_time.slice(0,10)+' '+rules.defaultStartTime;
+      if(localMinute(candidate,rules.offsetMinutes)<=end)start=candidate;
+      else needs.push({field:`items[${index}].start_time`,
+        message:`请确认第 ${index+1} 行的加班日期；开始时间默认该日18:30，只有凌晨结束时间时无法确定是否属于前一天。`});
     }
-    const end=item.end_time===undefined?item.start_time:item.end_time;
+    if(!C.absent(start)) {
+      native[F.startTime]=localMinute(start,rules.offsetMinutes);row.startTime=start.replace('T',' ');
+    }
+    const end=item.end_time===undefined?start:item.end_time;
     if(C.absent(end)) needs.push({field:`items[${index}].end_time`,message:`请补充第 ${index+1} 行结束时间（到分钟）。`});
     else {native[F.endTime]=localMinute(end,rules.offsetMinutes);row.endTime=end.replace('T',' ');}
     if(!row.reason)needs.push({field:`items[${index}].reason`,message:`请补充第 ${index+1} 行加班原因。`});

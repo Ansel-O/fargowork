@@ -44,6 +44,7 @@ const {supportForError} = require('./lib/support.cjs');
 const DetailReview = require('../shared/detail-review.cjs');
 const LocalUpdate = require('../shared/finance-local-update.cjs');
 const Editor = require('../shared/finance-detail-editor.cjs');
+const Markdown = require('../shared/finance-markdown.cjs');
 const {createAttachmentVerifier}=require('./lib/attachment-verification-cache.cjs');
 const Directory = require('./lib/workflow-directory.cjs');
 const DraftSnapshot = require('./lib/draft-snapshot.cjs');
@@ -77,6 +78,7 @@ function parse(args) {
     'confirm-details': ['confirm'],
     editor: ['output'],
     'apply-edit': ['input'],
+    'read-edit': [],
     prepare: ['input', 'draft'],
     submit: ['confirm'],
     preview: [],
@@ -92,7 +94,7 @@ function parse(args) {
     directory: [], personal: ['input','confirm']
   };
   check(Object.hasOwn(accepted, command) && Object.keys(options).every(k => accepted[command].includes(k)), 'COMMAND_NOT_ALLOWED');
-  if (['details', 'review', 'confirm-details', 'prepare', 'submit', 'preview', 'refresh', 'result', 'requirements','personal','editor','apply-edit'].includes(command)) check(positionals.length === 1, 'ARGUMENT_INVALID');else check(positionals.length === 0, 'ARGUMENT_INVALID');
+  if (['details', 'review', 'confirm-details', 'prepare', 'submit', 'preview', 'refresh', 'result', 'requirements','personal','editor','apply-edit','read-edit'].includes(command)) check(positionals.length === 1, 'ARGUMENT_INVALID');else check(positionals.length === 0, 'ARGUMENT_INVALID');
   return {
     command,
     arg: positionals[0],
@@ -175,13 +177,21 @@ function checkFiles(files, rules) {
     if (rules.accept.length) check(rules.accept.includes(path.extname(f).toLowerCase()) || rules.accept.includes('*') || rules.accept.includes('*/*'), 'ATTACHMENT_TYPE_NOT_ALLOWED_BY_FORM');
   }
 }
-function inputData(options, detailReview = false) {
+function inputData(options, detailReview = false, markdown = false) {
   check(options.input && path.isAbsolute(options.input), 'INPUT_FILE_REQUIRED');
   const raw = read(options.input);
   check(raw && typeof raw === 'object' && !Array.isArray(raw), 'INPUT_OBJECT_REQUIRED');
   const input = {
     ...raw
   };
+  const recommendations=markdown?input.recommendations:undefined;
+  if(markdown) {
+    delete input.recommendations;
+    check(recommendations===undefined||Array.isArray(recommendations)&&recommendations.every(value=>
+      value&&typeof value==='object'&&!Array.isArray(value)&&typeof value.category==='string'
+      &&typeof value.account==='string'&&Object.keys(value).every(key=>['category','account'].includes(key))),
+    'DETAIL_EDITOR_RECOMMENDATIONS_INVALID');
+  }
   const files = input.attachments ?? [];
   delete input.attachments;
   const materials = detailReview ? input.materials : undefined;
@@ -192,6 +202,7 @@ function inputData(options, detailReview = false) {
     input,
     files,
     filesProvided: Object.hasOwn(raw, 'attachments'),
+    ...(markdown?{recommendations,recommendationsProvided:Object.hasOwn(raw,'recommendations')}:{ }),
     ...(detailReview ? {materials, materialsProvided: Object.hasOwn(raw, 'materials'),
       materialUploads,materialUploadsProvided:Object.hasOwn(raw,'materialUploads')} : {})
   };
@@ -326,51 +337,104 @@ function editorContext(dir,id,info) {
       status:'included',itemIndexes:(info.input.items||[]).map((_,index)=>index),note:''}));
   return {review,prepared,materials,baseRevision:digest({
     content:Editor.revision({workflow:info.workflow,draftId:id,input:info.input,review,prepared,materials}),
-    revisionId:info.revisionId??null,version:info.version})};
+    revisionId:info.revisionId??null,version:info.version,
+    ...(Markdown.supports(info.workflow)?{recommendations:info.recommendations||[]}:{})})};
+}
+function editorFileState(dir,info) {
+  if(!Markdown.supports(info.workflow)) return null;
+  const file=path.join(dir,'editor-file.json');
+  if(!fs.existsSync(file))return null;
+  const saved=read(file);
+  check(saved.workflow===info.workflow&&saved.format==='md'&&path.isAbsolute(saved.path)
+    &&path.extname(saved.path).toLowerCase()==='.md','DETAIL_EDITOR_FILE_INVALID');
+  return {...saved,actualSha256:fs.existsSync(saved.path)?digest(fs.readFileSync(saved.path,'utf8')):null};
+}
+function assertEditorFileUnchanged(dir,info,expected,allowPending=false) {
+  const saved=editorFileState(dir,info);
+  if(!saved)return;
+  check(allowPending||!saved.pendingGeneration,'DETAIL_EDITOR_RENDER_FAILED');
+  if(expected?.editorFile) {
+    check(path.resolve(saved.path)===path.resolve(expected.editorFile.path)
+      &&saved.actualSha256===expected.editorFile.sha256,'DETAIL_EDITOR_REVISION_CONFLICT');
+  } else check(saved.actualSha256===null||saved.actualSha256===saved.sha256,
+    'DETAIL_EDITOR_UNAPPLIED_CHANGES');
 }
 function assertEditorRevision(dir,id,previous,expected) {
-  if(expected) check(expected.draftId===id&&previous
+  if(expected?.baseRevision) check(expected.draftId===id&&previous
     &&editorContext(dir,id,previous).baseRevision===expected.baseRevision,'DETAIL_EDITOR_REVISION_CONFLICT');
 }
 function saveEditorRows(dir,info,expected) {
-  if(expected) write(path.join(dir,'editor-rows.json'),{inputDigest:digest(info.input.items||[]),rowIds:expected.rowIds});
+  if(expected?.rowIds) write(path.join(dir,'editor-rows.json'),{inputDigest:digest(info.input.items||[]),rowIds:expected.rowIds});
   if(expected?.editorMaterials)write(path.join(dir,'editor-materials.json'),
     {filesDigest:digest(info.files||[]),materials:expected.editorMaterials});
 }
-function generateDetailEditor(dir,id,info,output) {
-  check(Editor.definitions[info.workflow],'DETAIL_EDITOR_WORKFLOW_UNSUPPORTED');
+function generateDetailEditor(dir,id,info,output,expected) {
+  check(Editor.supports(info.workflow),'DETAIL_EDITOR_WORKFLOW_UNSUPPORTED');
+  assertEditorFileUnchanged(dir,info,expected,true);
   const current=editorContext(dir,id,info),rowFile=path.join(dir,'editor-rows.json');
   const oldRows=fs.existsSync(rowFile)?read(rowFile):null;
   const stage=workflow(info.workflow).detailReview
     &&current.review?.confirmedSha256!==current.review?.reviewSha256?'details':'application';
-  output=output||path.join(dir,'finance-details.html');
-  check(path.isAbsolute(output)&&path.extname(output).toLowerCase()==='.html','DETAIL_EDITOR_OUTPUT_INVALID');
+  const markdown=Markdown.supports(info.workflow),format=markdown?'md':'html';
+  output=output||editorFileState(dir,info)?.path||path.join(dir,'finance-details.'+format);
+  check(path.isAbsolute(output)&&path.extname(output).toLowerCase()==='.'+format,'DETAIL_EDITOR_OUTPUT_INVALID');
   try {
     const view=Editor.createEditor({workflow:info.workflow,draftId:id,input:info.input,
       review:current.review,prepared:current.prepared,materials:current.materials,revision:current.baseRevision,
       rowIds:oldRows?.inputDigest===digest(info.input.items||[])?oldRows.rowIds:undefined,
       previousDocument:fs.existsSync(path.join(dir,'editor-document.json'))?read(path.join(dir,'editor-document.json')):undefined,
-      stage});
+      stage,recommendations:info.recommendations||[]});
     fs.mkdirSync(path.dirname(output),{recursive:true,mode:0o700});
-    fs.writeFileSync(output,view.html,{encoding:'utf8',mode:0o600});
+    assertEditorFileUnchanged(dir,info,expected,true);
+    const content=markdown?view.markdown:view.html;
+    fs.writeFileSync(output,content,{encoding:'utf8',mode:0o600});
     write(path.join(dir,'editor-document.json'),view.document);
     write(rowFile,{inputDigest:digest(info.input.items||[]),rowIds:view.rowIds});
-    return {status:'editor_ready',workflow:info.workflow,draftId:id,path:output,baseRevision:view.baseRevision,stage,
+    if(markdown) {
+      write(path.join(dir,'editor-file.json'),{workflow:info.workflow,format,path:output,
+        sha256:digest(content),baseRevision:view.baseRevision});
+      // Remove only this draft's former generated HTML, never unrelated files.
+      const former=path.join(dir,'finance-details.html');
+      if(fs.existsSync(former)&&fs.lstatSync(former).isFile()&&!fs.lstatSync(former).isSymbolicLink())fs.unlinkSync(former);
+    }
+    return {status:'editor_ready',workflow:info.workflow,draftId:id,format,path:output,baseRevision:view.baseRevision,stage,
       localDraftOnly:true,nextAction:'open_editor',
-      message:'请直接打开或链接这份 HTML 供员工核对。员工可口述修改，也可在页面编辑、导出修改文件后交给 Agent 应用；应用后展示新版，再等待员工明确确认。导出不等于保存或提交。'};
+      message:markdown?'请打开或链接这份 MD 明细供员工核对。员工可口述修改，也可直接编辑原文件并保存；说“改好了”后执行 read-edit 回读、用已有公司汇率重算并回写，再等待明确确认。只需修改明细，无需自己计算总额。'
+        :'请直接打开或链接这份 HTML 供员工核对。员工可口述修改，也可在页面编辑、导出修改文件后交给 Agent 应用；应用后展示新版，再等待员工明确确认。导出不等于保存或提交。'};
   } catch(cause) {
-    const error=new Error('草稿已保留，但 HTML 明细生成失败。请修复生成问题后重开页面，不要将旧页面当作本次明细或宣称已展示。');
+    if(['DETAIL_EDITOR_UNAPPLIED_CHANGES','DETAIL_EDITOR_REVISION_CONFLICT'].includes(safeCode(cause)))throw cause;
+    // Business inputs can already be saved when local presentation fails.
+    // Keep the user's file, mark it stale, and let editor/preview regenerate
+    // from the saved inputs instead of trapping a previously imported edit.
+    if(markdown)try {
+      write(path.join(dir,'editor-file.json'),{workflow:info.workflow,format,path:output,
+        sha256:fs.existsSync(output)?digest(fs.readFileSync(output,'utf8')):null,
+        baseRevision:current.baseRevision,pendingGeneration:true});
+    } catch { /* Preserve the original presentation failure. */ }
+    const error=new Error('草稿已保留，但明细文件生成失败。请修复生成问题后重新打开，不要将旧文件当作本次明细或宣称已展示。');
     error.code='DETAIL_EDITOR_RENDER_FAILED';error.draftId=id;error.cause=cause;throw error;
   }
 }
-function withDetailEditor(result,dir,id,info) {
+function withDetailEditor(result,dir,id,info,expected) {
+  if(Markdown.supports(info.workflow)&&expected?.refreshRecommendations) {
+    const current=editorContext(dir,id,info),contexts=[...(current.review?.recommendationContexts||[]),
+      ...(current.prepared?.recommendationContexts||[])];
+    const pairs=contexts.flatMap(context=>context.catalogPairs??context.allowedPairs??[]);
+    const recommendations=(info.recommendations||[]).filter(candidate=>pairs.some(pair=>
+      pair.category===candidate.category&&pair.account===candidate.account));
+    const removed=(info.recommendations||[]).length-recommendations.length;
+    if(removed) {
+      info.recommendations=recommendations;write(path.join(dir,'input.json'),info);
+      result={...result,recommendationsPruned:removed};
+    }
+  }
   const file=path.join(dir,'source-snapshot.json');
   if(fs.existsSync(file)) {
     const saved=read(file);
     result={...result,draftValidity:{startedAt:saved.startedAt,expiresAt:saved.expiresAt},
       refreshAction:{command:'refresh',draftId:id}};
   }
-  return Editor.definitions[info.workflow]?{...result,detailEditor:generateDetailEditor(dir,id,info)}:result;
+  return Editor.supports(info.workflow)?{...result,detailEditor:generateDetailEditor(dir,id,info,undefined,expected)}:result;
 }
 function draftRuntime({runtime,auth,dir,key,actor,previous,deps}) {
   const live=runtime(key,{auth});
@@ -495,7 +559,7 @@ async function runCommand(args, deps = {}) {
   // upload, nor manufacture a second intent before its detail review exists.
   if (command === 'prepare' && workflow(arg).detailReview === true && !options.draft) return reviewRequired();
   const root = deps.root || dataRoot();
-  if (command === 'preview' || command === 'submit' || command === 'confirm-details' || command==='editor' || command==='apply-edit'||command==='refresh') {
+  if (command === 'preview' || command === 'submit' || command === 'confirm-details' || command==='editor' || command==='apply-edit'||command==='read-edit'||command==='refresh') {
     const info = read(path.join(draftDir(root, arg), 'input.json'));
     assertWorkflowStartAllowed(info.workflow);
   }
@@ -521,19 +585,34 @@ async function runCommand(args, deps = {}) {
         if(state.status!=='prepared') return {attempted:attemptedResult(state,arg)};
       }
       const before=editorContext(dir,arg,info);
+      let refreshedInput=info.input,refreshedMaterials=info.materials||[],editorExpected;
+      const savedFile=editorFileState(dir,info);
+      if(savedFile?.actualSha256&&savedFile.actualSha256!==savedFile.sha256) {
+        // An explicit refresh can recover an expired draft's saved edits. Read
+        // them before replacing sources; do not make the employee revert them.
+        const document=read(path.join(dir,'editor-document.json'));
+        const applied=Editor.applyEdit({document,edit:Markdown.parse(document,fs.readFileSync(savedFile.path,'utf8')),
+          currentRevision:before.baseRevision,input:info.input,materials:before.materials});
+        refreshedInput=applied.input;refreshedMaterials=applied.materials;
+        editorExpected={draftId:arg,baseRevision:before.baseRevision,rowIds:applied.rowIds,
+          deletedKeys:Object.keys(info.input).filter(key=>!Object.hasOwn(applied.input,key)),
+          editorFile:{path:savedFile.path,sha256:savedFile.actualSha256}};
+      }
       DraftSnapshot.createDraftSnapshot({stateDir:dir,workflow:info.workflow,actor:info.actor,
         now:deps.now||Date.now,refresh:true});
       revisionPending(dir,w.key,info.actor);
       const inputFile=path.join(dir,'refresh-input-'+crypto.randomUUID()+'.json');
-      write(inputFile,{...info.input,attachments:info.files||[],
-        ...(w.detailReview?{materials:info.materials||[],
+      write(inputFile,{...refreshedInput,attachments:info.files||[],
+        ...(Markdown.supports(info.workflow)?{recommendations:info.recommendations||[]} : {}),
+        ...(w.detailReview?{materials:refreshedMaterials,
           ...(info.materialUploads!==undefined?{materialUploads:info.materialUploads}:{})}:{})});
-      return {workflow:info.workflow,inputFile,command:w.detailReview&&!hadPrepared?'review':'prepare',
+      return {workflow:info.workflow,inputFile,editorExpected,command:w.detailReview&&!hadPrepared?'review':'prepare',
         before:{prepared:before.prepared?.preview||null,review:before.review?.preview||null}};
     });
     if(refresh.attempted)return refresh.attempted;
     try {
-      const result=await run([refresh.command,refresh.workflow,'--draft',arg,'--input',refresh.inputFile],deps);
+      const result=await run([refresh.command,refresh.workflow,'--draft',arg,'--input',refresh.inputFile],
+        {...deps,editorExpected:{...refresh.editorExpected,refreshRecommendations:true}});
       const info=read(path.join(dir,'input.json')),current=editorContext(dir,arg,info);
       const usePrepared=!!current.prepared?.preview;
       const changes=DraftSnapshot.differences(usePrepared?refresh.before.prepared:refresh.before.review,
@@ -543,18 +622,29 @@ async function runCommand(args, deps = {}) {
           :changes.length?'公司资料已刷新，输入和材料已保留。请核对列出的变化及更新后的草稿。':'公司资料已刷新，输入和材料已保留，当前业务预览没有变化。'};
     }finally{fs.unlinkSync(refresh.inputFile);}
   }
-  if(command==='apply-edit') {
-    check(options.input&&path.isAbsolute(options.input),'INPUT_FILE_REQUIRED');
+  if(command==='apply-edit'||command==='read-edit') {
+    if(command==='apply-edit')check(options.input&&path.isAbsolute(options.input),'INPUT_FILE_REQUIRED');
     const dir=draftDir(root,arg);
     const update=await locked(dir,async()=>{
       const info=read(path.join(dir,'input.json')),w=workflow(info.workflow),rt=runtime(info.workflow,{auth});
       check(sameActor(info.actor,rt.actor()),'DRAFT_IDENTITY_MISMATCH');
+      check(Editor.supports(info.workflow),'DETAIL_EDITOR_WORKFLOW_UNSUPPORTED');
       if(fs.existsSync(path.join(dir,'process','state.json'))) {
         const state=await manager(rt,w,dir).inspect();
         if(state.status!=='prepared') return {attempted:attemptedResult(state,arg)};
       }
       const current=editorContext(dir,arg,info),document=read(path.join(dir,'editor-document.json'));
-      const applied=Editor.applyEdit({document,edit:read(options.input),currentRevision:current.baseRevision,
+      const markdown=Markdown.supports(info.workflow),stored=editorFileState(dir,info);
+      if(command==='read-edit')check(markdown,'DETAIL_EDITOR_WORKFLOW_UNSUPPORTED');
+      const inputPath=options.input||stored?.path;
+      check(typeof inputPath==='string'&&path.isAbsolute(inputPath),'DETAIL_EDITOR_FILE_MISSING');
+      if(markdown) {
+        check(path.extname(inputPath).toLowerCase()==='.md','DETAIL_EDITOR_EDIT_FORMAT_INVALID');
+        check(fs.existsSync(inputPath),'DETAIL_EDITOR_FILE_MISSING');
+        if(stored&&path.resolve(inputPath)!==path.resolve(stored.path))assertEditorFileUnchanged(dir,info);
+      }
+      const edit=markdown?Markdown.parse(document,fs.readFileSync(inputPath,'utf8')):read(inputPath);
+      const applied=Editor.applyEdit({document,edit,currentRevision:current.baseRevision,
         input:info.input,materials:current.materials});
       const patch=Object.fromEntries(Object.entries(applied.input).filter(([key,value])=>
         !Object.hasOwn(info.input,key)||digest(value)!==digest(info.input[key])));
@@ -574,6 +664,7 @@ async function runCommand(args, deps = {}) {
       const file=path.join(dir,'editor-input-'+crypto.randomUUID()+'.json');write(file,request);
       return {workflow:info.workflow,file,command:w.detailReview&&document.stage==='details'?'review':'prepare',
         expected:{draftId:arg,baseRevision:current.baseRevision,rowIds:applied.rowIds,deletedKeys,
+          ...(stored?{editorFile:{path:stored.path,sha256:stored.actualSha256}}:{}),
           ...(!w.detailReview?{editorMaterials:applied.materials}:{})}};
     });
     if(update.attempted) return update.attempted;
@@ -587,7 +678,7 @@ async function runCommand(args, deps = {}) {
     const w=workflow(arg),actor=runtime(arg,{auth}).actor();
     let id=options.draft,initialData;
     if(!id) {
-      initialData=inputData(options,true);
+      initialData=inputData(options,true,Markdown.supports(arg));
       id=claimIntent(intentPath(root,intentIdentity(arg,actor,initialData)),crypto.randomUUID());
     }
     const dir=draftDir(root,id);
@@ -596,6 +687,7 @@ async function runCommand(args, deps = {}) {
       if(options.draft) check(previous,'DRAFT_NOT_FOUND');
       if(previous) check(previous.workflow===arg&&sameActor(previous.actor,actor),'DRAFT_IDENTITY_OR_WORKFLOW_MISMATCH');
       assertEditorRevision(dir,id,previous,deps.editorExpected);
+      if(previous)assertEditorFileUnchanged(dir,previous,deps.editorExpected,true);
       if(fs.existsSync(path.join(dir,'process','state.json'))) {
         const state=await manager(runtime(arg,{auth}),w,dir).inspect();
         if(state.status!=='prepared') return attemptedResult(state,id);
@@ -605,7 +697,7 @@ async function runCommand(args, deps = {}) {
       const reviewFile=path.join(dir,'details-review.json'),prior=fs.existsSync(reviewFile)?read(reviewFile):null;
       // revisionPending already makes the old final application unsubmitable.
       // Retain the prior completed detail review until its replacement exists.
-      const request=initialData||inputData(options,true),input={...previous?.input,...request.input};
+      const request=initialData||inputData(options,true,Markdown.supports(arg)),input={...previous?.input,...request.input};
       for(const key of deps.editorExpected?.deletedKeys||[])delete input[key];
       const files=previous&&!request.filesProvided?previous.files:request.files;
       const materials=request.materialsProvided?request.materials:previous?.materials||[];
@@ -613,6 +705,7 @@ async function runCommand(args, deps = {}) {
       check(claimIntent(intentPath(root,identity),id)===id,'DRAFT_INTENT_ALREADY_BOUND');
       const info={version:VERSION,workflow:arg,actor:{userid:actor.userid,corp_id:actor.corp_id},input,files,materials,
         identity,revisionId:pending.revisionId,workflowState:previous?.workflowState||null};
+      if(Markdown.supports(arg))info.recommendations=request.recommendationsProvided?request.recommendations:previous?.recommendations||[];
       if(request.materialUploadsProvided||previous?.materialUploads!==undefined)
         info.materialUploads=request.materialUploadsProvided?request.materialUploads:previous.materialUploads;
       write(infoFile,info);
@@ -621,7 +714,7 @@ async function runCommand(args, deps = {}) {
       const review=await refreshReview(dir,w,rt,info,prior);
       snapshot.activate();
       return withDetailEditor({...DetailReview.response(review,id),directory:directoryStatus,
-        submissionBlocked:directoryStatus.status!=='allowed'},dir,id,info);
+        submissionBlocked:directoryStatus.status!=='allowed'},dir,id,info,deps.editorExpected);
     }).catch(error=>{error.draftId=id;throw error;});
   }
   if (command === 'prepare') {
@@ -630,7 +723,7 @@ async function runCommand(args, deps = {}) {
     let id = options.draft;
     let initialData;
     if (!id) {
-      initialData = inputData(options, w.detailReview === true);
+      initialData = inputData(options, w.detailReview === true,Markdown.supports(arg));
       id = claimIntent(intentPath(root, intentIdentity(arg, actor, initialData)), crypto.randomUUID());
     }
     const dir = draftDir(root, id);
@@ -640,6 +733,7 @@ async function runCommand(args, deps = {}) {
       if (options.draft) check(previous, 'DRAFT_NOT_FOUND');
       if (previous) check(previous.workflow === arg && sameActor(previous.actor, actor), 'DRAFT_IDENTITY_OR_WORKFLOW_MISMATCH');
       assertEditorRevision(dir,id,previous,deps.editorExpected);
+      if(previous)assertEditorFileUnchanged(dir,previous,deps.editorExpected,true);
       let previousState,previousSaved;
       if (fs.existsSync(path.join(dir, 'process', 'state.json'))) {
         const old = await manager(runtime(arg,{auth}),w,dir).inspect();
@@ -678,7 +772,7 @@ async function runCommand(args, deps = {}) {
         throw error;
       }
       try {
-        const request = initialData || inputData(options, w.detailReview === true);
+        const request = initialData || inputData(options, w.detailReview === true,Markdown.supports(arg));
         const input = w.partialUpdates || w.detailReview === true ? {...previous?.input,...request.input} : request.input;
         for(const key of deps.editorExpected?.deletedKeys||[])delete input[key];
         // Workflows with editable initial defaults also accept partial replies.
@@ -702,6 +796,7 @@ async function runCommand(args, deps = {}) {
           revisionId,
           workflowState: previous?.workflowState || null
         };
+        if(Markdown.supports(arg))info.recommendations=request.recommendationsProvided?request.recommendations:previous?.recommendations||[];
         if(w.detailReview === true) info.materials=request.materialsProvided?request.materials:previous?.materials||[];
         if(w.detailReview===true&&(request.materialUploadsProvided||previous?.materialUploads!==undefined))
           info.materialUploads=request.materialUploadsProvided?request.materialUploads:previous.materialUploads;
@@ -719,7 +814,7 @@ async function runCommand(args, deps = {}) {
           detailReview=localPrepared&&prior.status==='ready'&&prior.confirmedSha256===prior.reviewSha256
             ?prior:await refreshReview(dir,w,rt,info,prior);
           if(detailReview.needsInput.length||detailReview.confirmedSha256!==detailReview.reviewSha256)
-            return withDetailEditor(DetailReview.response(detailReview,id),dir,id,info);
+            return withDetailEditor(DetailReview.response(detailReview,id),dir,id,info,deps.editorExpected);
         }
         const prepared = localPrepared||json(await w.prepare(input, {...rt.ctx, workflowState: info.workflowState,
           inputUpdateKeys:Object.keys(request.input)}));
@@ -742,7 +837,7 @@ async function runCommand(args, deps = {}) {
             ...(prepared.preview?{preview:prepared.preview}:{}),
             ...(prepared.editorChoices?{editorChoices:prepared.editorChoices}:{}),
             ...(prepared.recommendationContexts?{recommendationContexts:prepared.recommendationContexts}:{})
-          },dir,id,info);
+          },dir,id,info,deps.editorExpected);
         }
         check(prepared.formData && prepared.departmentId && prepared.preview, 'WORKFLOW_RESULT_INVALID');
         if(detailReview) assertPreparedReview(dir,w,info,detailReview,prepared);
@@ -772,7 +867,7 @@ async function runCommand(args, deps = {}) {
                 ? group.previewField ? `请补充“${group.previewField}”要求的本地文件。` : '这个流程要求附件，请提供需要随申请提交的本地文件。'
                 : `请补充第 ${group.rowIndex + 1} 行要求的文件。`
             }]
-          },dir,id,info);
+          },dir,id,info,deps.editorExpected);
           }
         }
         const materialUploadScope=detailReview&&w.materialRoles!==undefined
@@ -874,7 +969,7 @@ async function runCommand(args, deps = {}) {
           ...(prepared.recommendationContexts?{recommendationContexts:prepared.recommendationContexts}:{}),
           localDraftOnly: true,
           message: '草稿已准备。先读取并展示最终预览，然后等待员工回复；本步骤不授权提交。'
-        },dir,id,info);
+        },dir,id,info,deps.editorExpected);
       } catch (error) {
         // This is inside command.lock, so a failed older prepare cannot clobber
         // the completion/error marker of a newer revision.
@@ -916,7 +1011,7 @@ async function runCommand(args, deps = {}) {
     const revisionFile = path.join(dir, 'revision.json');
     const revision = fs.existsSync(revisionFile) ? read(revisionFile) : null;
     if(command==='editor') {
-      check(Editor.definitions[info.workflow],'DETAIL_EDITOR_WORKFLOW_UNSUPPORTED');
+      check(Editor.supports(info.workflow),'DETAIL_EDITOR_WORKFLOW_UNSUPPORTED');
       if(fs.existsSync(path.join(dir,'process','state.json'))) {
         const state=await pm.inspect();
         if(state.status!=='prepared') return attemptedResult(state,arg);
@@ -924,6 +1019,7 @@ async function runCommand(args, deps = {}) {
       return generateDetailEditor(dir,arg,info,options.output);
     }
     if(command === 'confirm-details') {
+      assertEditorFileUnchanged(dir,info);
       check(w.detailReview===true,'WORKFLOW_DETAIL_REVIEW_NOT_SUPPORTED');
       if(fs.existsSync(path.join(dir,'process','state.json'))) {
         const state=await pm.inspect();
@@ -968,7 +1064,7 @@ async function runCommand(args, deps = {}) {
     }
     if (command === 'preview') {
       if(state.status==='prepared') snapshot.assertValid();
-      const detailEditor=state.status==='prepared'&&Editor.definitions[info.workflow]
+      const detailEditor=state.status==='prepared'&&Editor.supports(info.workflow)
         ?generateDetailEditor(dir,arg,info):null;
       if (state.status === 'prepared') {
         // Records that this exact visible preview was requested, not human consent.
@@ -992,6 +1088,7 @@ async function runCommand(args, deps = {}) {
     if (command === 'submit') {
       check(options.confirm && options.confirm === state.draftSha256, 'PROCESS_EXPLICIT_CONFIRMATION_REQUIRED');
       if (state.status === 'prepared') {
+        assertEditorFileUnchanged(dir,info);
         snapshot.onlyCached();
         const directoryStatus=await snapshot.get('directory',{workflow:info.workflow},()=>directory.check(info.workflow),{readOnly:true});
         if(directoryStatus.status!=='allowed') return Directory.blocked(directoryStatus,arg);

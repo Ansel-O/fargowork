@@ -2,15 +2,17 @@
 
 **Install with one prompt:** Give this instruction to an agent that supports Skills and local commands:
 
-> Install or update FargoWork from https://github.com/Ansel-O/fargowork. Follow the repository instructions to set up the official OpenYida CLI and sign in.
+> Install FargoWork 3.3.0 (MD edition) from https://github.com/Ansel-O/fargowork/releases/tag/v3.3.0 using that release's complete package. Follow its instructions to set up the official OpenYida CLI and sign in.
 
 **Not a Fargo employee? Use the project structure as a reference and adapt it to your own workflows. Do not copy the company configuration unchanged.**
 
 [简体中文](README.md)
 
+This independent MD edition is maintained on `md-editing`. Pin installation to `v3.3.0`; do not substitute the `latest` release.
+
 Requires Windows, Node.js 22+, npm and the official OpenYida CLI (supported versions: `2026.10.16`, `2026.10.19`). To install manually, run `node scripts/setup.cjs` from the complete release package, follow the sign-in prompts, and have your AI client load the returned `skillEntry`. See the [installation instructions](SKILL.md#首次安装) and [troubleshooting guide](references/DEBUG.md) (in Chinese).
 
-**New in 3.2.0:** Drafts reuse company reference data for 24 hours, with refresh on request. Financial HTML pages calculate edits immediately, and travel allowances count overlapping dates only once. Update notices are separate from minimum-version requirements.
+**New in 3.3.0:** Five formal finance workflows provide editable Markdown details. Save the original file and the agent reads it back and recalculates with shared code; chat edits remain available. Bank changes use a conversation review, with consent-based hints for old cards you still use.
 
 ## 1. What it does
 
@@ -36,15 +38,15 @@ Financial applications follow this sequence:
 
 **Establish company, currency and any project allocation → Organize materials and calculate details → Edit and confirm details → Complete the main form → Confirm the full application → Submit.**
 
-The agent automatically provides the workflow's HTML page when it is time to review. Describe changes in chat, or edit the page and return the exported file. Page edits and chat edits share the same calculation code. The page updates amounts immediately; return its export to update the draft before confirming. Even a single expense gets a page, accompanied by a brief summary.
+Expense and travel reimbursements, official external payments, meal and transport allowances, and medical checkup reimbursements automatically provide Markdown applications. Describe changes in chat, or save edits to the original file and say “done.” The agent reads your changes and recalculates using the company data already held in the draft. Expense and payment details include grouped account options; external payments confirm the recipient's details. Travel items stay together; meal and transport details retain minute-level times and separate attachment groups. Medical checkups use CNY, retain the editable requested amount and cap reimbursement at CNY 1,500, with one final confirmation. Bank account changes are reviewed directly in chat, without an editing file; the payment Demo retains HTML for now.
 
 The agent suggests expense categories and accounting codes, with suitable alternatives. You can accept them or change a specific row; fixed codes follow the existing rules. Currencies, exchange rates and other reference data come from company-maintained sources, not replacement values in chat or online market rates. Forms without a detail table, such as medical checkup reimbursement, go straight to confirming the full application.
 
-Payment details default to the employee roster. Only an explicit request to change accounts triggers a search of your own completed, approved reimbursement records, or use of details you provide for this application. You confirm the final application before submission; the company’s existing approval process still applies.
+Personal reimbursement payment details default to the employee roster. Only an explicit request to change accounts triggers a search of your own completed, approved reimbursement records, or use of details you provide for this application. External payments use the external recipient's details for this application. You confirm the final application before submission; the company’s existing approval process still applies.
 
 ## 3. Personalization, maintenance and adaptation
 
-**Remember preferences while preserving company rules.** With your permission, the agent can save common purposes, language and display preferences. You can view, edit or delete them, and they survive upgrades. Bank details, credentials and original documents are not stored in long-term memory. See [personal preferences](references/PERSONAL.md).
+**Remember preferences while preserving company rules.** With your permission, the agent can save common purposes, language and display preferences. You can view, edit or delete them, and they survive upgrades. After a default account change, an old card you still plan to use can be remembered by nickname, last four digits and purpose only. When you explicitly ask to use it again, full details are retrieved from your own completed, approved reimbursement records; if unavailable, you provide them again. Full bank details, credentials and original documents are not stored in long-term memory. See [personal preferences](references/PERSONAL.md).
 
 **Reuse data and refresh when needed.** New applications check the company directory and required reference data. A draft reuses that data for 24 hours from its first reviewable version; edits do not extend this period. Ask to refresh company data when needed. Changes made by maintainers during this period do not automatically enter an existing draft. Expired drafts or failed initial checks preserve your work until verification can resume. New applications check for updates with at most two attempts and skip the notice if the network is unavailable. Recommended releases and minimum supported versions are maintained separately. See [version handling](references/WORKFLOW-DIRECTORY.md).
 

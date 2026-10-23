@@ -64,6 +64,9 @@ const definitions=Object.freeze({
       field('bank_account','收款账号'),field('bank_name','开户银行'),field('latest_payment_date','最晚付款日期','date'),...relations],
     rows:paymentRows.filter(item=>item.key!=='classification_reason'),maxRows:100}
 });
+// A finance workflow can use a conversational preview without an editable
+// local file. Keep its business definition independent of the file surface.
+const supports=workflow=>typeof workflow==='string'&&own(definitions,workflow)&&workflow!=='default_bank_change';
 const rowPreviewKeys={expense_category:'category',description:'description',amount:'amount',original_currency:'originalCurrency',
   remarks:'remarks',account:'account',departure:'departure',destination:'destination',region:'region',
   start_date:'startDate',end_date:'endDate',trip_instance_id:'trip',airfare:'airfare',accommodation:'accommodation',
@@ -79,9 +82,24 @@ const scalarPreviewKeys={payment_company:'支付公司',currency:'付款币种',
 const idPattern=/^row-[a-f0-9-]{16,64}$/;
 const newRowId=()=>`row-${crypto.randomUUID()}`;
 const normalizedPath=value=>value.replace(/\.(\d+)(?=\.|$)/g,'[$1]').replace(/^input\./,'');
-function revision({workflow,draftId,input={},review,prepared,materials=[]}) {
+function revision({workflow,draftId,input={},review,prepared,materials=[],recommendations=[]}) {
   return digest({kind:'fargowork-finance-editor-v1',workflow,draftId,input,materials,
-    reviewSha256:review?.reviewSha256??null,preview:review?.preview??prepared?.preview??null});
+    reviewSha256:review?.reviewSha256??null,preview:review?.preview??prepared?.preview??null,recommendations});
+}
+function recommendationContexts(...results) {
+  return results.filter(Boolean).flatMap(result=>[...(result.recommendationContexts||[]),
+    ...(result.needsInput||[]).flatMap(need=>[...(need.recommendationContexts||[]),
+      ...(need.recommendationContext?[need.recommendationContext]:[])])]);
+}
+function legalPairs(contexts) {
+  const result=[],seen=new Set();
+  for(const context of contexts)for(const pair of context.catalogPairs??context.allowedPairs??[]){
+    const key=JSON.stringify([pair.category,pair.account]);
+    if(typeof pair.category==='string'&&typeof pair.account==='string'&&!seen.has(key)){
+      result.push({category:pair.category,account:pair.account});seen.add(key);
+    }
+  }
+  return result;
 }
 function rowIdsFor(items,previous,previousDocument) {
   check(Array.isArray(items),'DETAIL_EDITOR_INPUT_INVALID');
@@ -198,8 +216,9 @@ function calculationContext(workflow,input,preview,rows,prepared,contract) {
     otherAllowanceCurrency:rules.allowanceCurrency?.otherwise});
 }
 function createEditor({workflow,draftId,input={},review,prepared,materials=review?.materials||[],
-  revision:providedRevision,rowIds,previousDocument,choices={},stage='details'}) {
+  revision:providedRevision,rowIds,previousDocument,choices={},recommendations=[],stage='details'}) {
   const definition=definitions[workflow];
+  check(supports(workflow),'DETAIL_EDITOR_WORKFLOW_UNSUPPORTED');
   check(definition&&typeof draftId==='string'&&draftId.trim()&&object(input)
     &&['details','application'].includes(stage),'DETAIL_EDITOR_INPUT_INVALID');
   const combined=collectChoices(review,prepared,{editorChoices:choices}),preview=stage==='application'
@@ -223,16 +242,49 @@ function createEditor({workflow,draftId,input={},review,prepared,materials=revie
   if(workflow==='external_expense_request')Object.assign(mainPreview,{付款币种:preview.币种,
     说明:preview.付款说明,申请部门:preview.发起部门,收款账号:preview.银行账户,开户银行:preview.开户行,
     项目:preview.项目?.名称,项目部门:preview.项目?.部门,项目费用类别:preview.项目?.费用类别});
+  // Some row defaults are resolved only while preparing the main form (for
+  // example a project's sole department or business line). The detail review
+  // intentionally contains only the original detail columns. Show the actual
+  // prepared values without turning their display into employee overrides.
+  const preparedRows=stage==='application'&&['expense_reimbursement','trip_expense_reimbursement','external_expense_application','meal_transport'].includes(workflow)
+    &&rowsPreviewKey?prepared?.preview?.[rowsPreviewKey]:null;
+  const presentationRows=rows.map((row,index)=>{
+    const final=preparedRows?.[index];if(!object(final))return row;
+    const result={...row};
+    for(const field of rowFields){
+      const key=rowPreviewKeys[field.key];if(!key)continue;
+      const aliases=[field.label,...(['business_structure','business_line','business_subline'].includes(field.key)
+        ?[field.label.replace(/^项目/,'')]:[])];
+      const label=aliases.find(label=>own(final,label));if(label!==undefined)result[key]=final[label];
+    }
+    return result;
+  });
   const visibleMain=presentFields(fields,input,mainPreview,combined);
-  const baseRevision=providedRevision||revision({workflow,draftId,input,review,prepared,materials});
+  if(['external_expense_application','meal_transport'].includes(workflow)&&stage==='application'&&object(prepared?.formData)){
+    const {fields:F}=require(`../config/workflows/finance/${workflow}.json`),data=prepared.formData;
+    const native=data[F.sameBearing],resolved={};
+    if(['HIDDEN','NORMAL'].includes(native))resolved.same_bearing_company=native==='HIDDEN';
+    for(const kind of workflow==='external_expense_application'?['contract','seal','expense']:[]){
+      const value=data[F[kind]];
+      if(value===undefined||Array.isArray(value))resolved['include_'+kind]=Array.isArray(value)&&value.length>0;
+    }
+    for(const field of visibleMain)if(field.type==='boolean'&&!field.present&&own(resolved,field.key))
+      field.value=resolved[field.key];
+  }
+  const contexts=recommendationContexts(review,prepared),pairs=legalPairs(contexts);
+  check(Array.isArray(recommendations)&&recommendations.every(pair=>object(pair)
+    &&Object.keys(pair).every(key=>['category','account'].includes(key))
+    &&pairs.some(allowed=>allowed.category===pair.category&&allowed.account===pair.account)),
+  'DETAIL_EDITOR_RECOMMENDATION_INVALID','科目推荐必须取自本草稿已取得的合法类别与科目配对。');
+  const baseRevision=providedRevision||revision({workflow,draftId,input,review,prepared,materials,recommendations});
   check(/^[a-f0-9]{64}$/.test(baseRevision),'DETAIL_EDITOR_REVISION_INVALID');
   const document={schemaVersion:1,workflow,draftId,baseRevision,stage,title:definition.title,demo:!!definition.demo,
     maxRows:definition.maxRows??0,hasRows:!!definition.rows,mainFields:visibleMain,
     rowFields:copy(rowFields),mainValues:Object.fromEntries(fields.filter(item=>own(input,item.key)).map(item=>[item.key,input[item.key]])),
     rows:(input.items||[]).map((item,index)=>({id:ids[index],
       values:Object.fromEntries(rowFields.filter(field=>own(item,field.key)).map(field=>[field.key,item[field.key]])),
-      fields:presentFields(rowFields,item,rows[index]||{},combined,index),
-      readonly:readOnlyRow(rows[index]||{},contract,rowFields)})),
+      fields:presentFields(rowFields,item,presentationRows[index]||{},combined,index),
+      readonly:readOnlyRow(presentationRows[index]||{},contract,rowFields)})),
     summary:Object.entries(preview).filter(([key,value])=>!Array.isArray(value)&&value!==undefined
       &&!visibleMain.some(field=>scalarPreviewKeys[field.key]===key||typeof value!=='object'&&field.label===key
         ||field.key==='is_project'&&key==='是否项目款项')).map(([label,value])=>({label,value})),
@@ -247,17 +299,23 @@ function createEditor({workflow,draftId,input={},review,prepared,materials=revie
       rowIds:(material.itemIndexes||[]).map(index=>ids[index]).filter(Boolean),
       ...(material.role!==undefined?{role:material.role}:{})})),
     baseInput:copy(input),baseMaterials:copy(materials),choices:combined,
+    recommendationContexts:copy(contexts),recommendations:copy(recommendations),
     calculationContext:calculationContext(workflow,input,preview,rows,prepared,contract)};
+  const Markdown=require('./finance-markdown.cjs');
+  if(Markdown.supports(workflow))return {document,markdown:Markdown.render(document),format:'md',rowIds:ids,baseRevision};
   return {document,html:renderHtml(document),rowIds:ids,baseRevision};
 }
 function renderHtml(document) {
+  check(supports(document?.workflow),'DETAIL_EDITOR_WORKFLOW_UNSUPPORTED');
+  check(!require('./finance-markdown.cjs').supports(document.workflow),'DETAIL_EDITOR_FORMAT_INVALID',
+    '本流程已改用可直接编辑和保存的 MD 明细。');
   const template=fs.readFileSync(path.join(__dirname,'../assets/finance-detail-editor.html'),'utf8');
   // User text cannot close the inert JSON script or inject HTML/JavaScript.
   const encoded=JSON.stringify(document).replace(/</g,'\\u003c').replace(/>/g,'\\u003e').replace(/&/g,'\\u0026')
     .replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029');
   // Keep local paths and unseen business inputs out of the HTML.
   const publicDocument=JSON.parse(encoded);
-  delete publicDocument.baseInput;delete publicDocument.baseMaterials;
+  delete publicDocument.baseInput;delete publicDocument.baseMaterials;delete publicDocument.recommendationContexts;
   const modules=['decimal-arithmetic.cjs','travel-allowance.cjs','finance-calculations.cjs'];
   const bundle=`const FinanceCalculations=(()=>{const modules={${modules.map(name=>`${JSON.stringify('./'+name)}:(module,exports,require)=>{\n${fs.readFileSync(path.join(__dirname,name),'utf8')}\n}`).join(',')}};const cache={};function require(name){if(name==='../scripts/lib/common.cjs')return {check:(ok,code)=>{if(!ok)throw Object.assign(new Error(code),{code});}};if(!cache[name]){const module={exports:{}};cache[name]=module;modules[name](module,module.exports,require);}return cache[name].exports;}return require('./finance-calculations.cjs');})();`;
   return template.replace('/*FARGOWORK_SHARED_CALCULATIONS*/',bundle).replace('<!--FARGOWORK_EDITOR_DATA-->',`<script type="application/json" id="editor-data">${
@@ -277,16 +335,30 @@ function validateValue(field,value,choices,current) {
 }
 function applyEdit({document,edit,currentRevision,input=document?.baseInput,materials=document?.baseMaterials||[]}) {
   check(object(document)&&document.schemaVersion===1&&definitions[document.workflow]&&object(edit),'DETAIL_EDITOR_EDIT_INVALID');
+  check(supports(document.workflow),'DETAIL_EDITOR_WORKFLOW_UNSUPPORTED');
   check(Object.keys(edit).every(key=>['schemaVersion','workflow','draftId','baseRevision','main','rows','materials'].includes(key))
     &&edit.schemaVersion===1&&edit.workflow===document.workflow&&edit.draftId===document.draftId,
   'DETAIL_EDITOR_TARGET_MISMATCH');
   check(edit.baseRevision===document.baseRevision&&currentRevision===document.baseRevision,
     'DETAIL_EDITOR_REVISION_CONFLICT','草稿已更新。请打开新版明细，再应用修改，避免覆盖刚刚的更改。');
   check(object(input)&&object(edit.main)&&Array.isArray(edit.rows)&&Array.isArray(edit.materials),'DETAIL_EDITOR_EDIT_INVALID');
+  const markdownMode=require('./finance-markdown.cjs').supports(document.workflow);
+  const pairs=markdownMode?legalPairs(document.recommendationContexts||[]):[];
+  const pairSet=new Set(pairs.map(pair=>JSON.stringify([pair.category,pair.account])));
   const output=copy(input),mainByKey=new Map(document.mainFields.map(field=>[field.key,field]));
   for(const [key,value]of Object.entries(edit.main)) {
     const field=mainByKey.get(key);check(field,'DETAIL_EDITOR_FIELD_READONLY');
     validateValue(field,value,field.choices||[],input[key]);output[key]=value;
+  }
+  if(document.workflow==='external_expense_application')for(const kind of ['contract','seal','expense']){
+    const flag='include_'+kind,id=kind+'_instance_id';
+    if(!own(edit.main,flag)||edit.main[flag]!==false)continue;
+    // Turning off one association is a complete employee instruction. Clear
+    // its old ID in the same patch; preserve a contradictory new selection
+    // so the original workflow can ask the employee to resolve the conflict.
+    const newSelection=own(edit.main,id)&&typeof edit.main[id]==='string'&&edit.main[id].trim()
+      &&edit.main[id]!==input[id];
+    if(!newSelection)output[id]='';
   }
   const definition=definitions[document.workflow],ids=new Set(),baseById=new Map(document.rows.map((row,index)=>[row.id,{row,index}]));
   if(!definition.rows)check(edit.rows.length===0,'DETAIL_EDITOR_ROWS_INVALID');
@@ -299,13 +371,25 @@ function applyEdit({document,edit,currentRevision,input=document?.baseInput,mate
         'DETAIL_EDITOR_ROWS_INVALID');ids.add(row.id);
       const base=baseById.get(row.id),result=base?copy(input.items[base.index]):{};
       const permitted=new Map(document.rowFields.map(field=>[field.key,field]));
+      const category=output.is_project===true?output.project_expense_category:row.values.expense_category??result.expense_category;
+      const account=row.values.account??result.account,joint=markdownMode&&pairSet.has(JSON.stringify([category,account]));
       for(const [key,value]of Object.entries(row.values)) {
         const field=permitted.get(key);check(field,'DETAIL_EDITOR_FIELD_READONLY');
         const options=base?.row.fields.find(item=>item.key===key)?.choices
           ||[...resolveChoices(document.choices,key,undefined,undefined),
             ...document.rows.flatMap(item=>item.fields.find(candidate=>candidate.key===key)?.choices||[])];
-        validateValue(field,value,options||[],base?input.items[base.index]?.[key]:undefined);
+        // MD allows copying a complete legal pair from another displayed
+        // category. Validate the pair together, not against the old row's
+        // category-filtered account list.
+        const pairKey=['expense_category','account'].includes(key);
+        validateValue(field,value,joint&&pairKey?[...options,{value}]:options||[],base?input.items[base.index]?.[key]:undefined);
         result[key]=value;
+      }
+      const classificationChanged=['expense_category','account'].some(key=>own(row.values,key)
+        &&row.values[key]!==input.items?.[base?.index]?.[key]);
+      if(markdownMode&&classificationChanged&&pairs.length){
+        check(pairSet.has(JSON.stringify([category,result.account])),
+          'DETAIL_EDITOR_CHOICE_INVALID','请使用已取得的完整费用类别与会计科目配对。');
       }
       return result;
     });
@@ -345,4 +429,4 @@ function applyEdit({document,edit,currentRevision,input=document?.baseInput,mate
   });
   return {input:output,materials:outputMaterials,rowIds:rowIdList};
 }
-module.exports={definitions,revision,rowIdsFor,collectChoices,createEditor,renderHtml,applyEdit};
+module.exports={definitions,supports,revision,rowIdsFor,collectChoices,createEditor,renderHtml,applyEdit};

@@ -30,6 +30,7 @@ function verify(root, manifest) {
     'scripts/lib/personal.cjs','scripts/lib/workflow-directory.cjs','scripts/lib/attachment-verification-cache.cjs',
     'scripts/lib/draft-snapshot.cjs','scripts/lib/update-notice.cjs','shared/finance-calculations.cjs',
     'shared/finance-local-update.cjs','shared/finance-detail-editor.cjs','assets/finance-detail-editor.html','references/FINANCE-DETAIL-EDITOR.md',
+    'shared/finance-markdown.cjs','assets/finance-expense-details.md','assets/finance-trip-details.md','assets/finance-payment-details.md','assets/finance-meal-details.md','assets/finance-medical-details.md',
     'shared/local-datetime.cjs','shared/scoped-catalog.cjs','shared/account-recommendation.cjs','shared/finance-catalog.cjs',
     'shared/finance-details.cjs','shared/detail-review.cjs','shared/exchange-rates.cjs','shared/leave-calendar.cjs',
     'shared/reimbursement-info.cjs','shared/employee-selection.cjs','shared/workflow-subject.cjs','shared/travel-allowance.cjs',

@@ -22,7 +22,15 @@ function supportForError(code) {
   if(code==='DETAIL_EDITOR_REVISION_CONFLICT')
     return {nextAction:'refresh_editor',message:'这份草稿后来有过修改。请打开最新明细，再应用本次修改，避免覆盖已改内容。'};
   if(code==='DETAIL_EDITOR_RENDER_FAILED')
-    return {contact:'IT',nextAction:'restore_detail_editor',message:'草稿已保留，但本次 HTML 明细未能生成。请维护者修复后重新打开当前明细；不要把旧页面当作本次内容，也不要宣称已经展示或确认。'};
+    return {contact:'IT',nextAction:'restore_detail_editor',message:'草稿已保留，但本次明细文件未能生成。请维护者修复后重新打开当前明细；不要把旧页面或旧文件当作本次内容，也不要宣称已经展示或确认。'};
+  if(code==='DETAIL_EDITOR_UNAPPLIED_CHANGES')
+    return {nextAction:'read_edit',message:'原 MD 明细已有保存的修改，尚未写入草稿。请先执行 read-edit 回读并重算，再核对、确认；保留原文件，不要重新生成覆盖它。'};
+  if(code==='DETAIL_EDITOR_EDIT_FORMAT_INVALID')
+    return {nextAction:'read_edit',message:'这个流程已改用 MD 明细。请保存原 MD 后执行 read-edit，或在聊天中说明修改；旧 HTML 导出文件不再用于本流程。'};
+  if(code==='DETAIL_EDITOR_WORKFLOW_UNSUPPORTED')
+    return {nextAction:'preview_then_wait_for_user',message:'此流程直接在对话中核对资料。请查看当前申请预览，需要修改时直接说明；核对完整申请后再确认提交。'};
+  if(/^DETAIL_MARKDOWN_/.test(code))
+    return {nextAction:'check_detail_edit',message:'请使用这份申请当前的 MD 明细，保留原文件的表头和明细标记。修改文件已保留；也可以直接口述需要修改的内容。'};
   if(/^DETAIL_EDITOR_/.test(code))
     return {nextAction:'check_detail_edit',message:'这次修改有内容需要核对。保留修改文件，请在当前明细的有效选项内调整，或直接在聊天中说明要改哪里。'};
   if(code==='PAYMENT_COMPANY_NOT_FOUND')
