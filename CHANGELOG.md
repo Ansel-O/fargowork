@@ -1,5 +1,12 @@
 # 更新记录
 
+## 3.4.1 — 名片审批资料 / Business card approval details · 2026-10-28
+
+- 名片申请自动从本人花名册填写审批用职位与岗位职级，使用原始值；员工无需填写或修改，名片上的中英文职位仍按原规则处理。
+- Business card requests now fill the approval-only job title and position level from raw employee-roster values. No extra input is needed; editable printed titles keep their existing behavior.
+
+最低客户端要求保持不变。Minimum client requirements are unchanged.
+
 ## 3.4.0 — HTML 本机保存 / Save HTML edits locally · 2026-10-23
 
 - 费用／出差报销、正式付款、餐费交通和付款Demo使用各自的紧凑HTML明细；保存原MD后回读、代码重算，支持口述修改和MD兜底，无需选文件或导出交回。费用与付款保留逐行科目建议、合理备选和全部合法候选。

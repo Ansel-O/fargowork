@@ -90,7 +90,7 @@ HR 目录的九项及正式假期、销假均已迁移至 HR 应用 Moka，入�
 | [默认银行卡变更](../config/workflows/finance/default_bank_change.json) | 只读本人五项现有收款资料（账号、银行、城市、支行、户名）、合同公司、主部门 ID、任职部门 ID，共8项；没有旧卡也可申请 |
 | [对外付款示例](../config/workflows/finance/external_expense_request.json) | 办公地点、主部门 ID、任职部门 ID、合同公司 |
 | [合同](../config/workflows/business/contract.json) / [用印](../config/workflows/business/seal.json) | 姓名、主部门 ID |
-| [名片](../config/workflows/business/business_card.json) | 姓名、中文名、手机、电邮、职位、合同公司、主部门 ID |
+| [名片](../config/workflows/business/business_card.json) | 姓名、中文名、手机、电邮、职位、岗位职级、合同公司、主部门 ID；审批用职位与职级取原始值 |
 | [挂牌](../config/workflows/business/listing.json) | 姓名、中文名、电邮、主部门 ID、任职部门 ID、部门名称；本人及所选人员均限这六项 |
 
 连接器响应解包后，`result` 必须只有一个员工，`userid` 必须与本次查询对象相符；返回中带企业标识时，也须匹配当前登录企业。存在非零业务错误码、错人、错公司或冲突字段时停止办理。

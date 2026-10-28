@@ -1,6 +1,6 @@
 {
   "name": "fargowork-openyida-skills",
-  "version": "3.4.0",
+  "version": "3.4.1",
   "files": [
     {
       "path": ".gitignore",
@@ -14,13 +14,13 @@
     },
     {
       "path": "README.en.md",
-      "bytes": 7696,
-      "sha256": "2c8fb53bf074ca6299e87c34678cdc0e91125590a0d08d563da169800a29b551"
+      "bytes": 7309,
+      "sha256": "41266bcb1174e336fac305abce07fe78a55a5b0eb023ab1bdddb84fd998c4a49"
     },
     {
       "path": "README.md",
-      "bytes": 5802,
-      "sha256": "2278b7889ae10be4d5942cb64ae0dd4fca30fd95a9c0d75af74c0a7b9e4c2b6b"
+      "bytes": 5485,
+      "sha256": "9cdf48ec2dfca97bfb900eb65f6b17e0092a3b733bab6b61c786d94be62088e7"
     },
     {
       "path": "SKILL.md",
@@ -84,8 +84,8 @@
     },
     {
       "path": "config/sources.json",
-      "bytes": 6285,
-      "sha256": "395a242c28210c5dc601aaf2a3361b923a8d0c5e233ccd57bd15ba67743c7f5d"
+      "bytes": 6330,
+      "sha256": "e65b64074c6b1e69d7c855a889cd30357b96dffd56157597b989325756c8c90b"
     },
     {
       "path": "config/workflow-index.json",
@@ -114,8 +114,8 @@
     },
     {
       "path": "config/workflows/business/business_card.json",
-      "bytes": 2367,
-      "sha256": "4f8e91e73cdfbe25195dfd62f63c00bfb0bbd2d627073fc12cc60dcd0a7d1135"
+      "bytes": 2482,
+      "sha256": "1ed3da55ed9dbcf76f8790d26cbe6518a27b5475f9ce06d60811d125041fa94a"
     },
     {
       "path": "config/workflows/business/business_trip_application.json",
@@ -260,12 +260,12 @@
     {
       "path": "package-lock.json",
       "bytes": 295,
-      "sha256": "6043cc8e0a48da49834fd63fec1b01585257a65aca28979f684d8d15a3787f2d"
+      "sha256": "ee229f81c601938d7e7fb1ba8baa65dac9f6568cbca1fad72757770fd275b7f9"
     },
     {
       "path": "package.json",
       "bytes": 241,
-      "sha256": "71a59762c51c0868f7ffcdd1bb4f010f79c946ccd7ed1fc8f4c02d890228d6e1"
+      "sha256": "5298854abdcf87291af56952a22b937f8ba4550802e10ea02d427791de6e85d4"
     },
     {
       "path": "references/ADAPTING.md",
@@ -284,8 +284,8 @@
     },
     {
       "path": "references/CONNECTORS.md",
-      "bytes": 15733,
-      "sha256": "4aebdc992d435b5028711ba16722ca594d29b34f9d85c1f8bb4fdc609e241284"
+      "bytes": 15787,
+      "sha256": "be6934e66c71ebf13e17df14af4662437b219a5f7d8c36a888a7ac9b6faa91a7"
     },
     {
       "path": "references/DEBUG.md",
@@ -539,8 +539,8 @@
     },
     {
       "path": "skills/business/business-card/SKILL.md",
-      "bytes": 3213,
-      "sha256": "9c9958fe50427b5e6d7b83352fd6adfdb0a9b1ee65ea29da1412d17373263333"
+      "bytes": 3452,
+      "sha256": "6538c93f0df73dcc60176a9a8cf9f043145a67294477e1fa1fd9e9f64e942056"
     },
     {
       "path": "skills/business/business-trip-application/SKILL.md",
@@ -709,8 +709,8 @@
     },
     {
       "path": "workflows/business/business-card.cjs",
-      "bytes": 18184,
-      "sha256": "513fe1b7fa1e50f431ffbd194925f560ae9db9c06a78ee4ec965b74076ceb3ca"
+      "bytes": 18867,
+      "sha256": "31fc7b43560efe58b0d958b0e9838b3127a51dae2103607405140a9e211cedc8"
     },
     {
       "path": "workflows/business/business-trip-application.cjs",

@@ -3,6 +3,7 @@
     "name": "sys00-name",
     "office": "sys00-workPlace",
     "mainDepartment": "sys00-mainDeptId",
+    "positionLevel": "sys01-positionLevel",
     "departments": "sys00-deptIds",
     "departmentNames": "sys00-dept",
     "contractCompany": "sys05-contractCompanyName",

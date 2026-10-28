@@ -48,6 +48,7 @@ const requirements = Object.freeze({
     '使用同一草稿修改：手填文字（含明确清空）保留；修改地址不触发整组重新赋值。更换模板或场所只更新受影响的自动字段。',
     '上环办公室另有 Room 4309-4310/09-10室，首次遇到时问一次是否替换；只改房间号，保留地址其他部分。',
     '审批用公司仅取当前申请人花名册合同公司；模板品牌公司不替换该值。HR链接按该合同公司自动查找，允许为空。',
+    '审批用职位与岗位职级自动取本人花名册原始值，不接受员工修改，也不列入名片内容预览。',
     'PDF附件可选。隐藏的HR制作后名片附件由后续流程处理，不要求发起人提供。'
   ]
 });
@@ -67,6 +68,7 @@ const ROSTER = Object.freeze({
   mobile:R.mobile,
   email:R.email,
   title:R.businessCardTitle,
+  positionLevel:R.positionLevel,
   chineseName:R.businessCardChineseName
 });
 const TEXT_FIELDS = Object.freeze({
@@ -92,6 +94,14 @@ const TEXT_FIELDS = Object.freeze({
 function optionalRosterText(roster, field) {
   const entries = roster.get(field);
   if (!Array.isArray(entries) || !entries.length) return '';
+  return C.rosterValue(roster, field, 'value');
+}
+
+// Approval-only fields follow the page's useLabel:false mapping. They are not
+// editable print defaults, and missing source values never fall back to labels.
+function approvalRosterText(roster, field) {
+  const entries = roster.get(field);
+  if (!Array.isArray(entries) || !entries.length || C.absent(entries[0]?.value)) return '';
   return C.rosterValue(roster, field, 'value');
 }
 
@@ -304,6 +314,8 @@ async function prepare(input, ctx) {
     [F.printMethod]:printMethod,
     [F.office]:office,
     [F.approvalCompany]:contractCompany,
+    [F.approvalTitle]:approvalRosterText(roster,ROSTER.title),
+    [F.positionLevel]:approvalRosterText(roster,ROSTER.positionLevel),
     [F.hr]:hrIds,
     ...textValues
   };

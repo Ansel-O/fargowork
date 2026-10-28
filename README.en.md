@@ -10,11 +10,9 @@
 
 Requires Windows, Node.js 22+, npm and the official OpenYida CLI (supported versions: `2026.10.16`, `2026.10.19`). To install manually, run `node scripts/setup.cjs` from the complete release package, follow the sign-in prompts, and have your AI client load the returned `skillEntry`. See the [installation instructions](SKILL.md#首次安装) and [troubleshooting guide](references/DEBUG.md) (in Chinese).
 
-**New in 3.4.0:**
+**New in 3.4.1:**
 
-- Expense and travel claims, external payments, meal and transport allowances, and the payment Demo each have HTML details. Save for readback and recalculation; chat edits and Markdown fallback remain available, with no export needed.
-- All complete applications are confirmed in chat. Medical checkups and bank account changes stay entirely in chat, with one final confirmation.
-- Meal and transport end times come from attendance records. Start times default to 18:00; times explicitly supplied or corrected by the user take priority.
+Business card requests automatically fill the approval-only job title and position level from the employee roster. No extra employee input is needed.
 
 ## 1. What it does
 

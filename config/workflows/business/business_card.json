@@ -36,6 +36,8 @@
     "addressChinese": "textField_m4qtwbet",
     "remarks": "textareaField_m0ul2g6l",
     "approvalCompany": "textField_mac9fg6k",
+    "approvalTitle": "textField_mvrvgovw",
+    "positionLevel": "textField_mvrv6yi3",
     "hr": "employeeField_m3wr9d95",
     "applicantId": "textField_m3wr9d96"
   },
@@ -64,6 +66,7 @@
       "sys00-mobile",
       "sys00-email",
       "c05340a1-ca6b-4906-ad41-18c83eed8617",
+      "sys01-positionLevel",
       "sys00-mainDeptId"
     ],
     "dataForms": ["FORM-670B39A41569410CA70466CA62FFBF51HR2P", "FORM-CD63264343264CA9ADB92306F442CCE9NOZ0"],
