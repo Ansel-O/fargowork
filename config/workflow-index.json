@@ -40,10 +40,6 @@
     "category": "hr"
   },
   {
-    "key": "annual_leave",
-    "category": "leave"
-  },
-  {
     "key": "annual_leave_application",
     "category": "leave"
   },
@@ -74,10 +70,6 @@
   {
     "key": "business_trip_application",
     "category": "business"
-  },
-  {
-    "key": "external_expense_request",
-    "category": "finance"
   },
   {
     "key": "external_expense_application",

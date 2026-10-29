@@ -5,13 +5,6 @@ const plain = value => value !== null && typeof value === 'object'
   && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
 const nonempty = value => typeof value === 'string' && value.length > 0;
 const clone = value => JSON.parse(JSON.stringify(value));
-// These labels are scoped to the checked payment form. The two fields use
-// opposite codes, so HIDDEN/NORMAL must never be translated globally.
-const PAYMENT_FORM = 'FORM-AEE70BC941234A97B25DE3D5340B7DA7IXT3';
-const PAYMENT_ENUMS = Object.freeze({
-  radioField_m41da53k: Object.freeze({ HIDDEN: '否', NORMAL: '是' }),
-  radioField_m88g5767: Object.freeze({ HIDDEN: '是', NORMAL: '否' }),
-});
 const absent = value => value === undefined || value === null;
 const emptyDisplay = value => absent(value) || value === '' || (Array.isArray(value) && value.length === 0);
 const emptyIdentifiers = value => absent(value) || (Array.isArray(value) && value.length === 0);
@@ -92,9 +85,7 @@ function validEnumLabels(enumLabels, formData) {
 }
 
 function radioComparison(field, actual, expected, target, enumLabels) {
-  const map = Object.hasOwn(enumLabels, field) ? enumLabels[field]
-    : target.appType === 'APP_GITLRTH76PM6J4M29F5D' && target.formUuid === PAYMENT_FORM
-      ? PAYMENT_ENUMS[field] : undefined;
+  const map = Object.hasOwn(enumLabels, field) ? enumLabels[field] : undefined;
   if (!map) return actual === expected ? 'verified'
     : ['HIDDEN', 'NORMAL'].includes(actual) && ['HIDDEN', 'NORMAL'].includes(expected) ? 'mismatch' : 'partial';
   const code = value => Object.hasOwn(map, value) ? value

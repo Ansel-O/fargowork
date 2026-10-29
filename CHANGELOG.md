@@ -1,5 +1,10 @@
 # 更新记录
 
+## 3.4.2 — 移除测试流程 / Remove Demo workflows · 2026-10-29
+
+- 移除全部 Demo 流程及其技能、编辑页面和目录入口；保留14个正式流程及16个Moka指引，现有正式业务规则和最低客户端要求不变。
+- Remove all Demo workflows, Skills, detail pages and directory entries. The 14 production workflows and 16 Moka directions remain, with existing business rules and minimum client requirements unchanged.
+
 ## 3.4.1 — 名片审批资料 / Business card approval details · 2026-10-28
 
 - 名片申请自动从本人花名册填写审批用职位与岗位职级，使用原始值；员工无需填写或修改，名片上的中英文职位仍按原规则处理。

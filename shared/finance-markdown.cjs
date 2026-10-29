@@ -6,7 +6,7 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const {check}=require('../scripts/lib/common.cjs');
 const {sumAmounts,rounded}=require('./finance-calculations.cjs');
-const supported=new Set(['expense_reimbursement','trip_expense_reimbursement','external_expense_application','external_expense_request','meal_transport']);
+const supported=new Set(['expense_reimbursement','trip_expense_reimbursement','external_expense_application','meal_transport']);
 const own=(value,key)=>Object.hasOwn(value,key);
 const idPattern=/^row-[a-f0-9-]{16,64}$/;
 const message='明细格式有变化，请保留原文件的表头和明细标记，或口述需要修改的内容。';
@@ -20,7 +20,7 @@ const paymentColumns=[['expense_category','费用类别'],['account','会计科�
   ['amount','本次付款金额'],['remarks','备注']];
 const mealColumns=[['start_time','开始时间'],['end_time','结束时间'],['reason','加班事由'],
   ['mealAmount','餐费补贴'],['transport_amount','交通费'],['remarks','备注']];
-const payment=workflow=>['external_expense_application','external_expense_request'].includes(workflow);
+const payment=workflow=>workflow==='external_expense_application';
 const meal=workflow=>workflow==='meal_transport';
 const tripOrder=['departure','destination','region','start_date','end_date','days','trip_instance_id',
   'allowanceCurrency','allowanceStandard','allowanceDays','allowance_amount','allocation',
@@ -132,8 +132,7 @@ function tripDetails(document){return document.rows.map((row,index)=>{
     table(['字段','填写内容'],rows);
 }).join('\n\n');}
 function candidates(document){
-  const contexts=document.workflow==='external_expense_request'?document.recommendationContexts.filter(context=>
-    context.scope!=='supplier'&&context.accountInputKey!=='supplier_account'):document.recommendationContexts;
+  const contexts=document.recommendationContexts;
   const allowed=contexts.flatMap(context=>context.catalogPairs??context.allowedPairs??[]),groups=new Map();
   const selected=document.rows.map(row=>({category:document.baseInput.is_project===true
     ?document.mainFields.find(field=>field.key==='project_expense_category')?.value??document.baseInput.project_expense_category

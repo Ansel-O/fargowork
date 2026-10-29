@@ -10,9 +10,9 @@
 
 Requires Windows, Node.js 22+, npm and the official OpenYida CLI (supported versions: `2026.10.16`, `2026.10.19`). To install manually, run `node scripts/setup.cjs` from the complete release package, follow the sign-in prompts, and have your AI client load the returned `skillEntry`. See the [installation instructions](SKILL.md#首次安装) and [troubleshooting guide](references/DEBUG.md) (in Chinese).
 
-**New in 3.4.1:**
+**New in 3.4.2:**
 
-Business card requests automatically fill the approval-only job title and position level from the employee roster. No extra employee input is needed.
+All Demo workflows and entry points have been removed. Production workflows and Moka directions remain available.
 
 ## 1. What it does
 
@@ -28,7 +28,7 @@ It provides a single entry point for the workflows Fargo uses:
 | Leave | Get directions to complete leave requests and cancellations in Moka |
 | HR | Get directions to complete certificates, referrals, probation, onboarding, offboarding and transfers in Moka |
 
-Annual leave and external payment **Demos** are available only when explicitly requested for testing. They submit real processes to designated test forms and must not be used for regular business. See the [Skill entry point](SKILL.md) for the full scope.
+See the [Skill entry point](SKILL.md) for the full scope.
 
 ## 2. How to use it
 
@@ -38,7 +38,7 @@ Financial applications follow this sequence:
 
 **Establish company, currency and any project allocation → Organize materials and calculate details → Edit and confirm details → Complete the main form → Confirm the full application → Submit.**
 
-Expense and travel claims, external payments, and meal and transport allowances open their own HTML details. The payment Demo uses the same saving method. Edit and click Save, then tell the agent you are done: it reads the saved draft and recalculates. Chat edits work too. No file picker or export is needed; Markdown remains available if the page cannot open. Final applications are confirmed in chat. Medical checkups and bank account changes use chat directly, with one final confirmation. Medical claims remain CNY only, capped at CNY 1,500. Meal and transport claims take end times from attendance attachments; start times default to 18:00 unless the user specifies otherwise. Minute precision and separate attachment groups remain unchanged.
+Expense and travel claims, external payments, and meal and transport allowances open their own HTML details. Edit and click Save, then tell the agent you are done: it reads the saved draft and recalculates. Chat edits work too. No file picker or export is needed; Markdown remains available if the page cannot open. Final applications are confirmed in chat. Medical checkups and bank account changes use chat directly, with one final confirmation. Medical claims remain CNY only, capped at CNY 1,500. Meal and transport claims take end times from attendance attachments; start times default to 18:00 unless the user specifies otherwise. Minute precision and separate attachment groups remain unchanged.
 
 The agent suggests expense categories and accounting codes, with suitable alternatives. You can accept them or change a specific row; fixed codes follow the existing rules. Currencies, exchange rates and other reference data come from company-maintained sources, not replacement values in chat or online market rates. Forms without a detail table, such as medical checkup reimbursement, go straight to confirming the full application.
 

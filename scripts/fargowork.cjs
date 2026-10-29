@@ -374,7 +374,7 @@ function saveEditorRows(dir,info,expected) {
 }
 function usesConversationFinal(key) {
   return ['trip_expense_reimbursement','expense_reimbursement','external_expense_application',
-    'meal_transport','external_expense_request','medical_checkup_reimbursement'].includes(key);
+    'meal_transport','medical_checkup_reimbursement'].includes(key);
 }
 function generateDetailEditor(dir,id,info,output,expected) {
   check(Editor.supports(info.workflow),'DETAIL_EDITOR_WORKFLOW_UNSUPPORTED');

@@ -85,9 +85,9 @@ function calculateEditor(context,main,items){
       row.transportAmount=absent(item.transport_amount)?0:rounded(item.transport_amount,precision);
       if(context.includeHkd){const exchange=rate(currency,'HKD');row.mealHkd=exchange===null?null:convertAmount(row.mealAmount,exchange,precision);row.transportHkd=exchange===null?null:convertAmount(row.transportAmount,exchange,precision);}
     }else{
-      const amount=absent(item.amount)?null:workflow==='external_expense_request'?Number(item.amount):rounded(item.amount,precision);
+      const amount=absent(item.amount)?null:rounded(item.amount,precision);
       const exchange=rate(currency,'HKD');row.amount=amount;
-      row.hkdAmount=amount===null||exchange===null?null:convertAmount(workflow==='external_expense_request'?item.amount:amount,exchange,precision);
+      row.hkdAmount=amount===null||exchange===null?null:convertAmount(amount,exchange,precision);
       row.amount_hkd=row.hkdAmount;
     }
   }
@@ -114,9 +114,8 @@ function calculateEditor(context,main,items){
     summary.餐补总额=total('mealAmount');summary.交通费总额=total('transportAmount');
     if(context.includeHkd){summary.餐补港币总额=total('mealHkd');summary.交通费港币总额=total('transportHkd');}
   }else{
-    summary[workflow==='external_expense_request'?'原币合计':'付款总额']=items.some(item=>absent(item.amount))?null:sumAmounts(items.map((item,index)=>workflow==='external_expense_request'?item.amount:rows[index].amount),precision);
-    summary[workflow==='external_expense_request'?'港币合计':'支付港币总额']=total('hkdAmount');
-    if(workflow==='external_expense_request')summary.汇率=rate(currency,'HKD');
+    summary.付款总额=items.some(item=>absent(item.amount))?null:sumAmounts(rows.map(row=>row.amount),precision);
+    summary.支付港币总额=total('hkdAmount');
   }
   return {rows,summary,missing};
 }

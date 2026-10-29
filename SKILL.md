@@ -1,6 +1,6 @@
 ---
 name: fargowork
-description: 官方 OpenYida CLI 的 FargoWork 附加技能包。办理固定公司流程，预览确认后提交；正式假期、销假及已迁移 HR 流程转往 Moka，年假和付款 demo 仅供明确测试。
+description: 官方 OpenYida CLI 的 FargoWork 附加技能包。办理固定公司流程，预览确认后提交；正式假期、销假及已迁移 HR 流程转往 Moka。
 ---
 
 # FargoWork
@@ -22,12 +22,12 @@ description: 官方 OpenYida CLI 的 FargoWork 附加技能包。办理固定公
 
 ## 流程分类
 
-按用途分为以下五类；目录分类与正式、Demo测试、Moka迁移状态独立，不能据此改变办理范围。
+按用途分为以下五类；目录分类与正式、Moka迁移状态独立，不能据此改变办理范围。
 
 | 类别 | 目录 | 入口数 |
 | --- | --- | ---: |
-| 财务 | `finance` | 7 |
-| 假勤 | `leave` | 8 |
+| 财务 | `finance` | 6 |
+| 假勤 | `leave` | 7 |
 | 资产 | `assets` | 3 |
 | 业务 | `business` | 5 |
 | 人事 | `hr` | 9 |
@@ -57,7 +57,7 @@ description: 官方 OpenYida CLI 的 FargoWork 附加技能包。办理固定公
 | 其他假期（婚产等） | [other-leave](skills/leave/other-leave/SKILL.md) | `other_leave` |
 | 事假 | [personal-leave](skills/leave/personal-leave/SKILL.md) | `personal_leave` |
 
-普通假期及销假请求都转至 Moka，体检假也一样；无需先补问种类、日期、病情或证明文件。只有明确要求测试年假 demo 时进入后文 demo 分组，不能将其作为正式假期的替代入口。已停用正式流程的旧草稿不能继续提交。不能换表单、搜索同名或隐藏流程、修改状态或直接调用官方 CLI 继续旧流程。
+普通假期及销假请求都转至 Moka，体检假也一样；无需先补问种类、日期、病情或证明文件。已停用正式流程的旧草稿不能继续提交。不能换表单、搜索同名或隐藏流程、修改状态或直接调用官方 CLI 继续旧流程。
 
 入职、离职、转岗和 HR 操作离职属于重要人事流程，不建议由 Agent 发起。直接引导本人前往 Moka，不能搜索旧宜搭流程、修改状态或调用脚本绕过迁移提示。
 
@@ -80,16 +80,7 @@ description: 官方 OpenYida CLI 的 FargoWork 附加技能包。办理固定公
 | 名片 | [business-card](skills/business/business-card/SKILL.md) | `business_card` | `FORM-F3B3659CD74D4260BDE5F2BEA4CEEB02TGYX` |
 | 挂牌 | [listing](skills/business/listing/SKILL.md) | `listing` | `FORM-682B25DB197D42869C87AB548BB66C91YB25` |
 
-普通出差、采购和付款请求分别使用 `business_trip_application`、`procurement_application`、`external_expense_application`。旧出差和采购 demo 已从本包移除，旧草稿不能继续或转换为正式申请。
-
-## Demo 测试分组
-
-| 测试意图 | Skill | workflow key | 唯一测试目标 |
-| --- | --- | --- | --- |
-| 年假 Demo 测试 | [annual-leave](skills/leave/annual-leave/SKILL.md) | `annual_leave` | `FORM-E0E2F1E273B7400F8CDEC9EF505B960EGPYE` |
-| 对外付款 Demo 测试 | [external-expense-request](skills/finance/external-expense-request/SKILL.md) | `external_expense_request` | `FORM-AEE70BC941234A97B25DE3D5340B7DA7IXT3` |
-
-只有用户明确要求测试对应 demo 时才进入。完整预览必须标明 Demo 测试；测试仍会向固定测试表发起真实流程，因此同样等待预览后的新确认，并保留未知结果不重提的规则。普通业务、正式流程受阻或迁移提示都不能自动转入 demo；正式与 demo 的字段、草稿、确认和目标不互换。
+普通出差、采购和付款请求分别使用 `business_trip_application`、`procurement_application`、`external_expense_application`。已移除的测试入口及其旧草稿不能继续或转换为正式申请。
 
 ## 财务与资料规则
 
@@ -111,17 +102,17 @@ description: 官方 OpenYida CLI 的 FargoWork 附加技能包。办理固定公
 
 新办理由工具自动检查公开新版，最多两次、每次2秒，请求不到静默跳过；已有草稿编辑、确认和提交不另做更新联网检查。收到 `updateNotice` 时简短提示一次，不自动安装。用户主动检查用 `check-update`。推荐最新版与公司最低兼容版本独立，兼容小更新只提醒，不据此阻止办理。
 
-公司维护的科目、币种、汇率和计算规则优先于用户建议及个人记忆。不得联网补造公司目录，也不能用用户指定汇率替代维护值。类别／科目允许员工在工具返回的合法范围内选择：每行按实际用途推荐一组，给一句理由及1至2个合理备选，不凑数、不编统计概率。费用、正式付款和付款Demo的HTML按行展示并可展开当前类别全部合法科目，其他流程沿各自候选排版；保留完整目录原文和员工明确选择，不复制样例用途或科目编号。Demo供应商主表分类使用自己的目录，在对话单独核对，不混入明细候选。接受则继续，明确替换后只修改受影响内容并回显，固定科目不开放更换。参见[财务明细](references/FINANCE-DETAILS.md)。
+公司维护的科目、币种、汇率和计算规则优先于用户建议及个人记忆。不得联网补造公司目录，也不能用用户指定汇率替代维护值。类别／科目允许员工在工具返回的合法范围内选择：每行按实际用途推荐一组，给一句理由及1至2个合理备选，不凑数、不编统计概率。费用和正式付款的HTML按行展示并可展开当前类别全部合法科目，其他流程沿各自候选排版；保留完整目录原文和员工明确选择，不复制样例用途或科目编号。接受则继续，明确替换后只修改受影响内容并回显，固定科目不开放更换。参见[财务明细](references/FINANCE-DETAILS.md)。
 
-财务按[本流程明细模板](references/FINANCE-DETAIL-EDITOR.md)默认展示，不等待用户要求。**费用、出差、正式付款、餐费交通和付款Demo默认打开本机HTML明细；Markdown保留为同草稿兜底，体检和银行卡变更直接对话。** Node保存程序由工具自动启动，优先打开 `detailEditor.url`；仅在返回兜底或宿主不可访问时打开 `detailEditor.path` 的原MD。不要直接打开旧的file://HTML，不要求导出或搜索下载目录。
+财务按[本流程明细模板](references/FINANCE-DETAIL-EDITOR.md)默认展示，不等待用户要求。**费用、出差、正式付款和餐费交通默认打开本机HTML明细；Markdown保留为同草稿兜底，体检和银行卡变更直接对话。** Node保存程序由工具自动启动，优先打开 `detailEditor.url`；仅在返回兜底或宿主不可访问时打开 `detailEditor.path` 的原MD。不要直接打开旧的file://HTML，不要求导出或搜索下载目录。
 
-财务HTML只用于明细展示和修改；银行、申请部门、主表业务层级及汇率不放进明细页面。费用使用专用紧凑七列，原币种及换算金额只读；正式付款与付款Demo使用五列、统一付款币种，只合计本次金额，Demo保留独立目标、字段与供应商规则。项目名与共同类别顶部一次，项目字段仍沿各流程原规则处理。餐费交通使用六列、分钟级时间，开始默认加班当天18:00，员工明确18:30或其他时间则采用；结束优先读打卡附件／截图并保留用户纠正，缺失询问，不猜、不以开始回填。费用、出差、正式付款和餐费交通在明细确认后补主表；所有流程最终完整申请在对话核对，不渲染整张表单。
+财务HTML只用于明细展示和修改；银行、申请部门、主表业务层级及汇率不放进明细页面。费用使用专用紧凑七列，原币种及换算金额只读；正式付款使用五列、统一付款币种，只合计本次金额。项目名与共同类别顶部一次，项目字段仍沿各流程原规则处理。餐费交通使用六列、分钟级时间，开始默认加班当天18:00，员工明确18:30或其他时间则采用；结束优先读打卡附件／截图并保留用户纠正，缺失询问，不猜、不以开始回填。费用、出差、正式付款和餐费交通在明细确认后补主表；所有流程最终完整申请在对话核对，不渲染整张表单。
 
-有明细页的流程，员工可口述修改，或在HTML编辑并点击保存；说“改好了”后先 `read-edit <draftId>` 回读原文件、复用已有公司资料及共享代码重算，再回显变化并沿原确认继续。MD兜底可直接编辑保存后回读。体检和银行卡变更的口述修改直接用同草稿 `prepare`。明确没有修改则进入原下一环节；保存不等于确认或提交，体检、银行卡和Demo始终只有一次完整确认。页面失败不得宣称已保存；旧页面与口述修改冲突时读取最新草稿核对，不覆盖。普通改金额不做截图检查，不重解析已有材料或全量查询。
+有明细页的流程，员工可口述修改，或在HTML编辑并点击保存；说“改好了”后先 `read-edit <draftId>` 回读原文件、复用已有公司资料及共享代码重算，再回显变化并沿原确认继续。MD兜底可直接编辑保存后回读。体检和银行卡变更的口述修改直接用同草稿 `prepare`。明确没有修改则进入原下一环节；保存不等于确认或提交，体检和银行卡变更始终只有一次完整确认。页面失败不得宣称已保存；旧页面与口述修改冲突时读取最新草稿核对，不覆盖。普通改金额不做截图检查，不重解析已有材料或全量查询。
 
 1. 从持久包根执行 `node scripts/fargowork.cjs status`；仅需要登录时使用官方登录。读取对应流程的 `requirements`，按语义字段收集输入，不编造事由、金额或内部事实。
-2. 财务先按本流程确定币种，需选择的组合唯一则采用，多个才询问；体检固定CNY、公司沿其合同默认与可空规则。费用报销、出差费用报销、正式对外费用和餐费交通补贴按[财务明细](references/FINANCE-DETAILS.md)整理材料及计算，再用 `review <workflow-key>` 保存并展示各自HTML。收到当前明细的新确认后执行 `confirm-details`，再在同一草稿补主表并 `prepare <workflow-key> --draft <draftId> --input <绝对路径UTF-8业务JSON>`。`details` 只读，不能代替确认。体检直接 `prepare` 并在对话核对；付款Demo沿 `prepare` 展示明细页，两者不加首轮明细确认。已有草稿加 `--draft <draftId>`。`needsInput` 的Agent推荐项先由Agent处理，只询问员工能回答的业务问题。附件按[共用附件模块](references/ATTACHMENTS.md)，餐费交通保持分栏。
-3. 返回 `nextAction: preview` 后调用 `preview <draftId>`，**在对话中核对完整申请，不生成整单HTML**。保留已有明细页，主表修改用同草稿 `prepare`；费用、出差、正式付款及餐费交通的明细修改回 `review` 并确认受影响内容，付款Demo仍用 `prepare` 且不加独立明细确认。银行卡变更显示原新资料；正式付款核对外部收款；Demo标识、供应商及其独立分类保持；餐费交通展示真实主表及打卡／报销两栏文件名；体检展示原金额、封顶结果和收款资料。**展示后结束当前操作，等待员工下一条明确确认；不得把 prepare、preview、submit 连成脚本一次执行。**
+2. 财务先按本流程确定币种，需选择的组合唯一则采用，多个才询问；体检固定CNY、公司沿其合同默认与可空规则。费用报销、出差费用报销、正式对外费用和餐费交通补贴按[财务明细](references/FINANCE-DETAILS.md)整理材料及计算，再用 `review <workflow-key>` 保存并展示各自HTML。收到当前明细的新确认后执行 `confirm-details`，再在同一草稿补主表并 `prepare <workflow-key> --draft <draftId> --input <绝对路径UTF-8业务JSON>`。`details` 只读，不能代替确认。体检直接 `prepare` 并在对话核对，不加首轮明细确认。已有草稿加 `--draft <draftId>`。`needsInput` 的Agent推荐项先由Agent处理，只询问员工能回答的业务问题。附件按[共用附件模块](references/ATTACHMENTS.md)，餐费交通保持分栏。
+3. 返回 `nextAction: preview` 后调用 `preview <draftId>`，**在对话中核对完整申请，不生成整单HTML**。保留已有明细页，主表修改用同草稿 `prepare`；费用、出差、正式付款及餐费交通的明细修改回 `review` 并确认受影响内容。银行卡变更显示原新资料；正式付款核对外部收款；餐费交通展示真实主表及打卡／报销两栏文件名；体检展示原金额、封顶结果和收款资料。**展示后结束当前操作，等待员工下一条明确确认；不得把 prepare、preview、submit 连成脚本一次执行。**
 4. 起初“帮我申请名片”“帮我提交”不代替看完最终预览后的确认。只有收到这份预览之后的新确认，才执行 `submit <draftId> --confirm <本次preview返回的draftSha256>` 一次。摘要用于绑定草稿，不是人类同意的证据。不得自行生成员工确认或让其他Agent代为确认。
 5. 用户修改后在原草稿本地核验、重算并展示新预览，不主动全量刷新。过期或用户要求时用 `refresh <draftId>`，保留输入、材料及已知上传回执，展示实际差异并确认受影响内容；成功刷新后重新起算24小时。财务按本流程展示最新HTML／MD或对话预览；未变化的已确认明细不重问。账号变化不能沿用原账号草稿，可空隐藏字段不额外提示。
 6. 取得成功回执后简短报告“已提交”及编号，不等于审批通过。`result <draftId>` 的提交状态与内容核验分开；部分回读未核对不能改说提交失败。结果未知时核查原草稿，禁止重提或重传。

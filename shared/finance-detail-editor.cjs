@@ -55,20 +55,13 @@ const definitions=Object.freeze({
   medical_checkup_reimbursement:{title:'体检报销',main:[select('payment_company','支付公司'),number('amount','原申请金额')],
     application:[...bank,...bankHistory],rows:null},
   default_bank_change:{title:'默认银行卡变更',main:bank.map(item=>({...item,key:`new_${item.key}`,label:`新${item.label}`})),
-    application:[],rows:null},
-  external_expense_request:{title:'对外付款 · Demo',demo:true,
-    main:[select('payment_company','支付公司'),select('currency','付款币种'),...project],
-    application:[field('description','说明','textarea'),select('department_id','申请部门'),
-      select('project_department_id','项目部门',{project:true}),select('supplier_name','收款方'),
-      select('supplier_expense_category','收款方费用类别'),select('supplier_account','收款方会计科目'),
-      field('bank_account','收款账号'),field('bank_name','开户银行'),field('latest_payment_date','最晚付款日期','date'),...relations],
-    rows:paymentRows.filter(item=>item.key!=='classification_reason'),maxRows:100}
+    application:[],rows:null}
 });
 // A finance workflow can use a conversational preview without an editable
 // local file. Keep its business definition independent of the file surface.
 const supports=workflow=>typeof workflow==='string'&&own(definitions,workflow)
   &&!['default_bank_change','medical_checkup_reimbursement'].includes(workflow);
-const hasRowRecommendations=workflow=>['expense_reimbursement','external_expense_application','external_expense_request'].includes(workflow);
+const hasRowRecommendations=workflow=>['expense_reimbursement','external_expense_application'].includes(workflow);
 const rowPreviewKeys={expense_category:'category',description:'description',amount:'amount',original_currency:'originalCurrency',
   remarks:'remarks',account:'account',departure:'departure',destination:'destination',region:'region',
   start_date:'startDate',end_date:'endDate',trip_instance_id:'trip',airfare:'airfare',accommodation:'accommodation',
@@ -79,8 +72,7 @@ const scalarPreviewKeys={payment_company:'支付公司',currency:'付款币种',
   description:'说明',department_id:'申请部门',contract_company:'合同公司',latest_payment_date:'最晚付款日期',amount:'原申请金额',
   bank_account:'收款账号',bank_name:'开户银行',bank_city:'开户城市',bank_branch:'开户支行',account_name:'账户名称',
   bearing_company:'承担公司',business_structure:'业务总架构',business_line:'业务线',business_subline:'子业务线',
-  supplier_name:'供应商',supplier_expense_category:'供应商费用类别',supplier_account:'供应商科目',
-  project_department_id:'项目部门',claimant_user_id:'报销人'};
+  claimant_user_id:'报销人'};
 const idPattern=/^row-[a-f0-9-]{16,64}$/;
 const newRowId=()=>`row-${crypto.randomUUID()}`;
 const normalizedPath=value=>value.replace(/\.(\d+)(?=\.|$)/g,'[$1]').replace(/^input\./,'');
@@ -103,17 +95,11 @@ function legalPairs(contexts) {
   }
   return result;
 }
-function detailContexts(workflow,contexts){
-  // Demo's supplier classification is a separate source and a main-form
-  // decision. It never grants a selectable account for a payment detail.
-  return workflow==='external_expense_request'?contexts.filter(context=>context.scope!=='supplier'
-    &&context.accountInputKey!=='supplier_account'):contexts;
-}
 // Presentation metadata is tied to one existing row, purpose and category.
 // Legacy unbound pairs remain MD suggestions; catalog order is never a rank.
 function rowRecommendations(document){
   if(!hasRowRecommendations(document.workflow))return [];
-  const pairs=legalPairs(detailContexts(document.workflow,document.recommendationContexts||[])),main=key=>document.mainValues[key]
+  const pairs=legalPairs(document.recommendationContexts||[]),main=key=>document.mainValues[key]
     ??document.mainFields.find(field=>field.key===key)?.value;
   return document.rows.flatMap((row,index)=>{
     const value=key=>own(row.values,key)?row.values[key]:row.fields.find(field=>field.key===key)?.value;
@@ -226,7 +212,6 @@ function calculationContext(workflow,input,preview,rows,prepared,contract) {
     if(row.region&&row.allowanceCurrency&&row.allowanceStandard!==null&&row.allowanceStandard!==undefined)
       standards.push({region:row.region,currency:row.allowanceCurrency,standard:row.allowanceStandard});
   }
-  if(workflow==='external_expense_request')add(currency,'HKD',preview.汇率);
   const data=prepared?.formData,includeHkd=!!data&&workflow!=='medical_checkup_reimbursement'&&workflow!=='default_bank_change';
   if(data){
     if(workflow==='meal_transport')add(currency,'HKD',data[F.rate]);
@@ -257,11 +242,9 @@ function createEditor({workflow,draftId,input={},review,prepared,materials=revie
   if(definition.application.some(field=>field.key==='bank_history_action'))
     addChoices(combined,'bank_history_action',[{value:'manual',label:'本次自行填写收款资料'},
       {value:'search',label:'明确换卡：检索本人已完成且同意的历史记录'}]);
-  const ids=rowIdsFor(input.items||[],rowIds,previousDocument),rows=review?.rows||prepared?.detailReviewRows
-    ||(workflow==='external_expense_request'?preview.明细?.map(row=>({category:row.expense_category,account:row.account,
-      description:row.description,amount:row.amount,amount_hkd:row.amount_hkd,remarks:row.remarks})):[])||[];
+  const ids=rowIdsFor(input.items||[],rowIds,previousDocument),rows=review?.rows||prepared?.detailReviewRows||[];
   const contract=review?.detailReviewContract||prepared?.detailReviewContract;
-  const rowsPreviewKey=contract?.rowsPreviewKey||(workflow==='external_expense_request'?'明细':null);
+  const rowsPreviewKey=contract?.rowsPreviewKey||null;
   const fields=[...definition.main,...(stage==='application'?definition.application:[])];
   // Non-project trip classification is fixed by its workflow, not editable.
   const labels=new Map(contract?.columns?.map(([key,label])=>[key,label])||[]);
@@ -270,9 +253,6 @@ function createEditor({workflow,draftId,input={},review,prepared,materials=revie
     .map(item=>({...item,label:labels.get(rowPreviewKeys[item.key])||item.label}));
   const mainPreview={...preview,...(preview.收款资料||{}),...(preview.新收款资料||{})};
   if(preview.币种!==undefined)mainPreview.付款币种=preview.币种;
-  if(workflow==='external_expense_request')Object.assign(mainPreview,{付款币种:preview.币种,
-    说明:preview.付款说明,申请部门:preview.发起部门,收款账号:preview.银行账户,开户银行:preview.开户行,
-    项目:preview.项目?.名称,项目部门:preview.项目?.部门,项目费用类别:preview.项目?.费用类别});
   // Some row defaults are resolved only while preparing the main form (for
   // example a project's sole department or business line). The detail review
   // intentionally contains only the original detail columns. Show the actual
@@ -302,7 +282,7 @@ function createEditor({workflow,draftId,input={},review,prepared,materials=revie
     for(const field of visibleMain)if(field.type==='boolean'&&!field.present&&own(resolved,field.key))
       field.value=resolved[field.key];
   }
-  const contexts=recommendationContexts(review,prepared),pairs=legalPairs(contexts),rowPairs=legalPairs(detailContexts(workflow,contexts));
+  const contexts=recommendationContexts(review,prepared),pairs=legalPairs(contexts),rowPairs=legalPairs(contexts);
   check(Array.isArray(recommendations)&&recommendations.every(pair=>object(pair)
     &&Object.keys(pair).every(key=>['category','account','rowNumber','description','reason'].includes(key))
     &&(own(pair,'rowNumber')===own(pair,'description'))
@@ -339,7 +319,7 @@ function createEditor({workflow,draftId,input={},review,prepared,materials=revie
   if(hasRowRecommendations(workflow))document.rowRecommendations=rowRecommendations(document);
   const Markdown=require('./finance-markdown.cjs');
   check(format===undefined||['html','md'].includes(format),'DETAIL_EDITOR_FORMAT_INVALID');
-  if(format==='md'||format===undefined&&workflow!=='external_expense_request'&&Markdown.supports(workflow))
+  if(format==='md'||format===undefined&&Markdown.supports(workflow))
     return {document,markdown:Markdown.render(document),format:'md',rowIds:ids,baseRevision};
   return {document,html:renderHtml(document),format:'html',rowIds:ids,baseRevision};
 }
@@ -348,7 +328,6 @@ function renderHtml(document,{saveEndpoint,version}={}) {
   const asset=document.workflow==='trip_expense_reimbursement'?'finance-trip-detail-editor.html'
     :document.workflow==='expense_reimbursement'?'finance-expense-detail-editor.html'
     :document.workflow==='external_expense_application'?'finance-payment-detail-editor.html'
-    :document.workflow==='external_expense_request'?'finance-payment-demo-detail-editor.html'
     :document.workflow==='meal_transport'?'finance-meal-detail-editor.html':'finance-detail-editor.html';
   const template=fs.readFileSync(path.join(__dirname,'../assets',asset),'utf8');
   // User text cannot close the inert JSON script or inject HTML/JavaScript.
@@ -358,7 +337,7 @@ function renderHtml(document,{saveEndpoint,version}={}) {
   const publicDocument=JSON.parse(encoded);
   if(hasRowRecommendations(document.workflow))publicDocument.rowRecommendations=copy(document.rowRecommendations??rowRecommendations(document));
   delete publicDocument.baseInput;delete publicDocument.baseMaterials;delete publicDocument.recommendationContexts;
-  publicDocument.catalogPairs=legalPairs(detailContexts(document.workflow,document.recommendationContexts||[]));
+  publicDocument.catalogPairs=legalPairs(document.recommendationContexts||[]);
   if(saveEndpoint!==undefined){
     check(typeof saveEndpoint==='string'&&/^\.?\.?\/?[a-zA-Z0-9_./-]+$/.test(saveEndpoint)
       &&!saveEndpoint.includes('..')&&!saveEndpoint.startsWith('//')&&typeof version==='string',
@@ -447,7 +426,7 @@ function applyEdit({document,edit,currentRevision,input=document?.baseInput,mate
     'DETAIL_EDITOR_REVISION_CONFLICT','草稿已更新。请打开新版明细，再应用修改，避免覆盖刚刚的更改。');
   check(object(input)&&object(edit.main)&&Array.isArray(edit.rows)&&Array.isArray(edit.materials),'DETAIL_EDITOR_EDIT_INVALID');
   const markdownMode=require('./finance-markdown.cjs').supports(document.workflow);
-  const pairs=markdownMode?legalPairs(detailContexts(document.workflow,document.recommendationContexts||[])):[];
+  const pairs=markdownMode?legalPairs(document.recommendationContexts||[]):[];
   const pairSet=new Set(pairs.map(pair=>JSON.stringify([pair.category,pair.account])));
   const output=copy(input),mainByKey=new Map(document.mainFields.map(field=>[field.key,field]));
   for(const [key,value]of Object.entries(edit.main)) {

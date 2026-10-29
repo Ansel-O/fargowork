@@ -1,6 +1,6 @@
 {
   "name": "fargowork",
-  "version": "3.4.1",
+  "version": "3.4.2",
   "files": [
     {
       "path": ".gitattributes",
@@ -9,8 +9,8 @@
     },
     {
       "path": ".github/workflows/delivery-integrity.yml",
-      "bytes": 13629,
-      "sha256": "09b126918a9fc206e7fa2bac7c53a9bd020e869add702fec244bd3e236d37177"
+      "bytes": 13112,
+      "sha256": "91abbac173fcd945badb7cc70f25380ad000646b65d8cf5d66565ea76381ecc7"
     },
     {
       "path": ".gitignore",
@@ -19,8 +19,8 @@
     },
     {
       "path": "CHANGELOG.md",
-      "bytes": 24866,
-      "sha256": "baa74229d4a76e3fa0f9e5343afe3f0120d3575298401a6c6fa24110ef6a4bb5"
+      "bytes": 25315,
+      "sha256": "ca3e9e14aef13802f83e2a64cf61ed516f0b8884b3da1667e3b2bf8f8e4b4c88"
     },
     {
       "path": "LICENSE",
@@ -29,13 +29,13 @@
     },
     {
       "path": "README.en.md",
-      "bytes": 7309,
-      "sha256": "41266bcb1174e336fac305abce07fe78a55a5b0eb023ab1bdddb84fd998c4a49"
+      "bytes": 7030,
+      "sha256": "b9c600c32daa85fd8bba508ce6c6608f6fa1336310165616db48feb2b0a02cee"
     },
     {
       "path": "README.md",
-      "bytes": 5485,
-      "sha256": "9cdf48ec2dfca97bfb900eb65f6b17e0092a3b733bab6b61c786d94be62088e7"
+      "bytes": 5278,
+      "sha256": "b82436c95afac5b3b05f03eff437edf68b80bd719ea395de6be95681d8a8b7c7"
     },
     {
       "path": "SECURITY.md",
@@ -44,8 +44,8 @@
     },
     {
       "path": "SKILL.md",
-      "bytes": 20142,
-      "sha256": "9126090f67001cf73a56f1bfe7f2ce8c94e9be367f5206fd3e1ccaa17d0e30ee"
+      "bytes": 18810,
+      "sha256": "8fca23441f75abe79bcbf018fbe9322d8e594164d6939aef34fc3948ebd93bd3"
     },
     {
       "path": "assets/finance-detail-editor.html",
@@ -71,11 +71,6 @@
       "path": "assets/finance-meal-details.md",
       "bytes": 239,
       "sha256": "e8182512938356a038a3a24af7e8ea535dadd155dfb532ff988b8d0877aa1724"
-    },
-    {
-      "path": "assets/finance-payment-demo-detail-editor.html",
-      "bytes": 17652,
-      "sha256": "72e2d57af9fb0c514e38e8d33bc184994f9d9bc2c371db4e6864dcd90c1f2495"
     },
     {
       "path": "assets/finance-payment-detail-editor.html",
@@ -109,13 +104,13 @@
     },
     {
       "path": "config/workflow-index.json",
-      "bytes": 2093,
-      "sha256": "38665814bae52acf000738925f830fcbd18e9b43ed1c51165b2f873933bd8925"
+      "bytes": 1959,
+      "sha256": "077828de0a3f48d74ce9387c623f3a58088ebba33511bedbf43d41ea6d43b814"
     },
     {
       "path": "config/workflow-versions.json",
-      "bytes": 1254,
-      "sha256": "ad553e056e9e53f4c958477afe66b414d8eed9df218c80f668fd06880ab180d2"
+      "bytes": 1144,
+      "sha256": "faf50e27608911e2eeca43a1dc3be98ffe63819ad1511ff953beb2e8389e1fbb"
     },
     {
       "path": "config/workflows/assets/hardware_request.json",
@@ -171,11 +166,6 @@
       "path": "config/workflows/finance/external_expense_application.json",
       "bytes": 6764,
       "sha256": "68079691fd023d8a5a9c8683d1005385b1a1238810a03921f1e7e68b2a86e031"
-    },
-    {
-      "path": "config/workflows/finance/external_expense_request.json",
-      "bytes": 534,
-      "sha256": "3a6f207fb78f7f9776e485bf631be273be91f9563710bb5c5bfc74409409ba9b"
     },
     {
       "path": "config/workflows/finance/meal_transport.json",
@@ -238,11 +228,6 @@
       "sha256": "80461357dba28f856fec78bd78ab5dce377f1e768f4c31d38973054be851e3d0"
     },
     {
-      "path": "config/workflows/leave/annual_leave.json",
-      "bytes": 554,
-      "sha256": "a58d967e752895002592c60d0bd6264195949ab15b0bd5ea8d32e61d8e5572e1"
-    },
-    {
       "path": "config/workflows/leave/annual_leave_application.json",
       "bytes": 3416,
       "sha256": "a36943ea25e5c5cd1ba5a3b27e6b6fa34727258e14949d5dd3e0c90f23591f6a"
@@ -279,38 +264,38 @@
     },
     {
       "path": "manifest.json",
-      "bytes": 29878,
-      "sha256": "87bbd063cadf4566b58ae2c376804316167e18067a566bce1f754c4fc8603586"
+      "bytes": 28308,
+      "sha256": "2db0bcb640e4316eaee5111e5dbb2403fd82c6e4130a51a1eaa797938e12a9ba"
     },
     {
       "path": "package-lock.json",
       "bytes": 295,
-      "sha256": "ee229f81c601938d7e7fb1ba8baa65dac9f6568cbca1fad72757770fd275b7f9"
+      "sha256": "2d787303a0ef241fad83ee05033ee6ad0bb01c9f33261ffa84467c35950f68b4"
     },
     {
       "path": "package.json",
       "bytes": 241,
-      "sha256": "5298854abdcf87291af56952a22b937f8ba4550802e10ea02d427791de6e85d4"
+      "sha256": "2469fcf9da1f61aa39fa202a8c37b61016c802e6c47b0554249649bb35950354"
     },
     {
       "path": "references/ADAPTING.md",
-      "bytes": 8713,
-      "sha256": "62d73a20e3b6ff5b83ff3929fb81be278e3ddfd84d6a8dbe3a0883e7a43d2503"
+      "bytes": 8699,
+      "sha256": "dce68d98b3f9a531162c0c2eb6bf9afd727ef5f5356a05e055f4ea508cfc71f3"
     },
     {
       "path": "references/ATTACHMENTS.md",
-      "bytes": 4739,
-      "sha256": "36077cd015af92fcd8ddcb8aff3812209a9eb9d89194374c6c7c57d89daa5f10"
+      "bytes": 4528,
+      "sha256": "23ec9a0d575c050227c844f1dc9dc2e32d3c98a24902c73ba05c54aa30a4415b"
     },
     {
       "path": "references/CHECKS.md",
-      "bytes": 3882,
-      "sha256": "091ae9c396b3878f7174c7a5256b6235ea4ae2079087fe61bb0cf72b4123904c"
+      "bytes": 3831,
+      "sha256": "024eb0f26546af2854288ad4722c39557c0d5021fc3b3886013874e2fe769359"
     },
     {
       "path": "references/CONNECTORS.md",
-      "bytes": 15787,
-      "sha256": "be6934e66c71ebf13e17df14af4662437b219a5f7d8c36a888a7ac9b6faa91a7"
+      "bytes": 14992,
+      "sha256": "6f51cebb7356a59660ef536d0322228a46e44b055b1c396b9dcca25b882ef4d7"
     },
     {
       "path": "references/DEBUG.md",
@@ -319,18 +304,18 @@
     },
     {
       "path": "references/FINANCE-DETAIL-EDITOR.md",
-      "bytes": 12807,
-      "sha256": "681dfacfd2c1166957b33066f2795c00a0a5ee4a3c2fc7382766eb8df1f2701d"
+      "bytes": 11827,
+      "sha256": "d38854eecafe160dd065777ffa42098015c202cec2c4a79d541e5984bd7825e9"
     },
     {
       "path": "references/FINANCE-DETAILS.md",
-      "bytes": 28998,
-      "sha256": "0ea0d260df6be034eb1a6c65b70b3bf79797c52fc0cddb7e96c0e08f08fa533e"
+      "bytes": 27574,
+      "sha256": "a9e129defece388a34627fce1c1e2b97c4661b34d874c87fe64fdbc1ad7767b9"
     },
     {
       "path": "references/PERSONAL.md",
-      "bytes": 9549,
-      "sha256": "d8102027fffeb087b44537535187132d81ef14abf37b50acdf76a7c8b9e8ebc6"
+      "bytes": 9541,
+      "sha256": "25686a647728b6b6d086332d85c458d4a7417628397a0b7a57c4f0e0926d16f3"
     },
     {
       "path": "references/WORKFLOW-DIRECTORY.md",
@@ -339,8 +324,8 @@
     },
     {
       "path": "scripts/fargowork.cjs",
-      "bytes": 72745,
-      "sha256": "213f7c93187b95404e7a9cd96cfb1af420b38bfa52a9ed70b4cb7f07089171dc"
+      "bytes": 72718,
+      "sha256": "11761661fda4d375c669f561f17632371afa1ebd4483b117c182989d4fd5cd59"
     },
     {
       "path": "scripts/finance-editor-server.cjs",
@@ -409,8 +394,8 @@
     },
     {
       "path": "scripts/lib/verification.cjs",
-      "bytes": 17156,
-      "sha256": "275c01b23cb9f651ed47247ea8b36488b68290409403983d74677a8e6d028bc7"
+      "bytes": 16641,
+      "sha256": "d3d60cf04c77628877af22882337817edbda32d9b14a951b1b956f23ba8393d6"
     },
     {
       "path": "scripts/lib/workflow-directory.cjs",
@@ -419,8 +404,8 @@
     },
     {
       "path": "scripts/setup.cjs",
-      "bytes": 7701,
-      "sha256": "ebf899cadb82ae4c222ad407c46b28533b61e90242de16b41e99d2317a2c2005"
+      "bytes": 7647,
+      "sha256": "21b9a90d6c0562474495c64cace4c44e2140ee402d71c7a6eacd3457b69fac49"
     },
     {
       "path": "shared/account-recommendation.cjs",
@@ -464,8 +449,8 @@
     },
     {
       "path": "shared/finance-calculations.cjs",
-      "bytes": 9419,
-      "sha256": "058ead0e3935d6b095ea5e6e24e9cc1597d204fc0c06ecdf057332bb1129efbf"
+      "bytes": 9049,
+      "sha256": "5ba0f08184d05800f0251b99d5c94931a9900dbafaeae1323d203fdea892cc93"
     },
     {
       "path": "shared/finance-catalog.cjs",
@@ -474,8 +459,8 @@
     },
     {
       "path": "shared/finance-detail-editor.cjs",
-      "bytes": 42613,
-      "sha256": "817893b9455e801e0536192f8d23821c946ece505c8383c6fe670c6b5e967020"
+      "bytes": 40393,
+      "sha256": "b5509fb3106d81b865f2c8c9bad6b44ac5d38b9d1292b052bae7707851d1fcdc"
     },
     {
       "path": "shared/finance-details.cjs",
@@ -494,8 +479,8 @@
     },
     {
       "path": "shared/finance-markdown.cjs",
-      "bytes": 30644,
-      "sha256": "c24f1399e208b559f28f65da55c25fea9d3f3fc2bc18c30e5209720c43434441"
+      "bytes": 30406,
+      "sha256": "1bb741b2aebfa4c6310652a655dcd4002ccf0cc43ccd273e453dbc67fc4c2c02"
     },
     {
       "path": "shared/initial-values.cjs",
@@ -554,8 +539,8 @@
     },
     {
       "path": "skills/assets/procurement-application/SKILL.md",
-      "bytes": 4949,
-      "sha256": "001981e21161680ea6b960c7e0423f90e607adcaad8edef8d0c2fb53479370d4"
+      "bytes": 4891,
+      "sha256": "6bc7b1200b4e829aa9f3d52202344ef7031e33df815eccaa690dc77c81804be8"
     },
     {
       "path": "skills/assets/software-request/SKILL.md",
@@ -569,8 +554,8 @@
     },
     {
       "path": "skills/business/business-trip-application/SKILL.md",
-      "bytes": 2104,
-      "sha256": "8c44dfa80844459c0d8532a4af6594fb8b24b6c9bf4c036e7a31861a81ad0217"
+      "bytes": 2097,
+      "sha256": "4a608f3114f0ff6441a32ce46a7333d0290d12c6fccf0d3e038b9d110323109d"
     },
     {
       "path": "skills/business/contract/SKILL.md",
@@ -599,13 +584,8 @@
     },
     {
       "path": "skills/finance/external-expense-application/SKILL.md",
-      "bytes": 17032,
-      "sha256": "cc7538eede3eb323aa5f88ad9bdaf42daefd2ea642968f372325435d5631d06b"
-    },
-    {
-      "path": "skills/finance/external-expense-request/SKILL.md",
-      "bytes": 8795,
-      "sha256": "404c5f2bcfac286630f4f0d288428fbca68660dc069e78c75eebccff57306bfd"
+      "bytes": 16878,
+      "sha256": "161adc9e867a10ea545fd9cc298e8c57ae14b18adf23176ef7d4e1d6d6123bec"
     },
     {
       "path": "skills/finance/meal-transport/SKILL.md",
@@ -669,43 +649,38 @@
     },
     {
       "path": "skills/leave/annual-leave-application/SKILL.md",
-      "bytes": 711,
-      "sha256": "46c629675fe35dc5f62682539149be86696bdc465868d81d7e42bbed22e4324e"
+      "bytes": 633,
+      "sha256": "3fc1f551505807cf6b76d83272eba2aaa4c8986a90828c65a4fef5e8a2dcf3b5"
     },
     {
       "path": "skills/leave/annual-leave-cancellation/SKILL.md",
-      "bytes": 713,
-      "sha256": "97fa125c0b71c34263043a08c9871ccdd57ac2b3dc5a0626f59454b898b53fce"
-    },
-    {
-      "path": "skills/leave/annual-leave/SKILL.md",
-      "bytes": 3020,
-      "sha256": "06e8a709c2a0225a3f51e5ecd293e0e779e23d763d8db3cb15f7a092de9b37a8"
+      "bytes": 635,
+      "sha256": "8d993dd09b7b3299629e165d53ad8cf1fe4d57290851b718f5136ab1634d49d4"
     },
     {
       "path": "skills/leave/other-leave/SKILL.md",
-      "bytes": 715,
-      "sha256": "ba2eeecef35cb71eb80f31a9baaddb78660f69015742b72b4c61f74e74ac9142"
+      "bytes": 637,
+      "sha256": "e8e36db312249858cd61fb698d6101870af206b8fafdce3240e981adef84e12c"
     },
     {
       "path": "skills/leave/paid-sick-leave-cancellation/SKILL.md",
-      "bytes": 731,
-      "sha256": "94d0178da346a02e924d3d3287f00972bccb3b7f552996fb89d1e680ac3e4cca"
+      "bytes": 653,
+      "sha256": "af650b541d7b539c91d4676418a2596b10a2c72d66dc8132e7ed271dc11e9080"
     },
     {
       "path": "skills/leave/paid-sick-leave/SKILL.md",
-      "bytes": 793,
-      "sha256": "02b5e45cefd525d907cd0d85dd69d01980de5b970a0ebedc35e1c3b4491eb8de"
+      "bytes": 713,
+      "sha256": "28c0affd2b288764dada828a12f656da30ad6f06e871852a99370c866618edb7"
     },
     {
       "path": "skills/leave/personal-leave/SKILL.md",
-      "bytes": 679,
-      "sha256": "5adf3c24651965f7587424b9bb5444fffee44aa5ec6b68a75304da9d2ccd2a34"
+      "bytes": 601,
+      "sha256": "9acf482f8b76cc51e7a40ef52666401cdb2569093c03115d0c48c6003e03bc87"
     },
     {
       "path": "skills/leave/unpaid-sick-leave/SKILL.md",
-      "bytes": 697,
-      "sha256": "a41eeeb0f1e92dea05dafb9f81d875265277813d2e87c3c8a2ac03ec56e05bba"
+      "bytes": 619,
+      "sha256": "79516cfc3bb303bb16d4afd346a248d7f2896d31325dffa454375d5bef2804a2"
     },
     {
       "path": "workflows/asset-common.cjs",
@@ -771,11 +746,6 @@
       "path": "workflows/finance/external-expense-application.cjs",
       "bytes": 31028,
       "sha256": "2d5e451f9a009a0c07616238bc4a81fb4b1be276aaf230951bce59b8ded247ce"
-    },
-    {
-      "path": "workflows/finance/external-expense-request.cjs",
-      "bytes": 14633,
-      "sha256": "5ee61e6e997d4a3e7ed2aeace1213302fa98de4ed24b04e95623b1460c36a56e"
     },
     {
       "path": "workflows/finance/meal-transport.cjs",
@@ -863,11 +833,6 @@
       "sha256": "07fa002514edcc8567c97ec0d675c8e451ee79dc8cf4bfee3fb0a6ec4e4fec36"
     },
     {
-      "path": "workflows/leave/annual-leave.cjs",
-      "bytes": 8195,
-      "sha256": "97f3719afb18cc4ae26427fe4a7bd593c9b87ecb373443cb77ae631ffebca881"
-    },
-    {
       "path": "workflows/leave/other-leave.cjs",
       "bytes": 171,
       "sha256": "803291813619d61bca931894459944a123e4583403afbc1b20de2044582a0f23"
@@ -891,16 +856,6 @@
       "path": "workflows/leave/unpaid-sick-leave.cjs",
       "bytes": 177,
       "sha256": "ec175cf06fdddee636de147d04683484e288470e56b9dc5d94b64e4ff8051b49"
-    },
-    {
-      "path": "workflows/payment-core.cjs",
-      "bytes": 9576,
-      "sha256": "874b6eea105558aaa0677bf1c99d475e8229c9d8ccf13dbabcb4deaf4d394ac0"
-    },
-    {
-      "path": "workflows/payment-sources.cjs",
-      "bytes": 7568,
-      "sha256": "8da04f95711b5fc2a81cf1d644a28751d856da73ed6506a0b2fae898d81f6b27"
     },
     {
       "path": "workflows/procurement-common.cjs",

@@ -16,7 +16,7 @@ node scripts/fargowork.cjs prepare business_trip_application --input <绝对路�
 node scripts/fargowork.cjs preview <draftId>
 ```
 
-本流程只使用固定正式目标 `FORM-674D4FE01A894121BB2FF2A851F5CF76H0AD`。出差Demo入口已移除，不接续其旧草稿，不搜索其他表单替代。
+本流程只使用固定正式目标 `FORM-674D4FE01A894121BB2FF2A851F5CF76H0AD`。不接续已移除测试流程的旧草稿，不搜索其他表单替代。
 
 收集地点、出差目的、起止日期、港币预算、出差内容及是否项目出差。当天行程可用地点和内容生成一行；多日出差须逐日提供安排。项目出差根据 `needsInput.choices` 选择生效项目、项目部门；不猜测部门或主管。发起部门只能从本人任职部门中选择，默认主部门。
 
