@@ -8,11 +8,11 @@
 
 [English](README.en.md)
 
-需要 Windows、Node.js 22+、npm 和官方 OpenYida CLI（支持 `2026.10.16`、`2026.10.19`）。手动安装时，在完整发布包根目录运行 `node scripts/setup.cjs`，按提示登录，并让 AI 客户端读取返回的 `skillEntry`。详见[安装说明](SKILL.md#首次安装)和[问题排查](references/DEBUG.md)。
+需要 Windows、Node.js 22+、npm 和[官方 OpenYida CLI](https://github.com/openyida/openyida)。缺少 CLI 时安装最新版：`npm install -g openyida@latest`；已有不低于最低基线 `2026.10.16` 的安装先复用。历史兼容验证覆盖 `2026.10.16`、`2026.10.19`，不是限定安装版本。手动安装时，在完整发布包根目录运行 `node scripts/setup.cjs`，按提示登录，并让 AI 客户端读取返回的 `skillEntry`。新版如有接口不兼容，请附实际版本联系 [作者](mailto:ansel.wang@fargowealth.com.hk)，不要自动降级。详见[安装说明](SKILL.md#首次安装)和[问题排查](references/DEBUG.md)。
 
-**3.4.2 更新：**
+**3.4.3 更新：**
 
-移除全部 Demo 流程及入口，保留正式业务与 Moka 指引。
+首次安装官方 OpenYida 最新版，已有满足最低基线的安装直接复用；历史兼容验证记录不限制新版。
 
 ## 1. 这是什么
 

@@ -232,7 +232,7 @@ jobs:
           readme = Path('README.md').read_text(encoding='utf-8')
           assert 'https://github.com/Ansel-O/fargowork' in readme
           assert 'https://github.com/openyida/openyida' in readme
-          assert 'npm install -g openyida@2026.10.19' in Path('SKILL.md').read_text(encoding='utf-8')
+          assert 'npm install -g openyida@latest' in Path('SKILL.md').read_text(encoding='utf-8')
           assert '.zip' not in readme.lower()
           for name in tracked:
               if not name.endswith('.md'):

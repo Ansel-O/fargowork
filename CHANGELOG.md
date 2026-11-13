@@ -1,5 +1,10 @@
 # 更新记录
 
+## 3.4.3 — 安装说明 / Installation guidance · 2026-11-13
+
+- 缺少官方OpenYida CLI时安装最新版，已有满足2026.10.16最低基线的安装先复用；2026.10.16和2026.10.19仅作历史兼容验证记录，较新版本不再因未列入白名单而被拒绝。新版实际接口不兼容时附版本反馈作者，不自动降级。业务流程及最低FargoWork客户端要求不变。
+- Install the latest official OpenYida CLI when missing, or reuse an installed version at or above the 2026.10.16 baseline. Previously verified versions are a compatibility record, not a whitelist. Report actual incompatibilities with the installed version rather than downgrading automatically. Business workflows and minimum FargoWork client requirements are unchanged.
+
 ## 3.4.2 — 移除测试流程 / Remove Demo workflows · 2026-10-29
 
 - 移除全部 Demo 流程及其技能、编辑页面和目录入口；保留14个正式流程及16个Moka指引，现有正式业务规则和最低客户端要求不变。

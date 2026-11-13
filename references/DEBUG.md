@@ -13,11 +13,11 @@
 | 情况 | 处理 |
 | --- | --- |
 | `NODE_22_REQUIRED`、`OPENYIDA_CLI_REQUIRED`、`SETUP_REQUIRED` | 按[入口 Skill](../SKILL.md)安装 Node.js 和官方 OpenYida，再从完整包根运行安装器。遵循公司 IT 规范，不提权或修改系统策略。 |
-| `OPENYIDA_VERSION_UNSUPPORTED` | 本版适配官方 `2026.10.16` 和 `2026.10.19`。记录现有版本，请维护者判断升级或兼容；不跳过检查或静默降级。 |
+| `OPENYIDA_VERSION_UNSUPPORTED` | 版本低于最低基线 `2026.10.16` 或格式无法识别时，记录当前版本并更新官方最新版：`npm install -g openyida@latest`。`2026.10.16`、`2026.10.19` 仅是历史兼容验证记录，不是安装白名单，不因未列入记录而降级。 |
 | `OPENYIDA_PROFILE_REQUIRED` | 用官方 `openyida auth profiles --json` 查看已有账号配置，由本人选择并执行 `openyida auth profile switch <auth_profile>`。不猜选账号、不复制凭据。 |
 | `OPENYIDA_LOGIN_REQUIRED`、`LOGIN_NOT_COMPLETED` | 通过本包 `login` 调用官方登录，由本人授权；已有有效登录时直接复用。不要循环重试扫码。 |
 | `OPENYIDA_ENVIRONMENT_UNSUPPORTED`、`COMPANY_MISMATCH`、`IDENTITY_CHANGED` | 停止当前操作，核对官方选定的公司和账号。本包接受官方根域名或本公司的已知租户域名，不允许任意配置目标地址。切换账号后不能沿用原账号草稿。 |
-| `OPENYIDA_COMMAND_FAILED`、`OPENYIDA_PROVIDER_UNAVAILABLE`、权限或格式错误 | 联系 IT，附阶段、版本和错误码。不打印完整响应、翻凭据文件、换身份试探或扩大权限。 |
+| `OPENYIDA_COMMAND_FAILED`、`OPENYIDA_PROVIDER_UNAVAILABLE`、权限或格式错误 | 先区分权限问题和实际接口不兼容；前者联系 IT，新版兼容问题附阶段、实际版本和错误码联系 [作者](mailto:ansel.wang@fargowealth.com.hk)，不要自动降级。不打印完整响应、翻凭据文件、换身份试探或扩大权限。 |
 | `PROCESS_PREVIEW_REQUIRED`、确认摘要不符 | 读取并展示当前草稿预览，停止操作，等本人下一条明确确认。旧授权、旧草稿和脚本读过预览都不代表本人已同意。 |
 | `PROCESS_DRAFT_EXPIRED`、`DRAFT_REFRESH_REQUIRED` | 原草稿运行 `refresh <draftId>`，保留输入、材料和已知上传回执；成功刷新重新起算24小时，展示并确认实际差异。仅跨午夜不失效。 |
 | `DRAFT_SOURCE_REFRESH_REQUIRED`、`DRAFT_SOURCE_SNAPSHOT_CHANGED`、`DRAFT_SOURCE_SNAPSHOT_INVALID` | 提交所需来源未完整保存或本地快照异常，保留输入和材料，用 `refresh <draftId>` 恢复并核对差异；不在提交阶段自动联网重建整套资料。 |

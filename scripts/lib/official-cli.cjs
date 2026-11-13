@@ -4,7 +4,16 @@
 const fs = require('node:fs'), path = require('node:path');
 const {spawnSync} = require('node:child_process');
 const {check, dataRoot, read} = require('./common.cjs');
-const SUPPORTED = Object.freeze(['2026.10.16', '2026.10.19']);
+const VERIFIED_VERSIONS = Object.freeze(['2026.10.16', '2026.10.19']);
+const MINIMUM_VERSION = VERIFIED_VERSIONS[0];
+function usableVersion(version) {
+  if (typeof version !== 'string' || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?(?:\+[0-9A-Za-z][0-9A-Za-z.-]*)?$/.test(version)) return false;
+  const parts = version.split(/[.+-]/).slice(0, 3).map(Number);
+  if (!parts.every(Number.isSafeInteger)) return false;
+  const minimum = MINIMUM_VERSION.split('.').map(Number);
+  for (let i = 0; i < 3; i++) if (parts[i] !== minimum[i]) return parts[i] > minimum[i];
+  return true;
+}
 let cached;
 function commandPaths(name) {
   const result = spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', [name], {
@@ -32,7 +41,7 @@ function npmGlobalRoot() {
 function validatePackage(root) {
   const real = fs.realpathSync(root), pkg = read(path.join(real, 'package.json'));
   check(pkg.name === 'openyida' && pkg.bin?.openyida === 'bin/yida.js', 'OPENYIDA_PROVIDER_UNAVAILABLE');
-  check(SUPPORTED.includes(pkg.version), 'OPENYIDA_VERSION_UNSUPPORTED');
+  check(usableVersion(pkg.version), 'OPENYIDA_VERSION_UNSUPPORTED');
   const entry = path.join(real, 'bin/yida.js');
   check(fs.existsSync(entry) && fs.statSync(entry).isFile()
     && fs.realpathSync(entry).startsWith(real + path.sep), 'OPENYIDA_PROVIDER_UNAVAILABLE');
@@ -117,7 +126,8 @@ function run(args, {mutation = false, login = false, identity, input} = {}) {
   }
 }
 // Only native attachments and existing page connector actions need this gap
-// adapter. The upstream module is not a public SDK; keep the tested versions.
+// adapter. The upstream module is not a public SDK; check its interface when
+// needed instead of treating historical verification dates as a version lock.
 function gapProvider() {
   const cli = official(), file = path.join(cli.packageRoot, 'lib/auth/token-auth.js');
   check(fs.existsSync(file) && fs.realpathSync(file).startsWith(cli.packageRoot + path.sep), 'OPENYIDA_PROVIDER_UNAVAILABLE');
@@ -125,4 +135,4 @@ function gapProvider() {
   check(typeof provider.getAccessToken === 'function', 'OPENYIDA_PROVIDER_UNAVAILABLE');
   return provider;
 }
-module.exports = {SUPPORTED, official, run, gapProvider, targetFailure};
+module.exports = {VERIFIED_VERSIONS, MINIMUM_VERSION, official, run, gapProvider, targetFailure};

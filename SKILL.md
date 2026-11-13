@@ -16,7 +16,7 @@ description: 官方 OpenYida CLI 的 FargoWork 附加技能包。办理固定公
 使用从 [FargoWork 仓库](https://github.com/Ansel-O/fargowork) 取得的完整目录。不要混入其他版本文件或只复制单个 Skill。
 
 1. 确认 Windows、Node.js 22+、npm。缺少运行环境按公司 IT 规范准备，不提权或修改系统策略。
-2. 先安装[官方 OpenYida CLI](https://github.com/openyida/openyida)。本版支持已核对的 `2026.10.16`、`2026.10.19`：缺少时使用 `npm install -g openyida@2026.10.19`；已有支持版本直接复用，不重复安装或静默换版本。
+2. 使用[官方 OpenYida CLI](https://github.com/openyida/openyida)。缺少时安装最新版：`npm install -g openyida@latest`；最低兼容基线为 `2026.10.16`，已有满足基线的安装先复用，不重复安装或静默换版本。历史兼容验证覆盖 `2026.10.16`、`2026.10.19`，不是必须安装的版本或白名单，不因版本较新而查找旧版安装。若新版发生实际接口不兼容，记录当前版本与错误码并联系 [作者](mailto:ansel.wang@fargowealth.com.hk)，不要自动降级。
 3. 在完整包根运行 `node scripts/setup.cjs`。本包复制到用户持久目录，登录、账号选择和会话由官方 CLI 管理；本人只在官方要求时完成授权。不手动读取、复制或修改认证文件，不配置 MCP。
 4. 使用返回的 `skillEntry`、`skills` 和持久目录让宿主读入入口及对应流程 Skill。升级后建议新开会话；继续当前会话时重新加载新版入口和本流程说明。保留完整目录，按宿主能力导入，不猜配置目录、不修改其他产品。多个官方账号时让本人选择，见 [DEBUG](references/DEBUG.md)。
 

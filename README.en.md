@@ -8,11 +8,11 @@
 
 [简体中文](README.md)
 
-Requires Windows, Node.js 22+, npm and the official OpenYida CLI (supported versions: `2026.10.16`, `2026.10.19`). To install manually, run `node scripts/setup.cjs` from the complete release package, follow the sign-in prompts, and have your AI client load the returned `skillEntry`. See the [installation instructions](SKILL.md#首次安装) and [troubleshooting guide](references/DEBUG.md) (in Chinese).
+Requires Windows, Node.js 22+, npm and the [official OpenYida CLI](https://github.com/openyida/openyida). If the CLI is missing, install the latest release with `npm install -g openyida@latest`; otherwise reuse an installed CLI at or above the minimum baseline `2026.10.16`. Historical compatibility checks covered `2026.10.16` and `2026.10.19`; these are not required installation versions. To install manually, run `node scripts/setup.cjs` from the complete release package, follow the sign-in prompts, and have your AI client load the returned `skillEntry`. If a newer CLI introduces an incompatible interface, report its actual version to the [author](mailto:ansel.wang@fargowealth.com.hk) instead of downgrading automatically. See the [installation instructions](SKILL.md#首次安装) and [troubleshooting guide](references/DEBUG.md) (in Chinese).
 
-**New in 3.4.2:**
+**New in 3.4.3:**
 
-All Demo workflows and entry points have been removed. Production workflows and Moka directions remain available.
+Install the latest official OpenYida CLI when needed, or reuse an installed version that meets the minimum baseline; historical compatibility records do not exclude newer versions.
 
 ## 1. What it does
 

@@ -1,6 +1,6 @@
 {
   "name": "fargowork-openyida-skills",
-  "version": "3.4.2",
+  "version": "3.4.3",
   "files": [
     {
       "path": ".gitignore",
@@ -14,18 +14,18 @@
     },
     {
       "path": "README.en.md",
-      "bytes": 7030,
-      "sha256": "b9c600c32daa85fd8bba508ce6c6608f6fa1336310165616db48feb2b0a02cee"
+      "bytes": 7545,
+      "sha256": "e9289aafcfa093351d0ac00136793543ef69f69d938cb7fe046e831d11714259"
     },
     {
       "path": "README.md",
-      "bytes": 5278,
-      "sha256": "b82436c95afac5b3b05f03eff437edf68b80bd719ea395de6be95681d8a8b7c7"
+      "bytes": 5672,
+      "sha256": "e215fd3de293b80ad03dfd860316569681abbd8169fa98a9e123be73b5a03605"
     },
     {
       "path": "SKILL.md",
-      "bytes": 18810,
-      "sha256": "8fca23441f75abe79bcbf018fbe9322d8e594164d6939aef34fc3948ebd93bd3"
+      "bytes": 19090,
+      "sha256": "cba798b2d939b29b92fd45357418c7cf90022ba1c9b5c5fedad94cf59a1a75ca"
     },
     {
       "path": "assets/finance-detail-editor.html",
@@ -245,12 +245,12 @@
     {
       "path": "package-lock.json",
       "bytes": 295,
-      "sha256": "2d787303a0ef241fad83ee05033ee6ad0bb01c9f33261ffa84467c35950f68b4"
+      "sha256": "806660043b0af0114ca04981ce84f3cac40fcf11de84d6373ce73c38d8f71867"
     },
     {
       "path": "package.json",
       "bytes": 241,
-      "sha256": "2469fcf9da1f61aa39fa202a8c37b61016c802e6c47b0554249649bb35950354"
+      "sha256": "26152480c4c303fe2e619b3d0655c9fd5e03613988bcb2bb5c8547f0bc821484"
     },
     {
       "path": "references/ADAPTING.md",
@@ -269,13 +269,13 @@
     },
     {
       "path": "references/CONNECTORS.md",
-      "bytes": 14992,
-      "sha256": "6f51cebb7356a59660ef536d0322228a46e44b055b1c396b9dcca25b882ef4d7"
+      "bytes": 15300,
+      "sha256": "690fdbbac8e218cf1327c9e93f1f7f4def6678de5fae23d79731a60466a051e3"
     },
     {
       "path": "references/DEBUG.md",
-      "bytes": 6119,
-      "sha256": "28bc81395290eacd5ac6a359b09e8a8115721a6be27980ad6e07bf3f6a9d94d5"
+      "bytes": 6393,
+      "sha256": "4d2169a47ac62a667ba6228019fa509858eef86ee0e517282cb22684fcc89702"
     },
     {
       "path": "references/FINANCE-DETAIL-EDITOR.md",
@@ -334,8 +334,8 @@
     },
     {
       "path": "scripts/lib/official-cli.cjs",
-      "bytes": 6765,
-      "sha256": "13157986fb2be28a69b23ff786ea79dbc85aa6957e7e7dfd1c8b5ef99deadfe9"
+      "bytes": 7410,
+      "sha256": "9c9a8c16dca4f42d95eb411cb411ec452e69e75873a0f63c15fd688130518606"
     },
     {
       "path": "scripts/lib/personal.cjs",
